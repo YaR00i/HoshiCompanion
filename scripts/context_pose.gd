@@ -21,7 +21,7 @@ func tick(delta: float, value: String, screen_velocity: Vector2 = Vector2.ZERO) 
 	if not available:
 		return
 	var dt: float = clampf(delta, 0.0, 0.1)
-	requested = value if value in ["idle", "carry", "jump", "fall", "land", "portal"] else "idle"
+	requested = value if value in ["idle", "carry", "jump", "fall", "land", "portal", "side_left", "side_right"] else "idle"
 	if requested != "idle" and requested != pose_mode:
 		pose_mode = requested
 		weight = minf(weight, 0.30)
@@ -83,6 +83,26 @@ func apply(time: float) -> void:
 			_add("rightUpperArm", Vector3(-step, 0.0, 3.0) * w)
 			_add("leftUpperLeg", Vector3(maxf(0.0, step) * 0.5, 0.0, 0.0) * w)
 			_add("rightUpperLeg", Vector3(maxf(0.0, -step) * 0.5, 0.0, 0.0) * w)
+		"side_left":
+			var breathe_left: float = sin(time * 1.4) * 0.8
+			_add("hips", Vector3(0.0, 0.0, 3.0) * w)
+			_add("spine", Vector3(-2.0, 2.0, 6.0 + breathe_left) * w)
+			_add("chest", Vector3(-1.0, 3.0, 5.0) * w)
+			_add("neck", Vector3(1.0, -4.0, -3.0) * w)
+			_add("head", Vector3(2.0, -6.0, -4.0) * w)
+			_add("leftUpperArm", Vector3(-7.0, 0.0, 35.0) * w)
+			_add("leftLowerArm", Vector3(-8.0, 0.0, -28.0) * w)
+			_add("leftHand", Vector3(0.0, 0.0, -12.0) * w)
+		"side_right":
+			var breathe_right: float = sin(time * 1.4) * 0.8
+			_add("hips", Vector3(0.0, 0.0, -3.0) * w)
+			_add("spine", Vector3(-2.0, -2.0, -6.0 - breathe_right) * w)
+			_add("chest", Vector3(-1.0, -3.0, -5.0) * w)
+			_add("neck", Vector3(1.0, 4.0, 3.0) * w)
+			_add("head", Vector3(2.0, 6.0, 4.0) * w)
+			_add("rightUpperArm", Vector3(-7.0, 0.0, -35.0) * w)
+			_add("rightLowerArm", Vector3(-8.0, 0.0, 28.0) * w)
+			_add("rightHand", Vector3(0.0, 0.0, 12.0) * w)
 
 func _dangle_legs(time: float, w: float, amount: float) -> void:
 	var swing: float = sin(time * 2.7) * 5.0 * amount

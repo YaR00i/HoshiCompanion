@@ -150,8 +150,8 @@ func _process(delta: float) -> void:
 	_screen_clock += dt
 	if walker.active() and not host.preview and _screen_clock >= 0.5:
 		_screen_clock = 0.0
-		# A taskbar/monitor geometry change invalidates the old lane, not the avatar.
-		if host.walking_area() != _walk_area:
+		# Floor routes are screen-bound; surface routes are relative to their support.
+		if not playground.surface_walking() and host.walking_area() != _walk_area:
 			_hard_stop()
 			host.finish_drag()
 	var was_walking: bool = walker.active()
@@ -160,6 +160,8 @@ func _process(delta: float) -> void:
 		stage.yaw = walker.yaw
 		if host.preview:
 			stage.travel_offset_px = walker.x_px
+		elif playground.surface_walking():
+			stage.travel_offset_px = 0.0
 		elif not _dragged or not _press_active:
 			stage.travel_offset_px = host.walk_to(walker.x_px)
 		if not walker.active():
@@ -202,8 +204,10 @@ func _process(delta: float) -> void:
 			target = cursor_gaze if distance < 1000.0 else Vector2.ZERO
 	_gaze = _gaze.lerp(target, 1.0 - exp(-dt * 6.0))
 	state.curiosity = lerpf(state.curiosity, director.curiosity if state.motion_enabled and state.look_enabled else 0.0, 1.0 - exp(-dt * 5.0))
-	stage.edge_suspended = _press_active or ui.menu.visible or (playground.active() and playground.phase != "attached")
+	stage.edge_suspended = _press_active or ui.menu.visible or (playground.active() and (playground.phase != "attached" or playground.surface_busy()))
 	var context_action: String = "carry" if _dragged and not host.preview else air.pose_mode()
+	if context_action == "idle":
+		context_action = playground.surface_context()
 	stage.set_context_action(context_action, _drag_velocity)
 	stage.animate(dt, state, _gaze, walker.sample())
 	playground.after_tick()
@@ -432,7 +436,7 @@ func _on_action(action: int) -> void:
 		return
 	if not _ready_to_run:
 		return
-	if action in [10, 11, 12, 30, 31, 32, 33, 40, 41, 42, 43, 100, 101, 110, 111, 112, 140, 141]:
+	if action in [10, 11, 12, 30, 31, 32, 33, 40, 41, 42, 43, 100, 101, 110, 111, 112, 140, 141, 305, 306, 307, 308]:
 		places.manual_pause()
 	if action in [210, 211, 212]:
 		state.place_mode = ["off", "cozy", "smart"][action - 210]

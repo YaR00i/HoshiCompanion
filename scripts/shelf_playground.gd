@@ -5,7 +5,9 @@ const Shelf = preload("res://scripts/shelf_window.gd")
 const Cozy = preload("res://scripts/cozy_window.gd")
 var cozy_mode: bool = false
 const External = preload("res://scripts/external_window.gd")
+const Surface = preload("res://scripts/surface_controller.gd")
 var external = External.new()
+var surface = Surface.new()
 var external_mode: bool = false
 var _countdown_number: int = -1
 var _start_handle: int = 0
@@ -26,6 +28,7 @@ const TRAVEL_TIME: float = 0.85
 
 func setup(companion) -> void:
 	app = companion
+	surface.setup(app, self)
 
 func active() -> bool:
 	return phase != "off"
@@ -43,6 +46,7 @@ func show_demo(use_cozy: bool = false) -> bool:
 	if phase in ["preparing", "boarding", "attached"] and _shelf_usable():
 		return true
 	cozy_mode = use_cozy
+	surface.reset()
 	if not is_instance_valid(shelf):
 		_create_shelf()
 	shelf.mode = Window.MODE_WINDOWED
@@ -140,6 +144,8 @@ func before_tick(delta: float) -> void:
 			phase = "settling"
 	elif phase == "settling" and app.state.posture.mode == "standing":
 		_finish_return()
+	if phase == "attached":
+		surface.before_tick(delta)
 
 func _fallback_cozy() -> void:
 	if app._test_mode:
@@ -168,7 +174,9 @@ func _finish_return() -> void:
 			app._start_walk(false)
 
 func after_tick() -> void:
-	if phase in ["boarding", "attached"] and _shelf_usable():
+	if phase == "attached" and surface.owns_placement() and _shelf_usable():
+		surface.after_tick()
+	elif phase in ["boarding", "attached"] and _shelf_usable():
 		var anchor_world: Vector3 = app.stage.edge_pose.planned_anchor_world() if phase == "boarding" and not app.state.posture.target_seated else app.stage.edge_pose.anchor_world()
 		var anchor: Vector2 = app.stage.camera.unproject_position(anchor_world)
 		var area: Rect2i = support_area()
@@ -205,6 +213,7 @@ func _shelf_usable() -> bool:
 	return is_instance_valid(shelf) and not shelf.is_queued_for_deletion() and shelf.visible and shelf.mode == Window.MODE_WINDOWED
 
 func return_home(walk_after: bool = false) -> void:
+	surface.reset()
 	_choice_request = {}
 	_auto_choice = false
 	_walk_after = walk_after
@@ -223,6 +232,7 @@ func return_home(walk_after: bool = false) -> void:
 	app.director.user_interaction()
 
 func begin_drag() -> void:
+	surface.reset()
 	if phase in ["selection_start", "selecting", "auto_selection_start", "auto_selecting"]:
 		release_for_mode_change()
 		return
@@ -244,6 +254,7 @@ func finish_drag() -> bool:
 				app.state.posture.request_sit(false)
 				phase = "attached"
 				app.host.raise_companion()
+				surface.reset()
 			else:
 				show_demo()
 			return true
@@ -256,6 +267,7 @@ func cancel_queued_walk() -> void:
 	_walk_after = false
 
 func release_for_mode_change() -> void:
+	surface.reset()
 	_choice_request = {}
 	_auto_choice = false
 	external.close()
@@ -292,6 +304,24 @@ func handle_action(action: int) -> bool:
 	if action == 41:
 		return_home()
 		return true
+	if action == 305:
+		if surface.request_walk():
+			return true
+		if active():
+			app.ui.say("Здесь маловато места для прогулки")
+			return true
+	if action in [306, 307]:
+		if surface.request_side("left" if action == 306 else "right"):
+			return true
+		if active():
+			app.ui.say("К этому боку сейчас не прислониться")
+			return true
+	if action == 308:
+		if surface.request_sit_top():
+			return true
+		if active():
+			app.ui.say("Я уже на краю")
+			return true
 	if not active():
 		return false
 	if action in [30, 33, 140]:
@@ -316,6 +346,10 @@ func handle_action(action: int) -> bool:
 	return false
 
 func label() -> String:
+	if phase == "attached":
+		var surface_label: String = surface.label()
+		if not surface_label.is_empty():
+			return surface_label
 	if phase == "attached" and not app.state.dozing:
 		var activity: String = app.stage.edge_life.label()
 		if not activity.is_empty():
@@ -391,6 +425,15 @@ func auto_choose_window(fixture_pid: int = 0) -> bool:
 	phase = "auto_selection_start"
 	app.ui.say("Ищу уютный край…")
 	return true
+
+func surface_walking() -> bool:
+	return active() and surface.walking()
+
+func surface_busy() -> bool:
+	return active() and surface.busy()
+
+func surface_context() -> String:
+	return surface.context_action() if active() else "idle"
 
 func support_rect() -> Rect2i:
 	return external.current_rect() if external_mode else shelf.outer_rect()

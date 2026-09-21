@@ -142,6 +142,16 @@ func _native_checks() -> void:
 	_check(absf(float(root.position.x - before.x) - 60.0) < 2.0, "resize keeps relative seat position on shelf")
 	_check(app.playground.last_support_error < 1.1, "resize keeps vertical contact")
 	await _capture("02_moved_resized")
+	app._on_action(305)
+	var surface_walk_seen: bool = false
+	for index in range(720):
+		_advance(1)
+		surface_walk_seen = surface_walk_seen or (app.playground.surface.mode == "walk" and app.walker.active())
+		if surface_walk_seen and app.playground.surface.mode == "sit" and app.state.posture.mode == "seated":
+			break
+	_check(surface_walk_seen, "surface route walks along the app-owned support")
+	_check(app.playground.phase == "attached" and app.playground.surface.mode == "sit" and app.state.posture.mode == "seated", "surface walk returns to a stable seated edge")
+	_check(app.playground.last_support_error < 1.5, "surface walk keeps support contact after resitting")
 	var window_id: int = shelf.get_window_id()
 	app.playground.show_demo()
 	_check(app.playground.shelf.get_window_id() == window_id, "repeated show reuses a single shelf")

@@ -242,6 +242,25 @@ func head_pixel() -> Vector2:
 		return size * Vector2(0.5, 0.24)
 	return camera.unproject_position(rig.world_point("head") + Vector3(0.0, model_height * 0.05, 0.0))
 
+func standing_anchor_pixel() -> Vector2:
+	if not is_loaded or not gait.available or gait.legs.size() < 2:
+		return Vector2(size.x * 0.5, size.y - foot_margin)
+	var point: Vector3 = ((gait.legs[0]["rest_ankle"] as Vector3) + (gait.legs[1]["rest_ankle"] as Vector3)) * 0.5
+	point.y -= model_height * 0.025
+	return camera.unproject_position(rig.skeleton.global_transform * point)
+
+func side_anchor_pixel(window_side: String) -> Vector2:
+	if not is_loaded:
+		return size * Vector2(0.5, 0.42)
+	var semantic: String = "leftUpperArm" if window_side == "left" else "rightUpperArm"
+	if not rig.bones.has(semantic):
+		return head_pixel()
+	var bone: int = int(rig.bones[semantic])
+	var point: Vector3 = rig.skeleton.get_bone_global_rest(bone).origin
+	point.x += model_height * (0.12 if window_side == "left" else -0.12)
+	point.y -= model_height * 0.035
+	return camera.unproject_position(rig.skeleton.global_transform * point)
+
 func hit_avatar(point: Vector2) -> bool:
 	# Pose-aware conservative envelope, not per-pixel alpha picking.
 	if not is_loaded:
