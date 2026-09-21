@@ -111,7 +111,7 @@ func finish_drag() -> void:
 		window.position = clamp_position(window.position)
 		saved_position = window.position
 
-func apply_mask() -> void:
+func apply_mask(expanded: bool = false) -> void:
 	if headless or preview:
 		return
 	if not mask_enabled:
@@ -120,13 +120,21 @@ func apply_mask() -> void:
 	# Conservative, STABLE envelope for all included gestures, not pixel hit-testing.
 	# Windows clips rendering outside this polygon, so it includes the hair and hand.
 	# Do not update it per frame (SetWindowRgn can flicker on some Windows drivers).
-	var normalized: Array[Vector2] = [
-		Vector2(0.24, 0.035), Vector2(0.76, 0.035),
-		Vector2(0.94, 0.25), Vector2(0.96, 0.63),
-		Vector2(0.94, 0.82), Vector2(0.94, 1.0),
-		Vector2(0.06, 1.0), Vector2(0.06, 0.82),
-		Vector2(0.04, 0.63), Vector2(0.06, 0.25)
-	]
+	var normalized: Array[Vector2]
+	if expanded:
+		normalized = [
+			Vector2(0.07, 0.015), Vector2(0.93, 0.015),
+			Vector2(0.98, 0.16), Vector2(0.99, 1.0),
+			Vector2(0.01, 1.0), Vector2(0.02, 0.16)
+		]
+	else:
+		normalized = [
+			Vector2(0.24, 0.035), Vector2(0.76, 0.035),
+			Vector2(0.94, 0.25), Vector2(0.96, 0.63),
+			Vector2(0.94, 0.82), Vector2(0.94, 1.0),
+			Vector2(0.06, 1.0), Vector2(0.06, 0.82),
+			Vector2(0.04, 0.63), Vector2(0.06, 0.25)
+		]
 	_mask = PackedVector2Array()
 	for point in normalized:
 		_mask.append(point * Vector2(window.size))
@@ -138,6 +146,17 @@ func menu_focus(active: bool) -> void:
 	window.unfocusable = not active
 	if active:
 		window.grab_focus()
+
+func cinematic_mask(active: bool) -> void:
+	if headless or preview:
+		return
+	apply_mask(active)
+
+func raise_companion() -> void:
+	if headless or preview:
+		return
+	window.always_on_top = true
+	DisplayServer.window_move_to_foreground(window.get_window_id())
 
 func mask_contains(point: Vector2) -> bool:
 	if preview or not mask_enabled or _mask.is_empty():

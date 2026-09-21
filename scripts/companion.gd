@@ -5,6 +5,7 @@ const State = preload("res://scripts/companion_state.gd")
 const Stage = preload("res://scripts/avatar_stage.gd")
 const UI = preload("res://scripts/companion_ui.gd")
 const Locomotion = preload("res://scripts/locomotion.gd")
+const AirMotion = preload("res://scripts/air_motion.gd")
 const Director = preload("res://scripts/behavior_director.gd")
 const PlaceDirector = preload("res://scripts/place_director.gd")
 const Playground = preload("res://scripts/shelf_playground.gd")
@@ -14,6 +15,7 @@ const DEFAULT_AVATAR: String = "res://assets/Hoshi_v1.vrm"
 var host = Host.new()
 var state = State.new()
 var walker = Locomotion.new()
+var air = AirMotion.new()
 var director = Director.new()
 var places = PlaceDirector.new()
 var playground = Playground.new()
@@ -29,6 +31,10 @@ var _double_clicked: bool = false
 var _press_cursor: Vector2i = Vector2i.ZERO
 var _press_window: Vector2i = Vector2i.ZERO
 var _press_yaw: float = 0.0
+var _last_drag_cursor: Vector2i = Vector2i.ZERO
+var _drag_velocity: Vector2 = Vector2.ZERO
+var _quit_phase: String = ""
+var _cinematic_mask_active: bool = false
 var _preview_zoom: float = 1.0
 var _ui_clock: float = 0.0
 var _screen_clock: float = 0.0
@@ -89,6 +95,8 @@ func _ready() -> void:
 	ui.model_ready(stage.model_name(), result)
 	ui.refresh(state)
 	_layout()
+	if not host.preview and not _test_mode:
+		_start_intro()
 	ui.say("Привет, Серёж!")
 	if args.has("--shelf-demo"):
 		await get_tree().create_timer(0.5).timeout
@@ -100,11 +108,18 @@ func _ready() -> void:
 		_capture_after_settling()
 
 func _switch_mode(preview: bool) -> void:
+	var was_preview: bool = host.preview
 	playground.release_for_mode_change()
+	air.cancel(Vector2(host.window.position) if host.window != null else Vector2.ZERO)
 	_press_active = false
+	_dragged = false
 	if stage != null:
+		stage.cancel_cinematic()
 		_hard_stop()
 		stage.travel_offset_px = 0.0
+	if _cinematic_mask_active:
+		host.cinematic_mask(false)
+		_cinematic_mask_active = false
 	host.switch_mode(preview)
 	ui.set_preview(host.preview)
 	background.visible = host.preview
@@ -112,6 +127,8 @@ func _switch_mode(preview: bool) -> void:
 		stage.yaw = 0.0
 	_layout()
 	_layout.call_deferred()
+	if was_preview and not host.preview and _ready_to_run and not _test_mode:
+		_start_intro()
 
 func _layout() -> void:
 	if stage == null:
@@ -124,8 +141,12 @@ func _process(delta: float) -> void:
 	if not _ready_to_run:
 		return
 	var dt: float = clampf(delta, 0.0, 0.1)
-	_update_drag()
+	_update_drag(dt)
 	playground.before_tick(dt)
+	var air_was_active: bool = air.active()
+	var air_position: Vector2 = air.tick(dt)
+	if air_was_active or air.active():
+		host.place_at(air_position)
 	_screen_clock += dt
 	if walker.active() and not host.preview and _screen_clock >= 0.5:
 		_screen_clock = 0.0
@@ -157,7 +178,7 @@ func _process(delta: float) -> void:
 	director.enabled = state.autonomy_enabled
 	director.walk_enabled = state.walk_enabled and state.motion_enabled
 	director.rest_enabled = state.rest_enabled and state.motion_enabled and state.place_mode == "off"
-	var blocked: bool = playground.active() or _press_active or ui.menu.visible or state.dozing or walker.active() or state.posture.transitioning() or not _pending_action.is_empty() or state.pet_weight > 0.1 or state.wave_weight > 0.1
+	var blocked: bool = playground.active() or air.active() or stage.cinematic_active() or not _quit_phase.is_empty() or _press_active or ui.menu.visible or state.dozing or walker.active() or state.posture.transitioning() or not _pending_action.is_empty() or state.pet_weight > 0.1 or state.wave_weight > 0.1
 	var place_request: String = places.tick(dt, state, {"blocked": blocked or host.preview, "can_place": not host.preview and host.is_grounded() and state.posture.mode == "standing"})
 	if place_request == "cozy":
 		blocked = playground.show_demo(true) or blocked
@@ -182,8 +203,18 @@ func _process(delta: float) -> void:
 	_gaze = _gaze.lerp(target, 1.0 - exp(-dt * 6.0))
 	state.curiosity = lerpf(state.curiosity, director.curiosity if state.motion_enabled and state.look_enabled else 0.0, 1.0 - exp(-dt * 5.0))
 	stage.edge_suspended = _press_active or ui.menu.visible or (playground.active() and playground.phase != "attached")
+	var context_action: String = "carry" if _dragged and not host.preview else air.pose_mode()
+	stage.set_context_action(context_action, _drag_velocity)
 	stage.animate(dt, state, _gaze, walker.sample())
 	playground.after_tick()
+	if _cinematic_mask_active and not stage.cinematic_active():
+		host.cinematic_mask(false)
+		_cinematic_mask_active = false
+	if _quit_phase == "returning" and not playground.active() and not air.active() and state.posture.mode == "standing":
+		_begin_outro()
+	elif _quit_phase == "outro" and stage.outro_complete():
+		_finalize_quit()
+		return
 	ui.shelf_active = playground.active()
 	ui.tick(dt, stage.head_pixel() + stage.position, stage.size)
 	_ui_clock += dt
@@ -262,7 +293,7 @@ func _hard_stop() -> void:
 	director.user_interaction()
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not _ready_to_run:
+	if not _ready_to_run or not _quit_phase.is_empty() or stage.cinematic_active():
 		return
 	if event is InputEventMouseButton:
 		var button: InputEventMouseButton = event as InputEventMouseButton
@@ -288,6 +319,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_press_cursor = host.cursor_global()
 				_press_window = get_window().position
 				_press_yaw = stage.yaw
+				_last_drag_cursor = _press_cursor
+				_drag_velocity = Vector2.ZERO
 				if button.double_click:
 					state.wave()
 					ui.say("Привет-привет!")
@@ -310,16 +343,24 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F: _on_action(141)
 			KEY_P: _switch_mode(not host.preview)
 
-func _update_drag() -> void:
+func _update_drag(delta: float) -> void:
 	if not _press_active or host.headless:
 		return
-	var movement: Vector2i = host.cursor_global() - _press_cursor
+	var cursor_now: Vector2i = host.cursor_global()
+	var movement: Vector2i = cursor_now - _press_cursor
+	var frame_move: Vector2 = Vector2(cursor_now - _last_drag_cursor)
+	_last_drag_cursor = cursor_now
+	var instant_velocity: Vector2 = frame_move / maxf(delta, 0.001)
+	_drag_velocity = _drag_velocity.lerp(instant_velocity, 1.0 - exp(-delta * 10.0))
 	if Vector2(movement).length() > 6.0:
 		if not _dragged:
-			# Carrying the avatar supersedes navigation entirely, no saved route resumes.
+			# Carrying supersedes navigation and releases the body into a hanging pose.
 			_hard_stop()
+			air.cancel(Vector2(host.window.position))
 			playground.begin_drag()
-		_dragged = true
+			state.dozing = false
+			state.posture.request_stand()
+			_dragged = true
 	if _dragged:
 		if host.preview:
 			stage.yaw = clampf(_press_yaw + float(movement.x) * 0.4, -180.0, 180.0)
@@ -332,10 +373,19 @@ func _update_drag() -> void:
 func _finish_press() -> void:
 	if not _press_active:
 		return
+	var was_dragged: bool = _dragged
 	_press_active = false
-	if _dragged:
-		host.finish_drag()
-		playground.finish_drag()
+	_dragged = false
+	if was_dragged:
+		var support_handled: bool = playground.finish_drag()
+		if not support_handled:
+			if host.preview:
+				host.finish_drag()
+			else:
+				state.dozing = false
+				state.posture.request_stand()
+				air.begin_fall(Vector2(host.window.position), Vector2(host.floor_position()), float(host.body_pixels))
+		_drag_velocity = Vector2.ZERO
 		_save_settings()
 	elif not _double_clicked:
 		places.manual_pause()
@@ -539,8 +589,52 @@ func _capture_after_settling() -> void:
 	var result: Error = image.save_png(path)
 	print("HOSHI_CAPTURE ", ProjectSettings.globalize_path(path), " result=", result)
 
+func _start_intro() -> void:
+	if stage == null or host.preview:
+		return
+	stage.start_portal_intro()
+	host.cinematic_mask(true)
+	_cinematic_mask_active = true
+
 func _quit() -> void:
+	if not _quit_phase.is_empty():
+		return
+	if _ready_to_run and not host.preview and not _test_mode and stage != null:
+		places.manual_pause(999.0)
+		_clear_intent()
+		_stop_walk()
+		state.dozing = false
+		if playground.active():
+			_quit_phase = "returning"
+			playground.return_home()
+		elif air.active():
+			_quit_phase = "returning"
+			air.begin_fall(Vector2(host.window.position), Vector2(host.floor_position()), float(host.body_pixels))
+		elif state.posture.mode != "standing":
+			_quit_phase = "returning"
+			state.posture.request_stand()
+		else:
+			_begin_outro()
+		return
+	_finalize_quit()
+
+func _begin_outro() -> void:
+	if _quit_phase == "outro":
+		return
+	_quit_phase = "outro"
+	state.dozing = false
+	state.posture.request_stand()
+	stage.yaw = 0.0
+	host.cinematic_mask(true)
+	_cinematic_mask_active = true
+	stage.start_portal_outro()
+	ui.say("До скорого!")
+
+func _finalize_quit() -> void:
 	playground.release_for_mode_change()
+	if _cinematic_mask_active:
+		host.cinematic_mask(false)
+		_cinematic_mask_active = false
 	_save_settings()
 	get_tree().quit()
 

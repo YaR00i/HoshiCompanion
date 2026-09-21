@@ -6,6 +6,8 @@ const Gait = preload("res://scripts/gait_driver.gd")
 const PostureDriver = preload("res://scripts/posture_driver.gd")
 const EdgePose = preload("res://scripts/edge_pose.gd")
 const EdgeLife = preload("res://scripts/edge_life.gd")
+const ContextPose = preload("res://scripts/context_pose.gd")
+const MagicDoor = preload("res://scripts/magic_door.gd")
 const Expressions = preload("res://scripts/expression_driver.gd")
 
 var view: SubViewport
@@ -18,7 +20,14 @@ var gait = Gait.new()
 var posture_driver = PostureDriver.new()
 var edge_pose = EdgePose.new()
 var edge_life = EdgeLife.new()
+var context_pose = ContextPose.new()
+var door
 var edge_suspended: bool = false
+var context_action: String = "idle"
+var context_velocity: Vector2 = Vector2.ZERO
+var _cinematic_mode: String = ""
+var _cinematic_age: float = 0.0
+var _cinematic_z: float = 0.0
 var model_data: Dictionary = {}
 var report: Dictionary = {}
 var model_height: float = 1.5
@@ -40,6 +49,9 @@ func _ready() -> void:
 	view.msaa_3d = Viewport.MSAA_2X
 	view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	add_child(view)
+	door = MagicDoor.new()
+	door.name = "MagicDoor"
+	view.add_child(door)
 	pivot = Node3D.new()
 	pivot.name = "AvatarPivot"
 	view.add_child(pivot)
@@ -72,8 +84,12 @@ func load_model(path: String) -> Dictionary:
 	posture_driver = PostureDriver.new()
 	edge_pose = EdgePose.new()
 	edge_life = EdgeLife.new()
+	context_pose = ContextPose.new()
 	edge_life.seed_random(42 if OS.get_cmdline_user_args().has("--test-mode") else int(Time.get_ticks_usec()))
 	expressions = Expressions.new()
+	_cinematic_mode = ""
+	_cinematic_age = 0.0
+	_cinematic_z = 0.0
 	if is_instance_valid(avatar):
 		pivot.remove_child(avatar)
 		avatar.queue_free()
@@ -112,9 +128,12 @@ func load_model(path: String) -> Dictionary:
 	var gait_report: Dictionary = gait.setup(rig, model_height)
 	var posture_report: Dictionary = posture_driver.setup(rig, gait, model_height)
 	edge_pose.setup(posture_driver)
+	var context_report: Dictionary = context_pose.setup(rig, model_height)
+	door.setup(model_height)
+	door.hide_door()
 	var face_report: Dictionary = expressions.setup(avatar, loaded["source"], loaded["state"])
 	is_loaded = true
-	report = {"posture": posture_report, "rig": rig_report, "locomotion": gait_report, "face": face_report, "mesh_count": _mesh_count, "height_m": model_height,
+	report = {"posture": posture_report, "context": context_report, "rig": rig_report, "locomotion": gait_report, "face": face_report, "mesh_count": _mesh_count, "height_m": model_height,
 		"status": "ready" if bool(face_report.get("blink_available", false)) else "partial",
 		"warnings": face_report.get("warnings", PackedStringArray())}
 	fit_camera()
@@ -143,8 +162,9 @@ func fit_camera() -> void:
 func animate(delta: float, state, gaze: Vector2, walk_frame: Dictionary = {}) -> void:
 	if not is_loaded:
 		return
+	_tick_cinematic(delta, state.time)
 	pivot.rotation.y = deg_to_rad(yaw)
-	pivot.position.x = travel_offset_px * meters_per_pixel()
+	pivot.position = Vector3(travel_offset_px * meters_per_pixel(), 0.0, _cinematic_z)
 	var life_frame: Dictionary = edge_life.tick(delta, state, edge_suspended)
 	rig.hair_enabled = state.hair_enabled
 	rig.tick(delta, state.time, gaze, state.wave_weight, state.pet_weight, state.sleep_weight, state.motion_enabled, state.curiosity, walk_frame)
@@ -154,7 +174,65 @@ func animate(delta: float, state, gaze: Vector2, walk_frame: Dictionary = {}) ->
 		edge_pose.apply(seated, state.time, state.wave_weight, state.motion_enabled and not state.dozing, life_frame)
 	else:
 		posture_driver.apply(seated, state.time, state.wave_weight, state.motion_enabled)
+	var active_context: String = "portal" if cinematic_active() else context_action
+	context_pose.tick(delta, active_context, context_velocity)
+	context_pose.apply(state.time)
 	expressions.apply(state.expression_weights())
+
+func set_context_action(value: String, velocity: Vector2 = Vector2.ZERO) -> void:
+	context_action = value
+	context_velocity = velocity
+
+func start_portal_intro() -> void:
+	if not is_loaded:
+		return
+	_cinematic_mode = "intro"
+	_cinematic_age = 0.0
+	_cinematic_z = -model_height * 0.30
+
+func start_portal_outro() -> void:
+	if not is_loaded:
+		_cinematic_mode = "outro_done"
+		return
+	_cinematic_mode = "outro"
+	_cinematic_age = 0.0
+	_cinematic_z = 0.0
+
+func cinematic_active() -> bool:
+	return _cinematic_mode in ["intro", "outro"]
+
+func outro_complete() -> bool:
+	return _cinematic_mode == "outro_done"
+
+func cancel_cinematic() -> void:
+	_cinematic_mode = ""
+	_cinematic_age = 0.0
+	_cinematic_z = 0.0
+	if door != null:
+		door.hide_door()
+
+func _tick_cinematic(delta: float, time_value: float) -> void:
+	if not cinematic_active():
+		if _cinematic_mode.is_empty():
+			_cinematic_z = 0.0
+		return
+	_cinematic_age += clampf(delta, 0.0, 0.1)
+	var duration: float = 2.15 if _cinematic_mode == "intro" else 2.05
+	var u: float = clampf(_cinematic_age / duration, 0.0, 1.0)
+	var visibility: float = smoothstep(0.0, 0.08, u) * (1.0 - smoothstep(0.90, 1.0, u))
+	var opened: float = smoothstep(0.08, 0.29, u) * (1.0 - smoothstep(0.73, 0.95, u))
+	if _cinematic_mode == "intro":
+		_cinematic_z = lerpf(-model_height * 0.30, 0.0, smoothstep(0.18, 0.73, u))
+	else:
+		_cinematic_z = lerpf(0.0, -model_height * 0.30, smoothstep(0.30, 0.82, u))
+	door.set_state(visibility, opened, time_value)
+	if u >= 1.0:
+		door.hide_door()
+		if _cinematic_mode == "intro":
+			_cinematic_mode = ""
+			_cinematic_z = 0.0
+		else:
+			_cinematic_mode = "outro_done"
 
 func meters_per_pixel() -> float:
 	return model_height / maxf(body_pixels, 1.0)

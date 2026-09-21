@@ -47,6 +47,7 @@ func show_demo(use_cozy: bool = false) -> bool:
 		_create_shelf()
 	shelf.mode = Window.MODE_WINDOWED
 	shelf.show()
+	app.host.raise_companion()
 	if not active():
 		saved_floor_position = app.host.floor_position()
 	app._clear_intent()
@@ -108,25 +109,34 @@ func before_tick(delta: float) -> void:
 		if not _shelf_usable():
 			return_home()
 		elif app.state.posture.mode == "standing" and not app.walker.active():
-			app.state.posture.kind = "edge"
-			app.state.posture.request_sit(false)
-			app.stage.yaw = 0.0
-			app.stage.travel_offset_px = 0.0
-			_from = Vector2(app.host.window.position)
-			_age = 0.0
-			phase = "boarding"
-	elif phase in ["boarding", "attached"]:
+			var planned_seat: Vector2 = app.stage.camera.unproject_position(app.stage.edge_pose.planned_anchor_world())
+			var planned: Dictionary = solve_placement(support_rect(), anchor_u, planned_seat, app.host.window.size, support_area())
+			if not bool(planned.get("ok", false)):
+				return_home()
+			else:
+				app.state.posture.kind = "edge"
+				app.stage.yaw = 0.0
+				app.stage.travel_offset_px = 0.0
+				_from = Vector2(app.host.window.position)
+				_age = 0.0
+				app.air.begin_jump(_from, Vector2(planned["position"]), float(app.host.body_pixels))
+				phase = "boarding"
+	elif phase == "boarding":
 		if not _shelf_usable():
 			return_home()
-		elif phase == "boarding":
-			_age += delta
-			if _age >= TRAVEL_TIME:
+		elif not app.air.active():
+			if app.state.posture.mode == "standing" and not app.state.posture.target_seated:
+				app.state.posture.request_sit(false)
+			elif app.state.posture.mode == "seated":
 				phase = "attached"
+				app.host.raise_companion()
+	elif phase == "attached":
+		if not _shelf_usable():
+			return_home()
 	elif phase == "returning":
-		_age += delta
-		app.host.place_at(_from.lerp(_return_goal, smoothstep(0.0, TRAVEL_TIME, _age)))
-		if _age >= TRAVEL_TIME:
-			app.state.posture.request_stand()
+		if not app.air.active():
+			if app.state.posture.mode != "standing":
+				app.state.posture.request_stand()
 			phase = "settling"
 	elif phase == "settling" and app.state.posture.mode == "standing":
 		_finish_return()
@@ -159,7 +169,8 @@ func _finish_return() -> void:
 
 func after_tick() -> void:
 	if phase in ["boarding", "attached"] and _shelf_usable():
-		var anchor: Vector2 = app.stage.camera.unproject_position(app.stage.edge_pose.anchor_world())
+		var anchor_world: Vector3 = app.stage.edge_pose.planned_anchor_world() if phase == "boarding" and not app.state.posture.target_seated else app.stage.edge_pose.anchor_world()
+		var anchor: Vector2 = app.stage.camera.unproject_position(anchor_world)
 		var area: Rect2i = support_area()
 		var placement: Dictionary = solve_placement(support_rect(), anchor_u, anchor, app.host.window.size, area)
 		if not bool(placement.get("ok", false)):
@@ -169,7 +180,10 @@ func after_tick() -> void:
 			return_home()
 		else:
 			var goal: Vector2 = placement["position"]
-			app.host.place_at(_from.lerp(goal, smoothstep(0.0, TRAVEL_TIME, _age)) if phase == "boarding" else goal)
+			if phase == "boarding" and app.air.active():
+				app.air.set_target(goal)
+			else:
+				app.host.place_at(goal)
 			last_support_error = (Vector2(app.host.window.position) + anchor).distance_to(placement["anchor"])
 	if is_instance_valid(shelf) and shelf.support_label != null:
 		shelf.support_label.text = label()
@@ -200,10 +214,11 @@ func return_home(walk_after: bool = false) -> void:
 	app._clear_intent()
 	app._stop_walk()
 	app.state.dozing = false
-	app.state.posture.keep_rest()
+	app.state.posture.request_stand()
 	_from = Vector2(app.host.window.position)
 	_return_goal = Vector2(app.host.floor_position())
 	_age = 0.0
+	app.air.begin_fall(_from, _return_goal, float(app.host.body_pixels))
 	phase = "returning"
 	app.director.user_interaction()
 
@@ -215,7 +230,7 @@ func begin_drag() -> void:
 		phase = "carried"
 	_walk_after = false
 
-func finish_drag() -> void:
+func finish_drag() -> bool:
 	if _shelf_usable():
 		var rect: Rect2i = support_rect()
 		var cursor: Vector2 = Vector2(app.host.cursor_global())
@@ -228,11 +243,14 @@ func finish_drag() -> void:
 			if phase == "carried" and app.state.posture.kind == "edge":
 				app.state.posture.request_sit(false)
 				phase = "attached"
+				app.host.raise_companion()
 			else:
 				show_demo()
-			return
+			return true
 	if phase == "carried":
 		return_home()
+		return true
+	return false
 
 func cancel_queued_walk() -> void:
 	_walk_after = false
@@ -287,7 +305,7 @@ func handle_action(action: int) -> bool:
 		return true
 	if action == 31:
 		_walk_after = false
-		if phase in ["selection_start", "selecting", "preparing", "boarding"]:
+		if phase in ["selection_start", "selecting", "auto_selection_start", "auto_selecting", "preparing", "boarding"]:
 			return_home()
 		return true
 	if action == 121:
