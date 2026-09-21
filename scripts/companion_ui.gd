@@ -22,6 +22,8 @@ var _posture_available: bool = false
 var autonomy_check: CheckButton
 var walk_check: CheckButton
 var activity_pick: OptionButton
+var place_pick: OptionButton
+var edge_pick: OptionButton
 var _walk_available: bool = false
 var menu: PopupMenu
 var bubble: PanelContainer
@@ -145,6 +147,7 @@ func _build_panel() -> void:
 			33: stand_button = button
 	box.add_child(_button("Выбрать окно · 4 секунды", 42))
 	box.add_child(_button("Полочка — попробовать", 40))
+	box.add_child(_button("Мой уютный уголок", 43))
 	var activity_row: HBoxContainer = HBoxContainer.new()
 	activity_row.add_child(_label("Активность", 12, MUTED))
 	activity_pick = OptionButton.new()
@@ -154,6 +157,24 @@ func _build_panel() -> void:
 	activity_pick.item_selected.connect(_on_activity_selected)
 	activity_row.add_child(activity_pick)
 	box.add_child(activity_row)
+	var place_row := HBoxContainer.new()
+	place_row.add_child(_label("Где отдыхать", 12, MUTED))
+	place_pick = OptionButton.new()
+	place_pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for title_value in ["Только вручную", "Свой уголок"]:
+		place_pick.add_item(title_value)
+	place_pick.item_selected.connect(func(index: int): action_requested.emit(210 + index))
+	place_row.add_child(place_pick)
+	box.add_child(place_row)
+	var edge_row := HBoxContainer.new()
+	edge_row.add_child(_label("На краю", 12, MUTED))
+	edge_pick = OptionButton.new()
+	edge_pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for title_value in ["Сама выбирает", "Спокойно", "Ножками", "Откинуться", "Посмотреть вниз"]:
+		edge_pick.add_item(title_value)
+	edge_pick.item_selected.connect(func(index: int): action_requested.emit(300 + index))
+	edge_row.add_child(edge_pick)
+	box.add_child(edge_row)
 	autonomy_check = _check("Самостоятельность", 126)
 	rest_check = _check("Самостоятельный отдых", 127)
 	walk_check = _check("Самостоятельные прогулки", 125)
@@ -259,6 +280,8 @@ func refresh(state, status_override: String = "", walking: bool = false) -> void
 	autonomy_check.set_pressed_no_signal(state.autonomy_enabled)
 	walk_check.set_pressed_no_signal(state.walk_enabled)
 	activity_pick.select(["quiet", "normal", "playful"].find(state.activity))
+	place_pick.select(["off", "cozy"].find(state.place_mode))
+	edge_pick.select(["auto", "calm", "swing", "lean", "peek"].find(state.edge_activity))
 	look_check.set_pressed_no_signal(state.look_enabled)
 	motion_check.set_pressed_no_signal(state.motion_enabled)
 	hair_check.set_pressed_no_signal(state.hair_enabled)
@@ -293,6 +316,7 @@ func _build_menu() -> void:
 	menu.add_item("Остановиться", 31)
 	menu.add_item("Выбрать окно под курсором · 4 с", 42)
 	menu.add_item("Полочка — попробовать", 40)
+	menu.add_item("Мой уютный уголок", 43)
 	menu.add_item("Вернуться на пол", 41)
 	menu.add_item("Сесть отдохнуть", 32)
 	menu.add_item("Встать", 33)
@@ -302,6 +326,8 @@ func _build_menu() -> void:
 	_submenu("Настроение", "MoodMenu", [["Спокойная", 20], ["Радостная", 21], ["Расслабленная", 22], ["Удивлённая", 23], ["Грустная", 24]])
 	menu.add_separator()
 	_submenu("Активность", "ActivityMenu", [["Тихая · без прогулок", 200], ["Обычная", 201], ["Игривая", 202]])
+	_submenu("Где отдыхать", "PlaceMenu", [["Только вручную", 210], ["Свой уголок", 211]])
+	_submenu("Занятие на краю", "EdgeMenu", [["Сама выбирает", 300], ["Спокойно", 301], ["Болтать ножками", 302], ["Откинуться назад", 303], ["Посмотреть вниз", 304]])
 	menu.add_check_item("Самостоятельность", 126)
 	menu.add_check_item("Самостоятельные прогулки", 125)
 	menu.add_check_item("Самостоятельный отдых", 127)

@@ -1,6 +1,8 @@
 extends RefCounted
 ## Explicit opt-in playground. Owns only its own Window; no OS window discovery.
 const Shelf = preload("res://scripts/shelf_window.gd")
+const Cozy = preload("res://scripts/cozy_window.gd")
+var cozy_mode: bool = false
 const External = preload("res://scripts/external_window.gd")
 var external = External.new()
 var external_mode: bool = false
@@ -25,8 +27,8 @@ func setup(companion) -> void:
 func active() -> bool:
 	return phase != "off"
 
-func show_demo() -> bool:
-	if external_mode:
+func show_demo(use_cozy: bool = false) -> bool:
+	if external_mode or (is_instance_valid(shelf) and cozy_mode != use_cozy):
 		release_for_mode_change()
 	if app.host.headless or not app.stage.is_loaded or not app.stage.edge_pose.available:
 		return false
@@ -37,6 +39,7 @@ func show_demo() -> bool:
 		return false
 	if phase in ["preparing", "boarding", "attached"] and _shelf_usable():
 		return true
+	cozy_mode = use_cozy
 	if not is_instance_valid(shelf):
 		_create_shelf()
 	shelf.mode = Window.MODE_WINDOWED
@@ -52,18 +55,22 @@ func show_demo() -> bool:
 	return true
 
 func _create_shelf() -> void:
-	shelf = Shelf.new()
+	shelf = Cozy.new() if cozy_mode else Shelf.new()
 	shelf.name = "HoshiShelf"
 	shelf.visible = false
-	shelf.size = Vector2i(600, 285)
+	shelf.size = Vector2i(460, 170) if cozy_mode else Vector2i(600, 285)
 	shelf.theme = app.ui.theme
 	app.add_child(shelf)
 	shelf.close_requested.connect(close_shelf)
-	shelf.sit_requested.connect(show_demo)
+	shelf.sit_requested.connect(show_demo.bind(cozy_mode))
+	if cozy_mode:
+		shelf.activity_requested.connect(app._on_action)
 	shelf.leave_requested.connect(return_home)
 	shelf.preview_requested.connect(app._switch_mode.bind(true))
 	var area: Rect2i = app.host.walking_area()
 	shelf.position = area.position + Vector2i((area.size.x - shelf.size.x) / 2, int(area.size.y * 0.54))
+	if cozy_mode:
+		shelf.position = Vector2i(clampi(app.host.window.position.x - 180, area.position.x + 12, maxi(area.position.x + 12, area.end.x - shelf.size.x - 48)), area.end.y - maxi(250, int(app.host.body_pixels * 0.55 + 76.0)))
 
 func before_tick(delta: float) -> void:
 	if phase == "selection_start":
@@ -229,6 +236,9 @@ func close_shelf() -> void:
 		shelf = null
 
 func handle_action(action: int) -> bool:
+	if action == 43:
+		show_demo(true)
+		return true
 	if action == 42:
 		select_window()
 		return true
@@ -262,6 +272,10 @@ func handle_action(action: int) -> bool:
 	return false
 
 func label() -> String:
+	if phase == "attached" and not app.state.dozing:
+		var activity: String = app.stage.edge_life.label()
+		if not activity.is_empty():
+			return activity
 	if phase in ["selection_start", "selecting"]:
 		return "Наведи на окно: %d с · ПКМ → На пол — отмена" % maxi(0, int(ceil(external.seconds_left)))
 	if external_mode and phase == "attached":

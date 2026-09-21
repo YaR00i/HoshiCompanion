@@ -372,6 +372,16 @@ func _on_action(action: int) -> void:
 		return
 	if not _ready_to_run:
 		return
+	if action in [210, 211]:
+		state.place_mode = ["off", "cozy"][action - 210]
+		ui.refresh(state, playground.label(), walker.active())
+		_save_settings()
+		return
+	if action >= 300 and action <= 304:
+		state.edge_activity = ["auto", "calm", "swing", "lean", "peek"][action - 300]
+		ui.refresh(state, playground.label(), walker.active())
+		_save_settings()
+		return
 	if playground.handle_action(action):
 		ui.shelf_active = playground.active()
 		ui.refresh(state, playground.label(), walker.active())
@@ -467,6 +477,10 @@ func _read_settings() -> void:
 	state.rest_enabled = bool(_settings.get_value("behavior", "rest", true))
 	state.walk_enabled = bool(_settings.get_value("behavior", "walk", true))
 	state.autonomy_enabled = bool(_settings.get_value("behavior", "autonomy", true))
+	var place_mode: String = str(_settings.get_value("behavior", "place_mode", "off"))
+	state.place_mode = place_mode if place_mode in ["off", "cozy"] else "off"
+	var edge_activity: String = str(_settings.get_value("behavior", "edge_activity", "auto"))
+	state.edge_activity = edge_activity if edge_activity in ["auto", "calm", "swing", "lean", "peek"] else "auto"
 	var activity: String = str(_settings.get_value("behavior", "activity", "normal"))
 	state.activity = activity if activity in ["quiet", "normal", "playful"] else "normal"
 	frame_rate = 60 if int(_settings.get_value("render", "fps", 30)) == 60 else 30
@@ -486,6 +500,8 @@ func _save_settings() -> void:
 	_settings.set_value("behavior", "rest", state.rest_enabled)
 	_settings.set_value("behavior", "walk", state.walk_enabled)
 	_settings.set_value("behavior", "autonomy", state.autonomy_enabled)
+	_settings.set_value("behavior", "place_mode", state.place_mode)
+	_settings.set_value("behavior", "edge_activity", state.edge_activity)
 	_settings.set_value("behavior", "activity", state.activity)
 	_settings.set_value("behavior", "bubbles", ui.bubbles_enabled)
 	_settings.set_value("render", "fps", frame_rate)
