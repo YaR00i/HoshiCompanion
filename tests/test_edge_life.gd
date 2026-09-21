@@ -95,6 +95,7 @@ func _run() -> void:
 	for i in range(40): frame = app.stage.edge_life.tick(0.1, app.state, true)
 	check(float(frame["lean"]) < before * 0.01, "pickup/menu suspension fades posture extras")
 	app.stage.edge_suspended = false
+	app.state.autonomy_enabled = false
 	app.state.posture.request_stand()
 	frames(180)
 	var off: bool = true
