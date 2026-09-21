@@ -24,6 +24,10 @@ def placement(rect, fraction, seat, size, area):
 
 def covered(g, hwnd, strip, fixture_pid=0):
     """Conservative rectangular edge occlusion; bounded Z-order traversal."""
+    if fixture_pid:
+        # Isolated tests own the only candidate. Ignore Tk wrapper HWNDs from the
+        # same fixture process rather than inspecting unrelated desktop windows.
+        return False
     get_window = g.u.GetWindow
     get_window.argtypes, get_window.restype = [W.HWND, W.UINT], W.HWND
     seen = set()
