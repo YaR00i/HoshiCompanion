@@ -19,7 +19,8 @@ root = tk.Tk()
 root.title('Hoshi - isolated external window test')
 vx, vy = -int(sys.argv[3]), -int(sys.argv[4])
 x, y = int(sys.argv[1]) + vx, int(sys.argv[2]) + vy
-root.geometry(f'640x280{x:+d}{y:+d}')
+window_height = {'value': int(sys.argv[5]) if len(sys.argv) > 5 else 280}
+root.geometry(f"640x{window_height['value']}{x:+d}{y:+d}")
 root.configure(bg='#eee5f1')
 tk.Label(root, text='HOSHI / EXTERNAL WINDOW TEST', bg='#eee5f1', font=('Segoe UI', 18)).pack(pady=45)
 tk.Label(root, text='Separate process. No personal content.', bg='#eee5f1', font=('Segoe UI', 12)).pack()
@@ -41,7 +42,8 @@ def tick():
         op = message.get('op')
         if op == 'move':
             nx, ny = int(message['x']) + vx, int(message['y']) + vy
-            root.geometry(f"{int(message['w'])}x280{nx:+d}{ny:+d}")
+            window_height['value'] = int(message.get('h', window_height['value']))
+            root.geometry(f"{int(message['w'])}x{window_height['value']}{nx:+d}{ny:+d}")
         elif op == 'minimize':
             root.iconify()
         elif op == 'restore':
