@@ -14,9 +14,11 @@ var _target: int = 0
 var _pending: bool = false
 var _age: float = 0.0
 var _poll: float = 0.0
+var _choice: Dictionary = {}
 
-func begin(owner_pid: int, explicit_handle: int = 0) -> bool:
+func begin(owner_pid: int, explicit_handle: int = 0, choice: Dictionary = {}) -> bool:
 	close()
+	_choice = choice.duplicate(true)
 	if OS.get_name() != "Windows":
 		_fail("platform")
 		return false
@@ -30,6 +32,8 @@ func begin(owner_pid: int, explicit_handle: int = 0) -> bool:
 	var own: int = DisplayServer.window_get_native_handle(DisplayServer.WINDOW_HANDLE)
 	var position: Vector2i = DisplayServer.window_get_position()
 	var args: PackedStringArray = ["-u", helper, str(owner_pid), str(own), str(position.x), str(position.y)]
+	if not _choice.is_empty():
+		args.append("--allow-choice")
 	var process: Dictionary = OS.execute_with_pipe(python_path, args, false)
 	if process.is_empty():
 		_fail("python")
@@ -96,13 +100,19 @@ func _receive(line: String) -> void:
 	if bool(data.get("ready", false)) and status == "starting":
 		if OS.get_cmdline_user_args().has("--test-mode"):
 			print("HOST_COORDINATE_SHIFT ", data.get("coordinate_shift", []), " current_host=", DisplayServer.window_get_position())
-		if _target > 0:
+		if not _choice.is_empty():
+			status = "probing"
+			_choice["op"] = "choose"
+			_send(_choice)
+		elif _target > 0:
 			status = "probing"
 			_send({"op": "bind", "hwnd": str(_target)})
 		else:
 			status = "selecting"
 		return
 	if not bool(data.get("ok", false)):
+		if OS.get_cmdline_user_args().has("--test-mode") and data.has("stats"):
+			print("WINDOW_CHOICE_FAIL ", JSON.stringify(data))
 		_fail(str(data.get("reason", "unavailable")))
 		return
 	if data.get("space", "") != "godot_virtual_pixels":
@@ -141,6 +151,7 @@ func close() -> void:
 	_buffer = ""
 	_pending = false
 	snapshot = {}
+	_choice = {}
 	status = "off"
 
 func current_rect() -> Rect2i:

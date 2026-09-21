@@ -44,11 +44,14 @@ func _run() -> void:
 	check(app.playground.external.process_id == -1, "no geometry process on normal startup")
 	check(app.ui.menu.get_item_index(42) >= 0, "manual window selection is exposed")
 	await check_selection_controls()
-	var area: Rect2i = app.host.usable_area(DisplayServer.get_primary_screen())
+	app._switch_mode(false)
+	await process_frame
+	var area: Rect2i = app.host.walking_area()
+	var origin_area: Rect2i = app.host.usable_area(DisplayServer.get_primary_screen())
 	var x: int = area.position.x + int(area.size.x * 0.25)
 	var y: int = area.position.y + int(area.size.y * 0.48)
 	var python_path: String = FileAccess.get_file_as_string("res://python_path.txt").strip_edges()
-	fixture = OS.execute_with_pipe(python_path, PackedStringArray(["-u", ProjectSettings.globalize_path("res://tests/external_window_fixture.py"), str(x), str(y), str(area.position.x), str(area.position.y)]), false)
+	fixture = OS.execute_with_pipe(python_path, PackedStringArray(["-u", ProjectSettings.globalize_path("res://tests/external_window_fixture.py"), str(x), str(y), str(origin_area.position.x), str(origin_area.position.y)]), false)
 	check(not fixture.is_empty(), "create separate-process test fixture")
 	if fixture.is_empty():
 		await finish()
@@ -59,6 +62,13 @@ func _run() -> void:
 	if not ready:
 		await finish()
 		return
+	var fixture_pid: int = int(fixture.get("pid", -1))
+	check(app.playground.auto_choose_window(fixture_pid), "automatic support selection starts without reading window titles")
+	check(await until(func(): return app.playground.phase == "attached" and app.state.posture.mode == "seated"), "automatic chooser docks on isolated fixture")
+	check(await until(func(): return app.playground.last_support_error < 1.0, 1.0), "automatic choice keeps exact support contact")
+	check(app.playground.external_mode, "automatic choice owns only isolated external support")
+	app._on_action(41)
+	check(await until(func(): return not app.playground.active()), "automatic support can return to floor")
 	check(app.playground.select_window(handle), "explicit test-window selection starts")
 	var docked: bool = await until(func(): return app.playground.phase == "attached" and app.state.posture.mode == "seated")
 	check(docked, "native external window docks and seats")

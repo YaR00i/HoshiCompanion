@@ -161,7 +161,7 @@ func _build_panel() -> void:
 	place_row.add_child(_label("Где отдыхать", 12, MUTED))
 	place_pick = OptionButton.new()
 	place_pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	for title_value in ["Только вручную", "Свой уголок"]:
+	for title_value in ["Только вручную", "Свой уголок", "Окна → уголок"]:
 		place_pick.add_item(title_value)
 	place_pick.item_selected.connect(func(index: int): action_requested.emit(210 + index))
 	place_row.add_child(place_pick)
@@ -280,7 +280,7 @@ func refresh(state, status_override: String = "", walking: bool = false) -> void
 	autonomy_check.set_pressed_no_signal(state.autonomy_enabled)
 	walk_check.set_pressed_no_signal(state.walk_enabled)
 	activity_pick.select(["quiet", "normal", "playful"].find(state.activity))
-	place_pick.select(["off", "cozy"].find(state.place_mode))
+	place_pick.select(["off", "cozy", "smart"].find(state.place_mode))
 	edge_pick.select(["auto", "calm", "swing", "lean", "peek"].find(state.edge_activity))
 	look_check.set_pressed_no_signal(state.look_enabled)
 	motion_check.set_pressed_no_signal(state.motion_enabled)
@@ -326,7 +326,7 @@ func _build_menu() -> void:
 	_submenu("Настроение", "MoodMenu", [["Спокойная", 20], ["Радостная", 21], ["Расслабленная", 22], ["Удивлённая", 23], ["Грустная", 24]])
 	menu.add_separator()
 	_submenu("Активность", "ActivityMenu", [["Тихая · без прогулок", 200], ["Обычная", 201], ["Игривая", 202]])
-	_submenu("Где отдыхать", "PlaceMenu", [["Только вручную", 210], ["Свой уголок", 211]])
+	_submenu("Где отдыхать", "PlaceMenu", [["Только вручную", 210], ["Свой уголок", 211], ["Окна → уголок", 212]])
 	_submenu("Занятие на краю", "EdgeMenu", [["Сама выбирает", 300], ["Спокойно", 301], ["Болтать ножками", 302], ["Откинуться назад", 303], ["Посмотреть вниз", 304]])
 	menu.add_check_item("Самостоятельность", 126)
 	menu.add_check_item("Самостоятельные прогулки", 125)

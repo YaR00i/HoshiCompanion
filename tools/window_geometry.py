@@ -9,6 +9,7 @@ import json
 import queue
 import sys
 import threading
+from window_choice import choose
 
 
 def winapi(dll, name, result, *args):
@@ -184,6 +185,8 @@ def main() -> int:
                 result = geometry.pick()
             elif op == 'bind':
                 result = geometry.bind(int(request['hwnd']))
+            elif op == 'choose' and '--allow-choice' in sys.argv:
+                result = choose(geometry, request)
             elif op == 'probe':
                 result = geometry.probe()
             else:

@@ -6,6 +6,7 @@ const Stage = preload("res://scripts/avatar_stage.gd")
 const UI = preload("res://scripts/companion_ui.gd")
 const Locomotion = preload("res://scripts/locomotion.gd")
 const Director = preload("res://scripts/behavior_director.gd")
+const PlaceDirector = preload("res://scripts/place_director.gd")
 const Playground = preload("res://scripts/shelf_playground.gd")
 const SETTINGS_PATH: String = "user://companion.cfg"
 const DEFAULT_AVATAR: String = "res://assets/Hoshi_v1.vrm"
@@ -14,6 +15,7 @@ var host = Host.new()
 var state = State.new()
 var walker = Locomotion.new()
 var director = Director.new()
+var places = PlaceDirector.new()
 var playground = Playground.new()
 var stage
 var ui
@@ -46,6 +48,7 @@ func _ready() -> void:
 	_test_mode = OS.get_cmdline_user_args().has("--test-mode")
 	_read_settings()
 	director.set_activity(state.activity)
+	places.change_mode(state.place_mode)
 	Engine.max_fps = frame_rate
 	background = ColorRect.new()
 	background.color = Color("f3edf4")
@@ -153,8 +156,13 @@ func _process(delta: float) -> void:
 	cursor_gaze = cursor_gaze.clamp(Vector2(-1.0, -1.0), Vector2.ONE)
 	director.enabled = state.autonomy_enabled
 	director.walk_enabled = state.walk_enabled and state.motion_enabled
-	director.rest_enabled = state.rest_enabled and state.motion_enabled
+	director.rest_enabled = state.rest_enabled and state.motion_enabled and state.place_mode == "off"
 	var blocked: bool = playground.active() or _press_active or ui.menu.visible or state.dozing or walker.active() or state.posture.transitioning() or not _pending_action.is_empty() or state.pet_weight > 0.1 or state.wave_weight > 0.1
+	var place_request: String = places.tick(dt, state, {"blocked": blocked or host.preview, "can_place": not host.preview and host.is_grounded() and state.posture.mode == "standing"})
+	if place_request == "cozy":
+		blocked = playground.show_demo(true) or blocked
+	elif place_request == "smart":
+		blocked = playground.auto_choose_window() or blocked
 	var action: String = director.tick(dt, {"blocked": blocked, "cursor_gaze": cursor_gaze,
 		"cursor_near": distance < stage.body_pixels * 1.8,
 		"can_walk": not host.preview and host.is_grounded() and stage.gait.available and state.posture.mode == "standing",
@@ -330,6 +338,7 @@ func _finish_press() -> void:
 		playground.finish_drag()
 		_save_settings()
 	elif not _double_clicked:
+		places.manual_pause()
 		_clear_intent()
 		playground.cancel_queued_walk()
 		state.posture.keep_rest()
@@ -349,6 +358,7 @@ func _zoom(direction: int) -> void:
 	_save_settings()
 
 func _open_menu() -> void:
+	places.manual_pause()
 	playground.cancel_queued_walk()
 	_clear_intent()
 	state.posture.keep_rest()
@@ -372,8 +382,11 @@ func _on_action(action: int) -> void:
 		return
 	if not _ready_to_run:
 		return
-	if action in [210, 211]:
-		state.place_mode = ["off", "cozy"][action - 210]
+	if action in [10, 11, 12, 30, 31, 32, 33, 40, 41, 42, 43, 100, 101, 110, 111, 112, 140, 141]:
+		places.manual_pause()
+	if action in [210, 211, 212]:
+		state.place_mode = ["off", "cozy", "smart"][action - 210]
+		places.change_mode(state.place_mode)
 		ui.refresh(state, playground.label(), walker.active())
 		_save_settings()
 		return
@@ -478,7 +491,7 @@ func _read_settings() -> void:
 	state.walk_enabled = bool(_settings.get_value("behavior", "walk", true))
 	state.autonomy_enabled = bool(_settings.get_value("behavior", "autonomy", true))
 	var place_mode: String = str(_settings.get_value("behavior", "place_mode", "off"))
-	state.place_mode = place_mode if place_mode in ["off", "cozy"] else "off"
+	state.place_mode = place_mode if place_mode in ["off", "cozy", "smart"] else "off"
 	var edge_activity: String = str(_settings.get_value("behavior", "edge_activity", "auto"))
 	state.edge_activity = edge_activity if edge_activity in ["auto", "calm", "swing", "lean", "peek"] else "auto"
 	var activity: String = str(_settings.get_value("behavior", "activity", "normal"))

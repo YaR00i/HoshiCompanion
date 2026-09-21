@@ -9,6 +9,8 @@ var external_mode: bool = false
 var _countdown_number: int = -1
 var _start_handle: int = 0
 var _start_wait: float = 0.0
+var _choice_request: Dictionary = {}
+var _auto_choice: bool = false
 var app
 var shelf
 var phase: String = "off"
@@ -73,17 +75,22 @@ func _create_shelf() -> void:
 		shelf.position = Vector2i(clampi(app.host.window.position.x - 180, area.position.x + 12, maxi(area.position.x + 12, area.end.x - shelf.size.x - 48)), area.end.y - maxi(250, int(app.host.body_pixels * 0.55 + 76.0)))
 
 func before_tick(delta: float) -> void:
-	if phase == "selection_start":
+	if phase in ["selection_start", "auto_selection_start"]:
 		_start_wait -= delta
 		if _start_wait <= 0.0:
-			if external.begin(OS.get_process_id(), _start_handle):
-				phase = "selecting"
+			if external.begin(OS.get_process_id(), _start_handle, _choice_request):
+				phase = "auto_selecting" if _auto_choice else "selecting"
+			elif _auto_choice:
+				_fallback_cozy()
 			else:
 				app.ui.say(external.message())
 				return_home()
 	if external_mode:
 		external.tick(delta)
 		if external.status == "error" and phase not in ["returning", "settling", "off"]:
+			if _auto_choice:
+				_fallback_cozy()
+				return
 			app.ui.say(external.message())
 			return_home()
 	if phase == "selecting" and external.status == "selecting":
@@ -91,8 +98,10 @@ func before_tick(delta: float) -> void:
 		if seconds != _countdown_number:
 			_countdown_number = seconds
 			app.ui.say("Наведи на окно · %d" % seconds)
-	if phase == "selecting" and external.status == "following":
+	if phase in ["selecting", "auto_selecting"] and external.status == "following":
 		anchor_u = float(external.snapshot.get("fraction", 0.60))
+		_choice_request = {}
+		_auto_choice = false
 		phase = "preparing"
 	if phase == "preparing":
 		if not _shelf_usable():
@@ -120,6 +129,17 @@ func before_tick(delta: float) -> void:
 			phase = "settling"
 	elif phase == "settling" and app.state.posture.mode == "standing":
 		_finish_return()
+
+func _fallback_cozy() -> void:
+	if app._test_mode:
+		print("AUTO_FALLBACK reason=", external.reason, " status=", external.status)
+	external.close()
+	external_mode = false
+	_choice_request = {}
+	_auto_choice = false
+	phase = "off"
+	app.ui.say("Не нашла свободный край — посижу здесь")
+	show_demo(true)
 
 func _finish_return() -> void:
 	external.close()
@@ -170,6 +190,8 @@ func _shelf_usable() -> bool:
 	return is_instance_valid(shelf) and not shelf.is_queued_for_deletion() and shelf.visible and shelf.mode == Window.MODE_WINDOWED
 
 func return_home(walk_after: bool = false) -> void:
+	_choice_request = {}
+	_auto_choice = false
 	_walk_after = walk_after
 	if not active() or phase in ["returning", "settling"]:
 		return
@@ -185,7 +207,7 @@ func return_home(walk_after: bool = false) -> void:
 	app.director.user_interaction()
 
 func begin_drag() -> void:
-	if phase in ["selection_start", "selecting"]:
+	if phase in ["selection_start", "selecting", "auto_selection_start", "auto_selecting"]:
 		release_for_mode_change()
 		return
 	if active():
@@ -215,6 +237,8 @@ func cancel_queued_walk() -> void:
 	_walk_after = false
 
 func release_for_mode_change() -> void:
+	_choice_request = {}
+	_auto_choice = false
 	external.close()
 	external_mode = false
 	if active():
@@ -229,6 +253,7 @@ func release_for_mode_change() -> void:
 		shelf = null
 
 func close_shelf() -> void:
+	app.places.manual_pause(180.0)
 	return_home()
 	if is_instance_valid(shelf):
 		shelf.hide()
@@ -278,6 +303,8 @@ func label() -> String:
 			return activity
 	if phase in ["selection_start", "selecting"]:
 		return "Наведи на окно: %d с · ПКМ → На пол — отмена" % maxi(0, int(ceil(external.seconds_left)))
+	if phase in ["auto_selection_start", "auto_selecting"]:
+		return "Ищет себе уютный край"
 	if external_mode and phase == "attached":
 		return "Дремлет на выбранном окне" if app.state.dozing else "Сидит на выбранном окне"
 	match phase:
@@ -303,6 +330,8 @@ func select_window(explicit_handle: int = 0) -> bool:
 	app.state.dozing = false
 	app.state.posture.request_stand()
 	_walk_after = false
+	_choice_request = {}
+	_auto_choice = false
 	external_mode = true
 	_countdown_number = -1
 	_start_handle = explicit_handle
@@ -310,6 +339,38 @@ func select_window(explicit_handle: int = 0) -> bool:
 	phase = "selection_start"
 	app.ui.say("Наведи на нужное окно · 4")
 	app.ui._bubble_left = 5.0
+	return true
+
+func auto_choose_window(fixture_pid: int = 0) -> bool:
+	if app.host.headless or not app.stage.edge_pose.available:
+		return false
+	release_for_mode_change()
+	if app.host.preview:
+		app._switch_mode(false)
+	if app.host.preview:
+		return false
+	saved_floor_position = app.host.floor_position()
+	app._clear_intent()
+	app._stop_walk()
+	app.state.dozing = false
+	app.state.posture.request_stand()
+	_walk_after = false
+	external_mode = true
+	_auto_choice = true
+	_start_handle = 0
+	_start_wait = 0.05
+	var seat: Vector2 = app.stage.camera.unproject_position(app.stage.edge_pose.planned_anchor_world())
+	var area: Rect2i = app.host.walking_area()
+	_choice_request = {
+		"seat": [seat.x, seat.y],
+		"size": [app.host.window.size.x, app.host.window.size.y],
+		"area": [area.position.x, area.position.y, area.size.x, area.size.y],
+		"origin": [app.host.window.position.x, app.host.window.position.y]
+	}
+	if fixture_pid > 0:
+		_choice_request["fixture_pid"] = fixture_pid
+	phase = "auto_selection_start"
+	app.ui.say("Ищу уютный край…")
 	return true
 
 func support_rect() -> Rect2i:

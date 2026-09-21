@@ -12,7 +12,7 @@ import tkinter as tk
 u = C.WinDLL('user32')
 u.SetThreadDpiAwarenessContext.argtypes = [W.HANDLE]
 u.SetThreadDpiAwarenessContext.restype = W.HANDLE
-u.SetThreadDpiAwarenessContext(C.c_void_p(-4))
+u.SetThreadDpiAwarenessContext(C.c_void_p(-2))
 u.GetAncestor.argtypes = [W.HWND, W.UINT]
 u.GetAncestor.restype = W.HWND
 root = tk.Tk()

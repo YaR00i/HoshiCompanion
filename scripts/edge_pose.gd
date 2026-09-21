@@ -63,3 +63,12 @@ func apply(amount: float, time: float, wave: float, motion: bool, life: Dictiona
 
 func anchor_world() -> Vector3:
 	return driver.skeleton.global_transform * seat_point
+
+func planned_anchor_world() -> Vector3:
+	if not available:
+		return Vector3.ZERO
+	var hip: Vector3 = driver.hips_rest
+	hip.y = driver.ground_y + driver.height_m * 0.42
+	hip.z -= driver.height_m * 0.06
+	var planned_seat: Vector3 = hip - Vector3(0.0, driver.height_m * driver.seat_height_ratio, 0.0)
+	return driver.skeleton.global_transform * planned_seat
