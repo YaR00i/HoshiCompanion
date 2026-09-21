@@ -1,0 +1,17 @@
+.godot/
+.workspace/
+logs/
+build/
+__pycache__/
+*.pyc
+*.log
+*.tmp
+
+# Machine-local launch configuration
+godot_path.txt
+python_path.txt
+README_LOCAL_RU.md
+
+# The development avatar is private/local and must never be committed.
+assets/*.vrm
+docs/MODEL_METADATA.json

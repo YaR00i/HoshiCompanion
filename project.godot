@@ -1,0 +1,35 @@
+; Hoshi Companion 3D — separate prototype, does not modify CozyPet/HoshiPet.
+config_version=5
+
+[application]
+config/name="Hoshi Companion 3D"
+config/version="0.5.1"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.5", "GL Compatibility")
+config/icon="res://assets/icon.svg"
+config/use_custom_user_dir=true
+config/custom_user_dir_name="HoshiCompanion3D"
+
+[display]
+window/size/viewport_width=900
+window/size/viewport_height=620
+window/size/window_width_override=900
+window/size/window_height_override=620
+window/size/resizable=false
+window/size/transparent=true
+window/per_pixel_transparency/allowed=true
+window/subwindows/embed_subwindows=false
+window/dpi/allow_hidpi=true
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/default_filters/use_nearest_mipmap_filter=false
+environment/defaults/default_clear_color=Color(0, 0, 0, 0)
+renderer/rendering_method.web="gl_compatibility"
+
+[audio]
+driver/enable_input=false
+
+[debug]
+gdscript/warnings/untyped_declaration=0

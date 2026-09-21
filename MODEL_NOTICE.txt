@@ -1,0 +1,14 @@
+# Avatar/model notice
+
+This public repository contains source code only. It does NOT contain the Hoshi
+VRM avatar, its textures, or any other user-supplied character asset.
+
+For local development, place a compatible model at:
+  assets/Hoshi_v1.vrm
+
+The MIT license in LICENSE.txt applies to the source code in this repository.
+It does not grant rights to any VRM model a user adds locally. Every local model
+keeps its own embedded metadata, attribution and usage restrictions.
+
+Do not commit or redistribute a local avatar through this repository unless you
+independently have permission to do so.

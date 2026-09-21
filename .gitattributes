@@ -1,0 +1,10 @@
+*.gd text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.godot text eol=lf
+*.tscn text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.vrm binary
+*.png binary
