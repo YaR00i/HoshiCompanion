@@ -15,3 +15,4 @@ README_LOCAL_RU.md
 # The development avatar is private/local and must never be committed.
 assets/*.vrm
 docs/MODEL_METADATA.json
+docs/history/archive_0.1.1/
