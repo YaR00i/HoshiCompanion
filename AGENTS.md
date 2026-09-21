@@ -23,9 +23,10 @@
 - locomotion.gd + gait_driver.gd own horizontal routes and lower-body walking IK.
 - posture_controller.gd + posture_driver.gd own floor sit/stand transitions.
 - edge_pose.gd + edge_life.gd own seated-on-edge pose and small activities.
-- shelf_playground.gd owns support lifecycle for the app shelf and manual selected window.
+- shelf_playground.gd owns app supports and manual/automatic geometry-only external supports.
 - desktop_host.gd is the only owner of native companion-window positioning.
-- tools/window_geometry.py is opt-in and read-only: one selected HWND, geometry/state only.
+- tools/window_geometry.py is read-only: manual mode probes one selected HWND.
+- Smart-rest mode may perform one bounded geometry-only top-level candidate search.
 
 ## Invariants
 - Keep the current development model local at assets/Hoshi_v1.vrm; never add it to Git.
@@ -35,3 +36,15 @@
 - Closing/minimizing an active support returns the companion to a safe floor state.
 - Manual external-window selection must not read titles, pixels, page content, microphone or network data.
 - Current full regression suite is calibrated to the local development Hoshi model.
+
+## 0.6 living places
+- Read docs/LIVING_06.md before changing autonomous support selection.
+- place_director.gd requests rare rests; it must never enumerate or inspect windows itself.
+- place_mode values: off / cozy / smart. Manual actions always override autonomous rest.
+- Smart search is one-shot, current-monitor-only, capped at 256 windows and ~0.45s.
+- window_choice.py may use geometry/state/Z-order only; never add titles, text or pixels.
+- No suitable external edge must fall back to the app-owned cozy window.
+- Closing the cozy window manually pauses autonomous place requests for 180 seconds.
+- Existing manual four-second window picker remains independent and must keep working.
+- dev.py check includes place-director checks; also run shelf_windows, external_windows,
+  cozy_windows and edge_views before merging changes to support/pose arbitration.

@@ -1,6 +1,7 @@
 extends RefCounted
 ## On-demand read-only bridge. No service, ports, titles, screenshots or hooks.
-## Only one outstanding request; all pipe reads are non-blocking and bounded.
+## One manual target or one bounded automatic choice request at a time.
+## All pipe reads are non-blocking and bounded.
 var status: String = "off"
 var reason: String = ""
 var snapshot: Dictionary = {}

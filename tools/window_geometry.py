@@ -1,6 +1,7 @@
 """Opt-in, read-only geometry of ONE selected window; JSON lines over stdio.
 No window titles, screen pixels, hooks, networking, writes or global settings.
-The caller asks to pick once, then probe the same HWND. EOF/5s idle exits.
+The caller may pick once or request one bounded geometry-only candidate search,
+then probes the chosen HWND. EOF/5s idle exits.
 """
 from __future__ import annotations
 import ctypes as C

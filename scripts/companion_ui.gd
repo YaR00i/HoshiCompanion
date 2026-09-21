@@ -116,7 +116,7 @@ func _build_panel() -> void:
 	outer.add_theme_constant_override("separation", 6)
 	panel.add_child(outer)
 	outer.add_child(_label("HOSHI", 28, PLUM))
-	outer.add_child(_label("МИНИ-КОМПАНЬОН · 3D / 0.5.1", 11, MUTED))
+	outer.add_child(_label("МИНИ-КОМПАНЬОН · 3D / 0.6", 11, MUTED))
 	subtitle = _label("VRoid → VRM 1.0 → Godot", 12)
 	outer.add_child(subtitle)
 	status = _label("Загрузка…", 13, PLUM)

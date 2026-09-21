@@ -1,5 +1,6 @@
 extends RefCounted
-## Explicit opt-in playground. Owns only its own Window; no OS window discovery.
+## Support lifecycle for app-owned and opt-in external resting places.
+## Smart discovery is bounded, geometry-only and enabled by an explicit user setting.
 const Shelf = preload("res://scripts/shelf_window.gd")
 const Cozy = preload("res://scripts/cozy_window.gd")
 var cozy_mode: bool = false

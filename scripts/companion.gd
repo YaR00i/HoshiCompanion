@@ -74,7 +74,7 @@ func _ready() -> void:
 	for argument in args:
 		if argument.begins_with("--avatar="):
 			avatar_path = argument.trim_prefix("--avatar=")
-	print("HOSHI_START version=0.5.1 engine=", Engine.get_version_info().get("string", ""))
+	print("HOSHI_START version=0.6 engine=", Engine.get_version_info().get("string", ""))
 	print("HOSHI_MODEL path=", avatar_path)
 	print("HOSHI_DATA ", OS.get_user_data_dir())
 	var result: Dictionary = stage.load_model(avatar_path)
@@ -523,7 +523,7 @@ func _save_settings() -> void:
 		push_warning("Settings could not be saved: " + error_string(result))
 
 func _write_diagnostics(avatar_path: String, result: Dictionary) -> void:
-	var diagnostic: Dictionary = {"version": "0.5.1", "engine": Engine.get_version_info(),
+	var diagnostic: Dictionary = {"version": "0.6", "engine": Engine.get_version_info(),
 		"model_path": avatar_path, "display_server": DisplayServer.get_name(), "load": result}
 	print("HOSHI_LOAD_DIAGNOSTICS ", JSON.stringify(diagnostic))
 	var file: FileAccess = FileAccess.open("user://avatar_diagnostics.json", FileAccess.WRITE)
