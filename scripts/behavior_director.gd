@@ -4,6 +4,7 @@ extends RefCounted
 
 var activity: String = "normal"
 var enabled: bool = true
+var decisions_enabled: bool = true
 var walk_enabled: bool = true
 var rest_enabled: bool = true
 var rest_after_walk: bool = false
@@ -79,7 +80,7 @@ func tick(delta: float, context: Dictionary) -> String:
 		gaze = Vector2.ZERO
 		curiosity = 0.0
 		attention_label = ""
-	if _wait > 0.0 or _cooldown > 0.0:
+	if not decisions_enabled or _wait > 0.0 or _cooldown > 0.0:
 		return ""
 	_wait = _next_decision_wait()
 	var can_rest: bool = rest_enabled and bool(context.get("can_rest", false)) and _rest_wait <= 0.0
@@ -127,6 +128,13 @@ func _begin_walk(rest_probability: float) -> void:
 	_walk_wait = _rng.randf_range(32.0, 58.0) if activity == "normal" else _rng.randf_range(16.0, 30.0)
 	rest_after_walk = rest_enabled and _rng.randf() < rest_probability
 	_last_kind = "walk"
+
+func request_observe(cursor: Vector2, near: bool) -> float:
+	_begin_look(cursor, near)
+	return _look_duration
+
+func look_active() -> bool:
+	return _look_left > 0.0
 
 func _begin_look(cursor: Vector2, near: bool) -> void:
 	_look_mode = "cursor" if near and _last_kind != "cursor" else "away"

@@ -46,6 +46,8 @@ var _walk_direction: int = 1
 var _pending_action: String = ""
 var _pending_auto: bool = false
 var _rest_after_walk: bool = false
+var _floor_intent_step_started: bool = false
+var _floor_intent_wait: float = 4.0
 var _test_mode: bool = false
 var _settings: ConfigFile = ConfigFile.new()
 
@@ -204,16 +206,23 @@ func _process(delta: float) -> void:
 		"can_side": playground.active() and playground.external_mode and playground.phase == "attached" and not playground.surface_busy(),
 		"can_leave": playground.active() and playground.phase == "attached"}
 	intent_planner.tick(dt, behavior_context)
-	var action: String = director.tick(dt, behavior_context)
-	# 0.8.0 shadow mode: planner records the intention behind legacy decisions,
-	# but only the existing director/controllers are allowed to execute anything.
-	intent_planner.observe_legacy_action(action, behavior_context)
-	if action == "walk":
-		_start_walk(true)
-	elif action == "wave":
-		state.wave()
-	elif action == "sit":
-		_request_sit(true)
+	var action: String = ""
+	if playground.active():
+		# Surface autonomy stays on the proven 0.7 path for now.
+		director.decisions_enabled = true
+		action = director.tick(dt, behavior_context)
+		intent_planner.observe_legacy_action(action, behavior_context)
+		if action == "walk":
+			_start_walk(true)
+		elif action == "wave":
+			state.wave()
+		elif action == "sit":
+			_request_sit(true)
+	else:
+		# 0.8.1 first migration: planner owns floor decisions; Director still owns gaze.
+		director.decisions_enabled = false
+		director.tick(dt, behavior_context)
+		_tick_floor_intent(dt, behavior_context, cursor_gaze, distance < stage.body_pixels * 1.8)
 	var target: Vector2 = Vector2.ZERO
 	if state.look_enabled and not state.dozing and not ui.menu.visible and not walker.active() and absf(stage.yaw) < 55.0:
 		target = director.gaze
@@ -258,7 +267,85 @@ func _process(delta: float) -> void:
 			caption = director.attention_label
 		ui.refresh(state, caption, walker.active())
 
-func _start_walk(automatic: bool) -> void:
+func _floor_intent_delay() -> float:
+	match state.activity:
+		"quiet": return 13.0
+		"playful": return 5.0
+	return 8.0
+
+func _finish_floor_intent_step() -> void:
+	_floor_intent_step_started = false
+	var finished: String = intent_planner.complete_step()
+	if not finished.is_empty() and intent_planner.active_intent.is_empty():
+		_floor_intent_wait = _floor_intent_delay()
+
+func _abort_floor_intent(reason: String) -> void:
+	intent_planner.interrupt(reason)
+	_floor_intent_step_started = false
+	_floor_intent_wait = maxf(_floor_intent_wait, 2.0)
+
+func _tick_floor_intent(delta: float, context: Dictionary, cursor_gaze: Vector2, cursor_near: bool) -> void:
+	if playground.active():
+		_floor_intent_step_started = false
+		return
+	if intent_planner.active_intent.is_empty():
+		_floor_intent_step_started = false
+		_floor_intent_wait = maxf(0.0, _floor_intent_wait - delta)
+		if _floor_intent_wait > 0.0 or not state.autonomy_enabled or bool(context.get("blocked", false)):
+			return
+		var plan: Dictionary = intent_planner.choose(context, state.activity)
+		if plan.is_empty() or not intent_planner.activate(plan):
+			_floor_intent_wait = 1.0
+			return
+	var step: String = intent_planner.current_step()
+	if step.is_empty():
+		_abort_floor_intent("empty_step")
+		return
+	if not _floor_intent_step_started:
+		match step:
+			"walk":
+				if not bool(context.get("can_walk", false)):
+					_abort_floor_intent("walk_unavailable")
+					return
+				_start_walk(true, true)
+				if not walker.active():
+					_abort_floor_intent("walk_failed")
+					return
+				_floor_intent_step_started = true
+			"look":
+				if not bool(context.get("can_observe", false)):
+					_abort_floor_intent("observe_unavailable")
+					return
+				director.request_observe(cursor_gaze, cursor_near)
+				_floor_intent_step_started = true
+			"sit":
+				if not bool(context.get("can_rest", false)):
+					_abort_floor_intent("rest_unavailable")
+					return
+				_request_sit(true)
+				_floor_intent_step_started = true
+			"wave":
+				if not bool(context.get("can_social", false)):
+					_abort_floor_intent("social_unavailable")
+					return
+				state.wave()
+				_floor_intent_step_started = true
+				_finish_floor_intent_step()
+			_:
+				_abort_floor_intent("unsupported_floor_step")
+		return
+	match step:
+		"walk":
+			if not walker.active():
+				_finish_floor_intent_step()
+		"look":
+			if not director.look_active():
+				_finish_floor_intent_step()
+		"sit":
+			if state.posture.mode == "seated":
+				_finish_floor_intent_step()
+
+func _start_walk(automatic: bool, planner_owned: bool = false) -> void:
 	if playground.active():
 		if not automatic:
 			playground.return_home(true)
@@ -301,9 +388,10 @@ func _start_walk(automatic: bool) -> void:
 			ui.say("Здесь тесно для двух шагов")
 		return
 	_walk_direction = -chosen
-	_rest_after_walk = automatic and state.rest_enabled and director.rest_after_walk
+	_rest_after_walk = automatic and state.rest_enabled and director.rest_after_walk and not planner_owned
 	state.dozing = false
-	director.user_interaction()
+	if not planner_owned:
+		director.user_interaction()
 	_walk_area = host.walking_area()
 	print("HOSHI_WALK start_px=", start_x, " target_px=", clampf(target, lane.x, lane.y), " steps=", walker.step_count, " mpp=", walker.meters_per_pixel, " preview=", host.preview)
 
@@ -402,7 +490,7 @@ func _update_drag(delta: float) -> void:
 func _finish_press() -> void:
 	if not _press_active:
 		return
-	intent_planner.interrupt("pointer")
+	_abort_floor_intent("pointer")
 	var was_dragged: bool = _dragged
 	_press_active = false
 	_dragged = false
@@ -438,7 +526,7 @@ func _zoom(direction: int) -> void:
 	_save_settings()
 
 func _open_menu() -> void:
-	intent_planner.interrupt("menu")
+	_abort_floor_intent("menu")
 	places.manual_pause()
 	playground.cancel_queued_walk()
 	_clear_intent()
@@ -455,7 +543,7 @@ func _on_menu_hidden() -> void:
 	director.user_interaction()
 
 func _on_action(action: int) -> void:
-	intent_planner.interrupt("manual_action")
+	_abort_floor_intent("manual_action")
 	if action == 199:
 		_quit()
 		return

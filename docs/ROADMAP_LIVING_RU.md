@@ -171,7 +171,7 @@ Activity остаётся явным пользовательским профи
 1. Закончить ручную приёмку 0.7 и исправить остаточные визуальные дефекты.
 2. Intent Planner skeleton без изменения визуального поведения.
 3. Novelty/cooldown/history и deterministic tests — реализовано в shadow planner; candidate report хранит причины отказа.
-4. Перевести floor autonomy на intents.
+4. Перевести floor autonomy на intents — первая миграция: observe / explore_floor / rest / social_react исполняются planner-цепочками.
 5. Перевести surface autonomy на intents.
 6. Добавить короткие 2–4 step chains.
 7. Visual polish carry/jump/fall/landing.

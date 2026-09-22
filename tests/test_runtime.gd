@@ -336,6 +336,19 @@ func _check_intent_planner() -> void:
 	novelty.activate(observe_plan)
 	var first_novelty: float = float(novelty.candidate_report(context, "normal")["observe"]["novelty"])
 	_check(first_novelty < 0.2, "most recent intention receives a strong novelty penalty")
+	var chain = IntentPlanner.new()
+	var chain_plan: Dictionary = chain.build_plan("explore_floor", context)
+	_check(chain.activate(chain_plan) and chain.current_step() == "walk", "floor exploration begins with locomotion")
+	_check(chain.complete_step() == "look" and chain.current_step() == "look", "floor exploration advances to observation only after walk completion")
+	_check(chain.complete_step() == "explore_floor" and chain.active_intent.is_empty(), "short floor intent completes after its final real step")
+	var attention = Director.new()
+	attention.seed_random(5)
+	attention.decisions_enabled = false
+	attention.request_observe(Vector2(0.3, 0.1), true)
+	var emitted: bool = false
+	for i in range(120):
+		emitted = emitted or not attention.tick(1.0 / 30.0, {"cursor_near": true, "cursor_gaze": Vector2(0.3, 0.1), "can_walk": true, "can_rest": true}).is_empty()
+	_check(not emitted and not attention.look_active(), "attention-only director finishes gaze without emitting legacy actions")
 
 func _finish() -> void:
 	var report: Dictionary = {"engine": Engine.get_version_info(), "checks": checks, "failures": failures,
