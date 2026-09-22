@@ -14,6 +14,8 @@ var _start_handle: int = 0
 var _start_wait: float = 0.0
 var _choice_request: Dictionary = {}
 var _auto_choice: bool = false
+var _explicit_bind_retries: int = 0
+const MAX_EXPLICIT_BIND_RETRIES: int = 2
 var app
 var shelf
 var phase: String = "off"
@@ -98,6 +100,8 @@ func before_tick(delta: float) -> void:
 			if _auto_choice:
 				_fallback_cozy()
 				return
+			if _retry_explicit_bind():
+				return
 			app.ui.say(external.message())
 			return_home()
 	if phase == "selecting" and external.status == "selecting":
@@ -147,6 +151,20 @@ func before_tick(delta: float) -> void:
 		_finish_return()
 	if phase == "attached":
 		surface.before_tick(delta)
+
+func _retry_explicit_bind() -> bool:
+	if _start_handle <= 0 or _explicit_bind_retries >= MAX_EXPLICIT_BIND_RETRIES:
+		return false
+	if not external.reason in ["minimized", "hidden", "unavailable", "changed"]:
+		return false
+	var retry_reason: String = external.reason
+	_explicit_bind_retries += 1
+	external.close()
+	phase = "selection_start"
+	_start_wait = 0.12 + float(_explicit_bind_retries - 1) * 0.10
+	if app._test_mode:
+		print("EXPLICIT_BIND_RETRY attempt=", _explicit_bind_retries, " reason=", retry_reason, " hwnd=", _start_handle)
+	return true
 
 func _fallback_cozy() -> void:
 	if app._test_mode:
@@ -279,6 +297,7 @@ func release_for_mode_change() -> void:
 		app.state.posture.reset_standing()
 	phase = "off"
 	_walk_after = false
+	_explicit_bind_retries = 0
 	if is_instance_valid(shelf):
 		shelf.hide()
 		shelf.queue_free()
@@ -389,6 +408,7 @@ func select_window(explicit_handle: int = 0) -> bool:
 	external_mode = true
 	_countdown_number = -1
 	_start_handle = explicit_handle
+	_explicit_bind_retries = 0
 	_start_wait = 0.20
 	phase = "selection_start"
 	app.ui.say("Наведи на нужное окно · 4")
@@ -412,6 +432,7 @@ func auto_choose_window(fixture_pid: int = 0) -> bool:
 	external_mode = true
 	_auto_choice = true
 	_start_handle = 0
+	_explicit_bind_retries = 0
 	_start_wait = 0.05
 	var seat: Vector2 = app.stage.camera.unproject_position(app.stage.edge_pose.planned_anchor_world())
 	var area: Rect2i = app.host.walking_area()

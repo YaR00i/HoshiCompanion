@@ -35,6 +35,7 @@
 - Manual user actions override autonomy; canceled routes must never resume unexpectedly.
 - Closing/minimizing an active support returns the companion to a safe floor state.
 - Manual external-window selection must not read titles, pixels, page content, microphone or network data.
+- A known explicit HWND may retry the same geometry-only bind at most twice for transient restore-state errors; never turn retry into new window discovery.
 - Current full regression suite is calibrated to the local development Hoshi model.
 
 ## 0.6 living places
