@@ -23,6 +23,12 @@ u.SetWindowPos.argtypes = [W.HWND, W.HWND, C.c_int, C.c_int, C.c_int, C.c_int, W
 u.SetWindowPos.restype = W.BOOL
 u.GetWindowRect.argtypes = [W.HWND, C.POINTER(W.RECT)]
 u.GetWindowRect.restype = W.BOOL
+u.IsIconic.argtypes = [W.HWND]
+u.IsIconic.restype = W.BOOL
+u.IsWindowVisible.argtypes = [W.HWND]
+u.IsWindowVisible.restype = W.BOOL
+u.ShowWindow.argtypes = [W.HWND, C.c_int]
+u.ShowWindow.restype = W.BOOL
 
 class MONITORINFO(C.Structure):
     _fields_ = [("cbSize", W.DWORD), ("rcMonitor", W.RECT),
@@ -79,6 +85,19 @@ def move_by(message):
     u.SetWindowPos(hwnd, W.HWND(0), int(rect.left) + dx, int(rect.top) + dy,
                    width, height, 0x0004 | 0x0010)
 
+def ack(op, **extra):
+    payload = {"ack": op}
+    payload.update(extra)
+    print(json.dumps(payload), flush=True)
+
+def ack_when_restored(attempt=0):
+    iconic = bool(u.IsIconic(hwnd))
+    visible = bool(u.IsWindowVisible(hwnd))
+    if (not iconic and visible) or attempt >= 80:
+        ack("restore", iconic=iconic, visible=visible)
+        return
+    root.after(15, lambda: ack_when_restored(attempt + 1))
+
 def tick():
     while not inbox.empty():
         line = inbox.get_nowait()
@@ -94,12 +113,16 @@ def tick():
         elif op == "restore":
             root.deiconify()
             root.state("normal")
+            root.update_idletasks()
+            u.ShowWindow(hwnd, 9)  # SW_RESTORE
+            root.after(15, ack_when_restored)
+            continue
         elif op == "maximize":
             root.state("zoomed")
         elif op == "close":
             root.destroy()
             return
-        print(json.dumps({"ack": op}), flush=True)
+        ack(op)
     root.after(15, tick)
 
 threading.Thread(target=read, daemon=True).start()

@@ -85,3 +85,4 @@
 - Keep the 0.6 privacy contract: geometry/state/Z-order only for external windows.
 - Release acceptance: check + shelf_windows + external_windows + cozy_windows +
   context_views + edge_views; external tests must stay fixture-only.
+- Native fixture restore tests must wait for fixture acknowledgement of a non-iconic visible HWND; do not use fixed sleeps as restore readiness.

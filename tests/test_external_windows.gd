@@ -156,7 +156,7 @@ func _run() -> void:
 	check(app.host.is_grounded() and app.state.posture.kind == "floor", "external loss restores floor pose")
 	check(await until(func(): return not OS.is_process_running(helper_pid), 2.0), "helper exits after detach")
 	command({"op": "restore"})
-	await create_timer(0.25).timeout
+	check(await until(func(): return _read_ack("restore"), 2.0), "isolated fixture confirms native restore")
 	app.playground.select_window(handle)
 	check(await until(func(): return app.playground.phase == "attached"), "restored window can be manually reselected")
 	app._on_action(30)
@@ -188,6 +188,16 @@ func _read_handle() -> bool:
 	if data is Dictionary:
 		handle = int(data.get("hwnd", "0"))
 	return handle > 0
+
+func _read_ack(expected: String) -> bool:
+	fixture_buffer += fixture_io.get_buffer(2048).get_string_from_utf8()
+	for line in fixture_buffer.split("\n", false):
+		var data: Variant = JSON.parse_string(line.strip_edges())
+		if data is Dictionary and str(data.get("ack", "")) == expected:
+			if expected == "restore":
+				return not bool(data.get("iconic", true)) and bool(data.get("visible", false))
+			return true
+	return false
 
 func capture() -> void:
 	await RenderingServer.frame_post_draw
