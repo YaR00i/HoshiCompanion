@@ -134,7 +134,7 @@ func _box_child(parent: Node3D, size: Vector3, pos: Vector3, material: Material)
 	parent.add_child(item)
 	return item
 
-func set_state(visibility: float, open_amount: float, time: float) -> void:
+func set_state(visibility: float, open_amount: float, time: float, open_direction: float = -1.0) -> void:
 	if frame_root == null:
 		return
 	var v: float = clampf(visibility, 0.0, 1.0)
@@ -144,8 +144,11 @@ func set_state(visibility: float, open_amount: float, time: float) -> void:
 		return
 	var s: float = lerpf(0.84, 1.0, smoothstep(0.0, 1.0, v))
 	frame_root.scale = Vector3(s, s, s)
-	# Keep the leaf on the camera side of the portal and stop before an overswing.
-	leaf_pivot.rotation.y = deg_to_rad(-82.0) * smoothstep(0.0, 1.0, opened)
+	# Arrival opens toward the camera (away from Hoshi behind the doorway); departure
+	# opens inward (away from Hoshi standing in front). This keeps the leaf sweep
+	# on the opposite side of the character instead of visually cutting through her.
+	var direction: float = 1.0 if open_direction >= 0.0 else -1.0
+	leaf_pivot.rotation.y = deg_to_rad(82.0) * direction * smoothstep(0.0, 1.0, opened)
 	glow_light.light_energy = 0.72 * v * (0.30 + opened * 0.70)
 	if star_material != null:
 		star_material.set_shader_parameter("time_value", time)

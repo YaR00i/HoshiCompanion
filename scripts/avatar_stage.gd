@@ -190,7 +190,8 @@ func start_portal_intro() -> void:
 	_interaction_image = null
 	_cinematic_mode = "intro"
 	_cinematic_age = 0.0
-	_cinematic_z = -model_height * 0.30
+	# Start well behind both portal plane and the complete door-leaf sweep.
+	_cinematic_z = -model_height * 0.58
 
 func start_portal_outro() -> void:
 	if not is_loaded:
@@ -199,7 +200,8 @@ func start_portal_outro() -> void:
 	_interaction_image = null
 	_cinematic_mode = "outro"
 	_cinematic_age = 0.0
-	_cinematic_z = 0.0
+	# Keep the whole avatar in front while the inward-opening leaf clears the doorway.
+	_cinematic_z = model_height * 0.12
 
 func cinematic_active() -> bool:
 	return _cinematic_mode in ["intro", "outro"]
@@ -220,16 +222,22 @@ func _tick_cinematic(delta: float, time_value: float) -> void:
 			_cinematic_z = 0.0
 		return
 	_cinematic_age += clampf(delta, 0.0, 0.1)
-	var duration: float = 2.30 if _cinematic_mode == "intro" else 2.24
+	var duration: float = 2.48 if _cinematic_mode == "intro" else 2.44
 	var u: float = clampf(_cinematic_age / duration, 0.0, 1.0)
-	var visibility: float = smoothstep(0.0, 0.07, u) * (1.0 - smoothstep(0.94, 1.0, u))
-	var close_start: float = 0.80 if _cinematic_mode == "intro" else 0.86
-	var opened: float = smoothstep(0.07, 0.27, u) * (1.0 - smoothstep(close_start, 0.965, u))
+	var visibility: float = smoothstep(0.0, 0.06, u) * (1.0 - smoothstep(0.95, 1.0, u))
+	var close_start: float = 0.82 if _cinematic_mode == "intro" else 0.88
+	var opened: float = smoothstep(0.06, 0.24, u) * (1.0 - smoothstep(close_start, 0.975, u))
+	var front_z: float = model_height * 0.12
+	var hidden_z: float = -model_height * 0.58
+	var opening_direction: float = 1.0 if _cinematic_mode == "intro" else -1.0
 	if _cinematic_mode == "intro":
-		_cinematic_z = lerpf(-model_height * 0.30, 0.0, smoothstep(0.20, 0.71, u))
+		# Door fully clears Hoshi first; only then does she cross the portal plane.
+		_cinematic_z = lerpf(hidden_z, front_z, smoothstep(0.29, 0.71, u))
 	else:
-		_cinematic_z = lerpf(0.0, -model_height * 0.30, smoothstep(0.28, 0.78, u))
-	door.set_state(visibility, opened, time_value)
+		# Hoshi waits in front until the inward leaf is open, then moves completely
+		# behind the portal before the closing phase begins.
+		_cinematic_z = lerpf(front_z, hidden_z, smoothstep(0.30, 0.77, u))
+	door.set_state(visibility, opened, time_value, opening_direction)
 	if u >= 1.0:
 		door.hide_door()
 		if _cinematic_mode == "intro":

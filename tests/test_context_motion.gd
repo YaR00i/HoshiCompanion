@@ -74,14 +74,25 @@ func _run() -> void:
 	check(stage.context_pose.weight < 0.01, "context pose fades back to normal idle")
 	stage.start_portal_intro()
 	var saw_intro: bool = false
-	for i in range(100):
+	for i in range(18):
+		state.tick(1.0 / 30.0)
+		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
+		saw_intro = saw_intro or stage.cinematic_active()
+	check(stage.door.leaf_pivot.rotation.y > 0.25, "arrival door opens toward camera, away from hidden Hoshi")
+	check(stage.pivot.position.z < -stage.model_height * 0.40, "arrival keeps Hoshi behind the leaf sweep while opening")
+	for i in range(82):
 		state.tick(1.0 / 30.0)
 		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
 		saw_intro = saw_intro or stage.cinematic_active()
 	check(saw_intro and not stage.cinematic_active(), "magical door intro completes")
 	check(not stage.door.frame_root.visible and absf(stage.pivot.position.z) < 0.001, "intro leaves ordinary avatar depth and hides door")
 	stage.start_portal_outro()
-	for i in range(100):
+	for i in range(18):
+		state.tick(1.0 / 30.0)
+		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
+	check(stage.door.leaf_pivot.rotation.y < -0.25, "departure door opens inward, away from Hoshi in front")
+	check(stage.pivot.position.z > stage.model_height * 0.08, "departure keeps Hoshi fully in front while opening")
+	for i in range(82):
 		state.tick(1.0 / 30.0)
 		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
 	check(stage.outro_complete(), "magical door outro reaches completion state")
