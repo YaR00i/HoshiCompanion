@@ -158,7 +158,10 @@ func _run() -> void:
 	command({"op": "restore"})
 	check(await until(func(): return _read_ack("restore"), 2.0), "isolated fixture confirms native restore")
 	app.playground.select_window(handle)
-	check(await until(func(): return app.playground.phase == "attached"), "restored window can be manually reselected")
+	var restored_attached: bool = await until(func(): return app.playground.phase == "attached")
+	if not restored_attached:
+		print("RESTORE_ATTACH_FAIL phase=", app.playground.phase, " ext_status=", app.playground.external.status, " ext_reason=", app.playground.external.reason, " rect=", app.playground.support_rect(), " area=", app.playground.support_area(), " posture=", app.state.posture.mode, "/", app.state.posture.kind, " air=", app.air.mode)
+	check(restored_attached, "restored window can be manually reselected")
 	app._on_action(30)
 	check(await until(func(): return app.walker.active()), "walk waits for external return then starts")
 	app._on_action(31)

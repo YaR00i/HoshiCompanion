@@ -121,6 +121,8 @@ func before_tick(delta: float) -> void:
 			var planned_seat: Vector2 = app.stage.camera.unproject_position(app.stage.edge_pose.planned_anchor_world())
 			var planned: Dictionary = solve_placement(support_rect(), anchor_u, planned_seat, app.host.window.size, support_area())
 			if not bool(planned.get("ok", false)):
+				if app._test_mode:
+					print("PREPARE_REJECT rect=", support_rect(), " area=", support_area(), " seat=", planned_seat, " viewport=", app.host.window.size, " anchor_u=", anchor_u, " phase=", phase)
 				return_home()
 			else:
 				app.state.posture.kind = "edge"
