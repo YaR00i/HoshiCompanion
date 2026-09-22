@@ -9,6 +9,12 @@ var body_pixels: int = 360
 var mask_enabled: bool = true
 var saved_position: Vector2i = Vector2i(-99999, -99999)
 var _mask: PackedVector2Array = PackedVector2Array()
+var _input_process: Dictionary = {}
+var _input_io: FileAccess
+var _input_passthrough: bool = false
+var _input_passthrough_known: bool = false
+var _native_passthrough_available: bool = false
+var _cinematic_input: bool = false
 
 func setup(root_window: Window) -> void:
 	window = root_window
@@ -17,6 +23,7 @@ func setup(root_window: Window) -> void:
 		DisplayServer.screen_set_keep_on(false)
 
 func switch_mode(wants_preview: bool) -> void:
+	_stop_input_helper()
 	if not preview and not headless:
 		saved_position = window.position
 	preview = wants_preview or headless
@@ -25,7 +32,6 @@ func switch_mode(wants_preview: bool) -> void:
 		push_warning("Hoshi: transparency unavailable; opening preview instead.")
 	if headless:
 		return
-	# Clear native region before resizing or switching modes.
 	DisplayServer.window_set_mouse_passthrough(PackedVector2Array())
 	window.mode = Window.MODE_WINDOWED
 	window.borderless = not preview
@@ -44,6 +50,7 @@ func switch_mode(wants_preview: bool) -> void:
 			window.position = clamp_position(saved_position)
 		else:
 			home()
+		_start_input_helper()
 		apply_mask()
 
 func desktop_size() -> Vector2i:
@@ -103,7 +110,6 @@ func cursor_global() -> Vector2i:
 
 func drag_to(position: Vector2i) -> void:
 	if not headless and not preview:
-		# Allow crossing monitors while dragging; clamp only when released.
 		window.position = position
 
 func finish_drag() -> void:
@@ -111,15 +117,7 @@ func finish_drag() -> void:
 		window.position = clamp_position(window.position)
 		saved_position = window.position
 
-func apply_mask(expanded: bool = false) -> void:
-	if headless or preview:
-		return
-	if not mask_enabled:
-		DisplayServer.window_set_mouse_passthrough(PackedVector2Array())
-		return
-	# Conservative, STABLE envelope for all included gestures, not pixel hit-testing.
-	# Windows clips rendering outside this polygon, so it includes the hair and hand.
-	# Do not update it per frame (SetWindowRgn can flicker on some Windows drivers).
+func _fallback_mask(expanded: bool = false) -> PackedVector2Array:
 	var normalized: Array[Vector2]
 	if expanded:
 		normalized = [
@@ -135,10 +133,34 @@ func apply_mask(expanded: bool = false) -> void:
 			Vector2(0.06, 1.0), Vector2(0.06, 0.82),
 			Vector2(0.04, 0.63), Vector2(0.06, 0.25)
 		]
-	_mask = PackedVector2Array()
+	var polygon := PackedVector2Array()
 	for point in normalized:
-		_mask.append(point * Vector2(window.size))
+		polygon.append(point * Vector2(window.size))
+	return polygon
+
+func apply_mask(expanded: bool = false) -> void:
+	if headless or preview:
+		return
+	_cinematic_input = expanded
+	_mask = _fallback_mask(expanded)
+	if _native_passthrough_available:
+		DisplayServer.window_set_mouse_passthrough(PackedVector2Array())
+		_set_native_passthrough(mask_enabled, true)
+		return
+	if not mask_enabled:
+		DisplayServer.window_set_mouse_passthrough(PackedVector2Array())
+		return
 	DisplayServer.window_set_mouse_passthrough(_mask)
+
+func update_pointer_interaction(avatar_hit: bool, force_capture: bool = false) -> void:
+	if headless or preview or not _native_passthrough_available:
+		return
+	if _cinematic_input:
+		_set_native_passthrough(true)
+	elif not mask_enabled:
+		_set_native_passthrough(false)
+	else:
+		_set_native_passthrough(not (avatar_hit or force_capture))
 
 func menu_focus(active: bool) -> void:
 	if headless or preview:
@@ -146,11 +168,94 @@ func menu_focus(active: bool) -> void:
 	window.unfocusable = not active
 	if active:
 		window.grab_focus()
+		if _native_passthrough_available:
+			_set_native_passthrough(false, true)
+	elif _native_passthrough_available:
+		_input_passthrough_known = false
 
 func cinematic_mask(active: bool) -> void:
 	if headless or preview:
 		return
-	apply_mask(active)
+	_cinematic_input = active
+	_mask = _fallback_mask(active)
+	if _native_passthrough_available:
+		DisplayServer.window_set_mouse_passthrough(PackedVector2Array())
+		if active:
+			_set_native_passthrough(true, true)
+		else:
+			_input_passthrough_known = false
+	else:
+		apply_mask(active)
+
+func precise_input_available() -> bool:
+	if not _native_passthrough_available:
+		return false
+	if not _input_helper_alive():
+		_native_passthrough_available = false
+		return false
+	return true
+
+func pointer_passthrough_requested() -> bool:
+	return _input_passthrough_known and _input_passthrough
+
+func _start_input_helper() -> void:
+	if headless or preview or DisplayServer.get_name() != "Windows":
+		return
+	var python_path: String = FileAccess.get_file_as_string("res://python_path.txt").strip_edges()
+	if python_path.is_empty() or not FileAccess.file_exists(python_path):
+		push_warning("Hoshi: precise Windows click-through unavailable; using polygon fallback.")
+		return
+	var helper_path: String = ProjectSettings.globalize_path("res://tools/window_input_passthrough.py")
+	var hwnd: int = DisplayServer.window_get_native_handle(DisplayServer.WINDOW_HANDLE)
+	if hwnd <= 0:
+		push_warning("Hoshi: native HWND unavailable; using polygon click mask.")
+		return
+	var pipe: Dictionary = OS.execute_with_pipe(python_path, PackedStringArray(["-u", helper_path, str(hwnd)]), false)
+	if pipe.is_empty():
+		push_warning("Hoshi: input passthrough helper did not start; using polygon fallback.")
+		return
+	_input_process = pipe
+	_input_io = pipe.get("stdio") as FileAccess
+	_native_passthrough_available = _input_io != null
+	_input_passthrough_known = false
+
+func _input_helper_alive() -> bool:
+	if _input_process.is_empty():
+		return false
+	var pid: int = int(_input_process.get("pid", -1))
+	return pid > 0 and OS.is_process_running(pid)
+
+func _set_native_passthrough(active: bool, force: bool = false) -> void:
+	if not _native_passthrough_available or _input_io == null:
+		return
+	if not _input_helper_alive():
+		_native_passthrough_available = false
+		return
+	if not force and _input_passthrough_known and _input_passthrough == active:
+		return
+	_input_io.store_line(JSON.stringify({"op": "passthrough", "active": active}))
+	_input_io.flush()
+	_input_passthrough = active
+	_input_passthrough_known = true
+
+func _stop_input_helper() -> void:
+	if _input_io != null:
+		if _input_helper_alive():
+			_input_io.store_line(JSON.stringify({"op": "stop"}))
+			_input_io.flush()
+		_input_io.close()
+	var stderr_file: FileAccess = _input_process.get("stderr") as FileAccess
+	if stderr_file != null:
+		stderr_file.close()
+	_input_io = null
+	_input_process.clear()
+	_native_passthrough_available = false
+	_input_passthrough = false
+	_input_passthrough_known = false
+	_cinematic_input = false
+
+func shutdown() -> void:
+	_stop_input_helper()
 
 func raise_companion() -> void:
 	if headless or preview:
@@ -163,9 +268,7 @@ func mask_contains(point: Vector2) -> bool:
 		return true
 	return Geometry2D.is_point_in_polygon(point, _mask)
 
-
 func walking_lane() -> Vector2:
-	# Keep the whole native window on its CURRENT monitor. No autonomous crossing.
 	var area: Rect2i = walking_area()
 	return Vector2(float(area.position.x + 6), float(maxi(area.position.x + 6, area.end.x - window.size.x - 6)))
 
@@ -179,7 +282,6 @@ func is_grounded() -> bool:
 	return absi(window.position.y + window.size.y - area.end.y) <= 8
 
 func walk_to(x_value: float) -> float:
-	# Fractional pixels are returned for a compensating subpixel model offset.
 	if preview or headless:
 		return 0.0
 	var lane: Vector2 = walking_lane()
@@ -192,12 +294,10 @@ func walk_to(x_value: float) -> float:
 	return safe_x - float(window.position.x)
 
 func floor_position() -> Vector2i:
-	# Return under the avatar on its current monitor, not on the cursor's monitor.
 	var area: Rect2i = walking_area()
 	return Vector2i(clampi(window.position.x, area.position.x, maxi(area.position.x, area.end.x - window.size.x)), area.end.y - window.size.y)
 
 func place_at(point: Vector2) -> void:
-	# Moves only this companion window. The support is an app-owned demo Window.
 	if preview or headless or not point.is_finite():
 		return
 	var rounded := Vector2i(point.round())

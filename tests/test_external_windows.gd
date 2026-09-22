@@ -46,6 +46,16 @@ func _run() -> void:
 	await check_selection_controls()
 	app._switch_mode(false)
 	await process_frame
+	await create_timer(0.12).timeout
+	check(app.host.precise_input_available(), "own-HWND precise click-through helper starts on Windows")
+	await RenderingServer.frame_post_draw
+	check(app.stage.refresh_interaction_alpha(), "desktop mode caches only Hoshi viewport alpha")
+	var torso_point: Vector2 = app.stage.camera.unproject_position(app.stage.rig.world_point("hips"))
+	check(app.stage.visible_avatar_hit(torso_point) and not app.stage.visible_avatar_hit(Vector2(2.0, 2.0)), "alpha hit separates Hoshi from transparent window space")
+	app.host.update_pointer_interaction(false)
+	check(app.host.pointer_passthrough_requested(), "transparent Hoshi-window space requests OS click-through")
+	app.host.update_pointer_interaction(true)
+	check(not app.host.pointer_passthrough_requested(), "visible Hoshi pixel requests native input capture")
 	var area: Rect2i = app.host.walking_area()
 	var own_handle: int = DisplayServer.window_get_native_handle(DisplayServer.WINDOW_HANDLE)
 	var python_path: String = FileAccess.get_file_as_string("res://python_path.txt").strip_edges()

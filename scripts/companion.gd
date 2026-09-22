@@ -38,6 +38,7 @@ var _cinematic_mask_active: bool = false
 var _preview_zoom: float = 1.0
 var _ui_clock: float = 0.0
 var _screen_clock: float = 0.0
+var _input_alpha_clock: float = 0.0
 var _walk_area: Rect2i = Rect2i()
 var _walk_direction: int = 1
 var _pending_action: String = ""
@@ -115,8 +116,10 @@ func _switch_mode(preview: bool) -> void:
 	_dragged = false
 	if stage != null:
 		stage.cancel_cinematic()
+		stage.clear_interaction_alpha()
 		_hard_stop()
 		stage.travel_offset_px = 0.0
+	_input_alpha_clock = 0.0
 	if _cinematic_mask_active:
 		host.cinematic_mask(false)
 		_cinematic_mask_active = false
@@ -210,6 +213,13 @@ func _process(delta: float) -> void:
 		context_action = playground.surface_context()
 	stage.set_context_action(context_action, _drag_velocity)
 	stage.animate(dt, state, _gaze, walker.sample())
+	if not host.preview:
+		_input_alpha_clock += dt
+		if not stage.cinematic_active() and _input_alpha_clock >= 0.18:
+			_input_alpha_clock = 0.0
+			stage.refresh_interaction_alpha()
+		var avatar_hit: bool = not stage.cinematic_active() and stage.visible_avatar_hit(cursor)
+		host.update_pointer_interaction(avatar_hit, _press_active or ui.menu.visible)
 	playground.after_tick()
 	if _cinematic_mask_active and not stage.cinematic_active():
 		host.cinematic_mask(false)
@@ -701,4 +711,5 @@ func _stop_all_actions() -> void:
 		state.posture.request_stand()
 
 func _exit_tree() -> void:
+	host.shutdown()
 	playground.external.close()

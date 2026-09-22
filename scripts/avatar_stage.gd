@@ -37,6 +37,7 @@ var yaw: float = 0.0
 var travel_offset_px: float = 0.0
 var is_loaded: bool = false
 var _mesh_count: int = 0
+var _interaction_image: Image
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -186,6 +187,7 @@ func set_context_action(value: String, velocity: Vector2 = Vector2.ZERO) -> void
 func start_portal_intro() -> void:
 	if not is_loaded:
 		return
+	_interaction_image = null
 	_cinematic_mode = "intro"
 	_cinematic_age = 0.0
 	_cinematic_z = -model_height * 0.30
@@ -194,6 +196,7 @@ func start_portal_outro() -> void:
 	if not is_loaded:
 		_cinematic_mode = "outro_done"
 		return
+	_interaction_image = null
 	_cinematic_mode = "outro"
 	_cinematic_age = 0.0
 	_cinematic_z = 0.0
@@ -217,14 +220,15 @@ func _tick_cinematic(delta: float, time_value: float) -> void:
 			_cinematic_z = 0.0
 		return
 	_cinematic_age += clampf(delta, 0.0, 0.1)
-	var duration: float = 2.15 if _cinematic_mode == "intro" else 2.05
+	var duration: float = 2.30 if _cinematic_mode == "intro" else 2.24
 	var u: float = clampf(_cinematic_age / duration, 0.0, 1.0)
-	var visibility: float = smoothstep(0.0, 0.08, u) * (1.0 - smoothstep(0.90, 1.0, u))
-	var opened: float = smoothstep(0.08, 0.29, u) * (1.0 - smoothstep(0.73, 0.95, u))
+	var visibility: float = smoothstep(0.0, 0.07, u) * (1.0 - smoothstep(0.94, 1.0, u))
+	var close_start: float = 0.80 if _cinematic_mode == "intro" else 0.86
+	var opened: float = smoothstep(0.07, 0.27, u) * (1.0 - smoothstep(close_start, 0.965, u))
 	if _cinematic_mode == "intro":
-		_cinematic_z = lerpf(-model_height * 0.30, 0.0, smoothstep(0.18, 0.73, u))
+		_cinematic_z = lerpf(-model_height * 0.30, 0.0, smoothstep(0.20, 0.71, u))
 	else:
-		_cinematic_z = lerpf(0.0, -model_height * 0.30, smoothstep(0.30, 0.82, u))
+		_cinematic_z = lerpf(0.0, -model_height * 0.30, smoothstep(0.28, 0.78, u))
 	door.set_state(visibility, opened, time_value)
 	if u >= 1.0:
 		door.hide_door()
@@ -261,8 +265,43 @@ func side_anchor_pixel(window_side: String) -> Vector2:
 	point.y -= model_height * 0.035
 	return camera.unproject_position(rig.skeleton.global_transform * point)
 
+func refresh_interaction_alpha() -> bool:
+	if view == null or not is_loaded or view.get_texture() == null:
+		return false
+	var image: Image = view.get_texture().get_image()
+	if image == null or image.is_empty():
+		return false
+	if image.get_format() != Image.FORMAT_RGBA8:
+		image.convert(Image.FORMAT_RGBA8)
+	_interaction_image = image
+	return true
+
+func clear_interaction_alpha() -> void:
+	_interaction_image = null
+
+func visible_avatar_hit(point: Vector2) -> bool:
+	if _interaction_image == null or _interaction_image.is_empty():
+		return hit_avatar(point)
+	return alpha_image_hit(_interaction_image, point, size)
+
+static func alpha_image_hit(image: Image, point: Vector2, logical_size: Vector2, radius_px: int = 2, alpha_threshold: float = 0.035) -> bool:
+	if image == null or image.is_empty() or logical_size.x <= 0.0 or logical_size.y <= 0.0:
+		return false
+	if point.x < 0.0 or point.y < 0.0 or point.x >= logical_size.x or point.y >= logical_size.y:
+		return false
+	var width: int = image.get_width()
+	var height: int = image.get_height()
+	var px: int = clampi(int(floor(point.x * float(width) / logical_size.x)), 0, width - 1)
+	var py: int = clampi(int(floor(point.y * float(height) / logical_size.y)), 0, height - 1)
+	var radius: int = maxi(0, radius_px)
+	for y in range(maxi(0, py - radius), mini(height, py + radius + 1)):
+		for x in range(maxi(0, px - radius), mini(width, px + radius + 1)):
+			if image.get_pixel(x, y).a >= alpha_threshold:
+				return true
+	return false
+
 func hit_avatar(point: Vector2) -> bool:
-	# Pose-aware conservative envelope, not per-pixel alpha picking.
+	# Conservative fallback before the first app-owned alpha snapshot is ready.
 	if not is_loaded:
 		return false
 	var bounds: Rect2 = Rect2(head_pixel(), Vector2.ONE)

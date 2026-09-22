@@ -58,7 +58,10 @@
 - SurfaceController reverse links to app/playground must remain WeakRef to avoid resource cycles.
 - A support-local walk must suppress normal floor host.walk_to mapping.
 - Side leaning is geometry-gated; never fake contact when the companion window cannot fit.
-- Startup/outro cinematic temporarily expands the click mask and must restore it afterwards.
+- Windows precise input uses only Hoshi's own HWND plus alpha from Hoshi's own SubViewport;
+  no global hooks, foreign-window enumeration or desktop pixel reads are allowed.
+- The Win32 input helper must verify that its target HWND belongs to its parent Godot process.
+- Startup/outro stays pointer-pass-through; polygon masking is compatibility fallback only.
 - Normal close should return from support, stand, play portal outro, then quit.
 - Keep the 0.6 privacy contract: geometry/state/Z-order only for external windows.
 - Release acceptance: check + shelf_windows + external_windows + cozy_windows +

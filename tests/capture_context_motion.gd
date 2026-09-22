@@ -48,6 +48,10 @@ func _run() -> void:
 	app.ui.bubbles_enabled = false
 	advance(25)
 	await capture("01_idle")
+	check(app.stage.refresh_interaction_alpha(), "cache app-owned avatar alpha for precise desktop hit testing")
+	var torso_point: Vector2 = app.stage.camera.unproject_position(app.stage.rig.world_point("hips"))
+	check(app.stage.visible_avatar_hit(torso_point), "visible torso pixel is interactive")
+	check(not app.stage.visible_avatar_hit(Vector2(2.0, 2.0)), "transparent viewport corner is non-interactive")
 	app.stage.set_context_action("carry", Vector2(420.0, 250.0))
 	advance(40)
 	await capture("02_carry")

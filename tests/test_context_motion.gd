@@ -44,6 +44,11 @@ func _run() -> void:
 		stage.queue_free()
 		_finish()
 		return
+	var alpha_test := Image.create(40, 40, false, Image.FORMAT_RGBA8)
+	alpha_test.fill(Color(0.0, 0.0, 0.0, 0.0))
+	alpha_test.fill_rect(Rect2i(14, 6, 12, 28), Color.WHITE)
+	check(Stage.alpha_image_hit(alpha_test, Vector2(20, 20), Vector2(40, 40)), "app-owned alpha hit accepts a visible avatar pixel")
+	check(not Stage.alpha_image_hit(alpha_test, Vector2(3, 3), Vector2(40, 40)), "app-owned alpha hit rejects transparent window space")
 	var state := State.new()
 	state.autonomy_enabled = false
 	var rest: Array[Transform3D] = []
