@@ -6,8 +6,10 @@ var skeleton: Skeleton3D
 var available: bool = false
 var kind: String = "calm"
 var weights: Dictionary = {
-	"shift_left": 0.0,
-	"shift_right": 0.0,
+	"weight_left": 0.0,
+	"weight_right": 0.0,
+	"peek_left": 0.0,
+	"peek_right": 0.0,
 	"hands": 0.0,
 	"shoulders": 0.0,
 }
@@ -40,11 +42,7 @@ func tick(delta: float, state, blocked: bool = false, walk_weight: float = 0.0) 
 		_left = maxf(0.0, _left - dt)
 		_wait -= dt
 		if _left <= 0.0 and _wait <= 0.0:
-			var choices: Array = ["shift_left", "shift_right", "hands", "shoulders"]
-			choices.erase(_last)
-			if state.activity == "quiet":
-				choices.erase("shoulders")
-			kind = choices[_rng.randi_range(0, choices.size() - 1)]
+			kind = _choose_kind(state.activity)
 			_last = kind
 			_left = _duration(kind)
 			_wait = _left + _pause(state.activity)
@@ -59,10 +57,22 @@ func tick(delta: float, state, blocked: bool = false, walk_weight: float = 0.0) 
 		weights[key] = lerpf(float(weights[key]), target, 1.0 - exp(-dt * (2.8 if target > 0.0 else 4.4)))
 	return weights.duplicate()
 
+func _choose_kind(activity: String) -> String:
+	var choices: Array = ["weight_left", "weight_right", "hands", "shoulders"]
+	if activity != "quiet":
+		choices.append("peek_left")
+		choices.append("peek_right")
+	if activity == "playful" and _rng.randf() < 0.34:
+		choices = ["peek_left", "peek_right", "hands", "shoulders"]
+	choices.erase(_last)
+	return choices[_rng.randi_range(0, choices.size() - 1)]
+
 func _duration(value: String) -> float:
 	match value:
-		"shift_left", "shift_right":
-			return _rng.randf_range(2.6, 3.6)
+		"weight_left", "weight_right":
+			return _rng.randf_range(2.8, 4.2)
+		"peek_left", "peek_right":
+			return _rng.randf_range(1.8, 2.7)
 		"hands":
 			return _rng.randf_range(2.0, 2.8)
 		"shoulders":
@@ -80,27 +90,8 @@ func _pause(activity: String) -> float:
 func apply(time: float) -> void:
 	if not available:
 		return
-	var left: float = float(weights["shift_left"])
-	var right: float = float(weights["shift_right"])
-	var shift: float = left - right
-	if absf(shift) > 0.001:
-		# A curious standing peek: mostly forward, only a little sideways. The old
-		# version bent the whole torso sideways and read like a waist kink.
-		var w: float = absf(shift)
-		var side: float = signf(shift)
-		_add("hips", Vector3(1.2, side * 0.6, -side * 0.9) * w)
-		_add("spine", Vector3(8.5, -side * 1.2, -side * 2.2) * w)
-		_add("chest", Vector3(6.0, side * 1.0, side * 1.1) * w)
-		_add("neck", Vector3(4.0, -side * 2.8, -side * 0.8) * w)
-		_add("head", Vector3(10.5, -side * 4.5, -side * 1.6) * w)
-		# Both arms drift behind the torso for balance instead of one hand appearing
-		# to hook awkwardly against the waist.
-		_add("leftShoulder", Vector3(-1.5, 0.0, -1.5) * w)
-		_add("rightShoulder", Vector3(-1.5, 0.0, 1.5) * w)
-		_add("leftUpperArm", Vector3(8.0, 0.0, 2.0) * w)
-		_add("rightUpperArm", Vector3(8.0, 0.0, -2.0) * w)
-		_add("leftLowerArm", Vector3(4.0, 0.0, 1.5) * w)
-		_add("rightLowerArm", Vector3(4.0, 0.0, -1.5) * w)
+	_apply_weight_shift()
+	_apply_curiosity_peek()
 	var hands: float = float(weights["hands"])
 	if hands > 0.001:
 		var small: float = sin(time * 3.8) * 1.5
@@ -117,6 +108,39 @@ func apply(time: float) -> void:
 		_add("rightShoulder", Vector3(-2.0, 0.0, 2.2) * shoulders)
 		_add("neck", Vector3(1.2, 0.0, 0.0) * shoulders)
 		_add("head", Vector3(1.8, 0.0, 0.0) * shoulders)
+
+func _apply_weight_shift() -> void:
+	var amount: float = float(weights["weight_left"]) - float(weights["weight_right"])
+	if absf(amount) <= 0.001:
+		return
+	var w: float = absf(amount)
+	var side: float = signf(amount)
+	# Deliberately tiny: this should read as settling onto one leg, not as a pose.
+	_add("hips", Vector3(0.0, side * 0.20, side * 0.55) * w)
+	_add("spine", Vector3(0.25, -side * 0.35, -side * 0.75) * w)
+	_add("chest", Vector3(-0.10, side * 0.20, -side * 0.30) * w)
+	_add("neck", Vector3(0.0, -side * 0.45, side * 0.20) * w)
+	_add("head", Vector3(0.0, -side * 0.75, side * 0.30) * w)
+
+func _apply_curiosity_peek() -> void:
+	var amount: float = float(weights["peek_left"]) - float(weights["peek_right"])
+	if absf(amount) <= 0.001:
+		return
+	var w: float = absf(amount)
+	var side: float = signf(amount)
+	# A separate readable action: lean forward to inspect something, with only a
+	# small side bias. Arms drift behind the torso to counterbalance the lean.
+	_add("hips", Vector3(0.7, side * 0.25, -side * 0.35) * w)
+	_add("spine", Vector3(7.0, -side * 0.65, -side * 0.90) * w)
+	_add("chest", Vector3(4.6, side * 0.50, side * 0.45) * w)
+	_add("neck", Vector3(3.2, -side * 1.7, -side * 0.35) * w)
+	_add("head", Vector3(8.5, -side * 2.8, -side * 0.70) * w)
+	_add("leftShoulder", Vector3(-0.8, 0.0, -0.8) * w)
+	_add("rightShoulder", Vector3(-0.8, 0.0, 0.8) * w)
+	_add("leftUpperArm", Vector3(5.5, 0.0, 1.0) * w)
+	_add("rightUpperArm", Vector3(5.5, 0.0, -1.0) * w)
+	_add("leftLowerArm", Vector3(2.5, 0.0, 0.8) * w)
+	_add("rightLowerArm", Vector3(2.5, 0.0, -0.8) * w)
 
 func _add(semantic: String, degrees: Vector3) -> void:
 	if not rig.bones.has(semantic):

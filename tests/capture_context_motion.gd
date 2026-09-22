@@ -52,18 +52,22 @@ func _run() -> void:
 	var torso_point: Vector2 = app.stage.camera.unproject_position(app.stage.rig.world_point("hips"))
 	check(app.stage.visible_avatar_hit(torso_point), "visible torso pixel is interactive")
 	check(not app.stage.visible_avatar_hit(Vector2(2.0, 2.0)), "transparent viewport corner is non-interactive")
-	# Force one standing curiosity pose for app-owned visual review.
+	# Capture the two distinct standing gestures separately for visual review.
 	app.state.autonomy_enabled = true
 	app.state.rest_enabled = false
-	app.stage.idle_life.kind = "shift_left"
+	app.stage.idle_life.kind = "weight_left"
 	app.stage.idle_life._left = 8.0
 	app.stage.idle_life._wait = 20.0
-	app.stage.idle_life.weights["shift_left"] = 1.0
-	app.stage.idle_life.weights["shift_right"] = 0.0
-	app.stage.idle_life.weights["hands"] = 0.0
-	app.stage.idle_life.weights["shoulders"] = 0.0
+	for key in app.stage.idle_life.weights:
+		app.stage.idle_life.weights[key] = 1.0 if key == "weight_left" else 0.0
 	advance(8)
-	await capture("01b_standing_peek")
+	await capture("01b_weight_shift")
+	app.stage.idle_life.kind = "peek_left"
+	app.stage.idle_life._left = 8.0
+	for key in app.stage.idle_life.weights:
+		app.stage.idle_life.weights[key] = 1.0 if key == "peek_left" else 0.0
+	advance(8)
+	await capture("01c_curiosity_peek")
 	app.state.autonomy_enabled = false
 	advance(25)
 	app.stage.set_context_action("carry", Vector2(420.0, 250.0))

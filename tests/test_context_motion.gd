@@ -69,24 +69,31 @@ func _run() -> void:
 	for idle_weight in stage.idle_life.weights.values():
 		idle_cleared = idle_cleared and float(idle_weight) < 0.01
 	check(idle_cleared, "standing micro-gesture yields immediately to manual-only mode")
-	# The curiosity shift should read as a forward peek, not a sideways waist kink.
+	# Weight shift and curiosity are intentionally different gestures.
 	stage.rig.reset()
 	state.motion_enabled = true
 	stage.rig.tick(0.0, state.time, Vector2.ZERO, 0.0, 0.0, 0.0, true)
 	var base_head: Vector3 = stage.rig.world_point("head")
+	for key in stage.idle_life.weights:
+		stage.idle_life.weights[key] = 0.0
+	stage.idle_life.weights["weight_left"] = 1.0
+	stage.idle_life.apply(state.time)
+	var weight_head: Vector3 = stage.rig.world_point("head")
+	check(weight_head.distance_to(base_head) < stage.model_height * 0.025, "weight shift stays a subtle settling gesture")
+	stage.rig.reset()
+	stage.rig.tick(0.0, state.time, Vector2.ZERO, 0.0, 0.0, 0.0, true)
 	var base_left_hand: Vector3 = stage.rig.world_point("leftHand")
 	var base_right_hand: Vector3 = stage.rig.world_point("rightHand")
-	stage.idle_life.weights["shift_left"] = 1.0
-	stage.idle_life.weights["shift_right"] = 0.0
-	stage.idle_life.weights["hands"] = 0.0
-	stage.idle_life.weights["shoulders"] = 0.0
+	for key in stage.idle_life.weights:
+		stage.idle_life.weights[key] = 0.0
+	stage.idle_life.weights["peek_left"] = 1.0
 	stage.idle_life.apply(state.time)
 	var peek_head: Vector3 = stage.rig.world_point("head")
 	var peek_left_hand: Vector3 = stage.rig.world_point("leftHand")
 	var peek_right_hand: Vector3 = stage.rig.world_point("rightHand")
-	check(peek_head.z > base_head.z + stage.model_height * 0.02, "standing peek moves head forward")
-	check(absf(peek_head.x - base_head.x) < stage.model_height * 0.08, "standing peek keeps side bend restrained")
-	check(peek_left_hand.z < base_left_hand.z and peek_right_hand.z < base_right_hand.z, "standing peek sends both hands behind for balance")
+	check(peek_head.z > base_head.z + stage.model_height * 0.015, "curiosity peek moves head forward")
+	check(absf(peek_head.x - base_head.x) < stage.model_height * 0.055, "curiosity peek keeps side bend restrained")
+	check(peek_left_hand.z < base_left_hand.z and peek_right_hand.z < base_right_hand.z, "curiosity peek sends both hands behind for balance")
 	for key in stage.idle_life.weights:
 		stage.idle_life.weights[key] = 0.0
 	var rest: Array[Transform3D] = []
