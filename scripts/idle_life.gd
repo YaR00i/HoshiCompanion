@@ -84,11 +84,23 @@ func apply(time: float) -> void:
 	var right: float = float(weights["shift_right"])
 	var shift: float = left - right
 	if absf(shift) > 0.001:
-		_add("hips", Vector3(0.0, shift * 0.5, shift * 2.0))
-		_add("spine", Vector3(0.2, -shift * 0.8, -shift * 2.6))
-		_add("chest", Vector3(-0.2, shift * 0.5, -shift * 1.4))
-		_add("neck", Vector3(0.0, -shift * 1.0, shift * 0.8))
-		_add("head", Vector3(0.0, -shift * 1.6, shift * 1.2))
+		# A curious standing peek: mostly forward, only a little sideways. The old
+		# version bent the whole torso sideways and read like a waist kink.
+		var w: float = absf(shift)
+		var side: float = signf(shift)
+		_add("hips", Vector3(1.2, side * 0.6, -side * 0.9) * w)
+		_add("spine", Vector3(8.5, -side * 1.2, -side * 2.2) * w)
+		_add("chest", Vector3(6.0, side * 1.0, side * 1.1) * w)
+		_add("neck", Vector3(4.0, -side * 2.8, -side * 0.8) * w)
+		_add("head", Vector3(10.5, -side * 4.5, -side * 1.6) * w)
+		# Both arms drift behind the torso for balance instead of one hand appearing
+		# to hook awkwardly against the waist.
+		_add("leftShoulder", Vector3(-1.5, 0.0, -1.5) * w)
+		_add("rightShoulder", Vector3(-1.5, 0.0, 1.5) * w)
+		_add("leftUpperArm", Vector3(8.0, 0.0, 2.0) * w)
+		_add("rightUpperArm", Vector3(8.0, 0.0, -2.0) * w)
+		_add("leftLowerArm", Vector3(4.0, 0.0, 1.5) * w)
+		_add("rightLowerArm", Vector3(4.0, 0.0, -1.5) * w)
 	var hands: float = float(weights["hands"])
 	if hands > 0.001:
 		var small: float = sin(time * 3.8) * 1.5
