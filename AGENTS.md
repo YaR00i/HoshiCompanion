@@ -48,3 +48,18 @@
 - Existing manual four-second window picker remains independent and must keep working.
 - dev.py check includes place-director checks; also run shelf_windows, external_windows,
   cozy_windows and edge_views before merging changes to support/pose arbitration.
+
+## 0.7 context motion and desktop surfaces
+- Read docs/CONTEXT_SURFACES_07.md before changing carry/jump/fall/portal/surface behavior.
+- air_motion.gd owns screen-space jump/fall/landing only; it must not edit rig bones.
+- context_pose.gd owns temporary carry/jump/fall/land/portal/side-lean overlays.
+- magic_door.gd must remain app-owned procedural rendering with no external assets/network.
+- surface_controller.gd owns support-local walking and vertical side leaning.
+- SurfaceController reverse links to app/playground must remain WeakRef to avoid resource cycles.
+- A support-local walk must suppress normal floor host.walk_to mapping.
+- Side leaning is geometry-gated; never fake contact when the companion window cannot fit.
+- Startup/outro cinematic temporarily expands the click mask and must restore it afterwards.
+- Normal close should return from support, stand, play portal outro, then quit.
+- Keep the 0.6 privacy contract: geometry/state/Z-order only for external windows.
+- Release acceptance: check + shelf_windows + external_windows + cozy_windows +
+  context_views + edge_views; external tests must stay fixture-only.
