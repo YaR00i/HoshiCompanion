@@ -236,7 +236,10 @@ func _process(delta: float) -> void:
 	var context_action: String = "carry" if _dragged and not host.preview else air.pose_mode()
 	if context_action == "idle":
 		context_action = playground.surface_context()
-	stage.set_context_action(context_action, _drag_velocity)
+	var context_velocity: Vector2 = _drag_velocity if context_action == "carry" else (air.screen_velocity() if air.active() else Vector2.ZERO)
+	var context_progress: float = air.pose_progress() if air.active() and context_action in ["jump", "fall", "land"] else -1.0
+	var context_impact: float = air.impact_strength() if air.active() and context_action in ["jump", "fall", "land"] else 0.5
+	stage.set_context_action(context_action, context_velocity, context_progress, context_impact)
 	stage.animate(dt, state, _gaze, walker.sample())
 	if not host.preview:
 		_input_alpha_clock += dt

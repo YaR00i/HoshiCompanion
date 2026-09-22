@@ -20,13 +20,20 @@ func _run() -> void:
 	var air := Air.new()
 	air.begin_jump(Vector2(100, 500), Vector2(500, 300), 360.0)
 	var linear_mid_y: float = 400.0
+	var previous_progress: float = air.pose_progress()
+	var progress_monotonic: bool = true
 	for i in range(10):
 		air.tick(0.03)
+		progress_monotonic = progress_monotonic and air.pose_progress() >= previous_progress
+		previous_progress = air.pose_progress()
 	check(air.position.y < linear_mid_y, "jump route rises above the straight line")
+	check(progress_monotonic and previous_progress > 0.0 and previous_progress < 1.0, "jump exposes monotonic normalized pose phase")
+	check(air.screen_velocity().length() > 1.0, "air motion exposes real screen-space velocity to pose layer")
 	for i in range(80):
 		air.tick(0.03)
 	check(air.mode == "idle" and air.position.distance_to(Vector2(500, 300)) < 0.01, "jump lands exactly at target")
 	air.begin_fall(Vector2(300, 120), Vector2(360, 620), 360.0)
+	check(air.impact_strength() > 1.0, "long fall exposes stronger landing severity")
 	var previous_y: float = air.position.y
 	var monotonic: bool = true
 	for i in range(100):
@@ -109,7 +116,7 @@ func _run() -> void:
 	for bone in range(stage.rig.skeleton.get_bone_count()):
 		rest.append(stage.rig.skeleton.get_bone_rest(bone))
 	for mode in ["carry", "jump", "fall", "land"]:
-		stage.set_context_action(mode, Vector2(420, 260))
+		stage.set_context_action(mode, Vector2(420, 260), 0.55 if mode in ["jump", "fall"] else (0.28 if mode == "land" else -1.0), 1.0)
 		for i in range(50):
 			state.tick(1.0 / 30.0)
 			stage.animate(1.0 / 30.0, state, Vector2.ZERO)
@@ -117,6 +124,38 @@ func _run() -> void:
 		for bone in range(stage.rig.skeleton.get_bone_count()):
 			finite = finite and stage.rig.skeleton.get_bone_global_pose(bone).origin.is_finite()
 		check(finite, mode + " context pose keeps every bone finite")
+	# Jump/fall/landing phases must be visually different poses, not one static overlay.
+	stage.set_context_action("jump", Vector2(220, -420), 0.08, 0.55)
+	for i in range(12):
+		state.tick(1.0 / 30.0)
+		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
+	var jump_anticipation_head: Vector3 = stage.rig.world_point("head")
+	var jump_anticipation_foot: Vector3 = stage.rig.world_point("leftFoot")
+	check(stage.context_pose.phase_label() == "anticipation", "jump exposes anticipation phase")
+	stage.set_context_action("jump", Vector2(360, -260), 0.52, 0.55)
+	for i in range(12):
+		state.tick(1.0 / 30.0)
+		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
+	var jump_flight_head: Vector3 = stage.rig.world_point("head")
+	var jump_flight_foot: Vector3 = stage.rig.world_point("leftFoot")
+	check(stage.context_pose.phase_label() == "flight", "jump exposes flight phase")
+	check(jump_anticipation_head.distance_to(jump_flight_head) + jump_anticipation_foot.distance_to(jump_flight_foot) > stage.model_height * 0.025, "jump anticipation and flight are geometrically distinct")
+	stage.set_context_action("fall", Vector2(120, 760), 0.78, 1.2)
+	for i in range(12):
+		state.tick(1.0 / 30.0)
+		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
+	check(stage.context_pose.phase_label() == "brace" and stage.rig.world_point("leftFoot").is_finite(), "hard fall reaches a finite brace phase")
+	stage.set_context_action("land", Vector2(90, 0), 0.18, 1.2)
+	for i in range(8):
+		state.tick(1.0 / 30.0)
+		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
+	var land_compress_head: Vector3 = stage.rig.world_point("head")
+	check(stage.context_pose.phase_label() == "compress", "landing begins with compression")
+	stage.set_context_action("land", Vector2.ZERO, 0.88, 1.2)
+	for i in range(12):
+		state.tick(1.0 / 30.0)
+		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
+	check(stage.context_pose.phase_label() == "recover" and land_compress_head.distance_to(stage.rig.world_point("head")) > stage.model_height * 0.01, "landing visibly recovers from compression")
 	var unchanged: bool = true
 	for bone in range(stage.rig.skeleton.get_bone_count()):
 		unchanged = unchanged and stage.rig.skeleton.get_bone_rest(bone).is_equal_approx(rest[bone])

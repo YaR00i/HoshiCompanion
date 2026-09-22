@@ -65,8 +65,8 @@
 
 ## 0.7 context motion and desktop surfaces
 - Read docs/CONTEXT_SURFACES_07.md before changing carry/jump/fall/portal/surface behavior.
-- air_motion.gd owns screen-space jump/fall/landing only; it must not edit rig bones.
-- context_pose.gd owns temporary carry/jump/fall/land/portal/side-lean overlays.
+- air_motion.gd owns screen-space jump/fall/landing only; it must not edit rig bones. It may expose normalized phase, screen velocity and impact strength as read-only pose inputs.
+- context_pose.gd owns temporary carry/jump/fall/land/portal/side-lean overlays and may use AirMotion phase/velocity/impact, but never changes trajectory.
 - idle_life.gd owns rare standing micro-gestures only; it must never take foot placement or locomotion ownership.
 - magic_door.gd must remain app-owned procedural rendering with no external assets/network.
 - surface_controller.gd owns support-local walking and vertical side leaning.

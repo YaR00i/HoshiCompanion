@@ -174,7 +174,7 @@ Activity остаётся явным пользовательским профи
 4. Перевести floor autonomy на intents — первая миграция: observe / explore_floor / rest / social_react исполняются planner-цепочками.
 5. Перевести surface autonomy на intents — explore_surface / visit_side / leave_support / observe используют существующий SurfaceController.
 6. Добавить короткие 2–4 step chains — реализованы вариантные mini-scenes для floor/surface с отдельной памятью вариантов и явными micro-gestures.
-7. Visual polish carry/jump/fall/landing.
+7. Visual polish carry/jump/fall/landing — AirMotion отдаёт phase/velocity/impact, ContextPose использует их для inertia, anticipation, tuck/brace и landing recovery.
 8. Personality State.
 9. Session-memory и более узнаваемый характер.
 10. Только после этого расширять desktop-world возможности.

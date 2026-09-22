@@ -27,6 +27,8 @@ var door
 var edge_suspended: bool = false
 var context_action: String = "idle"
 var context_velocity: Vector2 = Vector2.ZERO
+var context_progress: float = -1.0
+var context_impact: float = 0.5
 var _cinematic_mode: String = ""
 var _cinematic_age: float = 0.0
 var _cinematic_z: float = 0.0
@@ -186,13 +188,15 @@ func animate(delta: float, state, gaze: Vector2, walk_frame: Dictionary = {}) ->
 		posture_driver.apply(seated, state.time, state.wave_weight, state.motion_enabled)
 	idle_life.apply(state.time)
 	var active_context: String = "portal" if cinematic_active() else context_action
-	context_pose.tick(delta, active_context, context_velocity)
+	context_pose.tick(delta, active_context, context_velocity, context_progress, context_impact)
 	context_pose.apply(state.time)
 	expressions.apply(state.expression_weights())
 
-func set_context_action(value: String, velocity: Vector2 = Vector2.ZERO) -> void:
+func set_context_action(value: String, velocity: Vector2 = Vector2.ZERO, normalized_progress: float = -1.0, impact_strength: float = 0.5) -> void:
 	context_action = value
 	context_velocity = velocity
+	context_progress = normalized_progress
+	context_impact = impact_strength
 
 func start_portal_intro() -> void:
 	if not is_loaded:
