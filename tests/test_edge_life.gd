@@ -37,7 +37,7 @@ func _run() -> void:
 	var seat: Vector3 = app.stage.edge_pose.anchor_world()
 	var hip: Vector3 = app.stage.rig.world_point("hips")
 	var head: Vector3 = app.stage.rig.world_point("head")
-	for activity in ["swing", "lean", "peek"]:
+	for activity in ["swing", "lean", "peek", "balance"]:
 		app.state.edge_activity = activity
 		frames(120)
 		check(float(app.stage.edge_life.weights[activity]) > 0.95, activity + " weight reaches target")
@@ -79,7 +79,7 @@ func _run() -> void:
 		frames(1)
 		for key in app.stage.edge_life.weights:
 			if float(app.stage.edge_life.weights[key]) > 0.8: seen[key] = true
-	check(seen.size() == 3, "autonomy uses all three activities")
+	check(seen.size() == 4, "autonomy uses all four seated activities")
 	app.state.activity = "quiet"
 	frames(120)
 	var quiet: bool = true

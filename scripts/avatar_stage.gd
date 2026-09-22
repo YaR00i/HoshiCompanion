@@ -6,6 +6,7 @@ const Gait = preload("res://scripts/gait_driver.gd")
 const PostureDriver = preload("res://scripts/posture_driver.gd")
 const EdgePose = preload("res://scripts/edge_pose.gd")
 const EdgeLife = preload("res://scripts/edge_life.gd")
+const IdleLife = preload("res://scripts/idle_life.gd")
 const ContextPose = preload("res://scripts/context_pose.gd")
 const MagicDoor = preload("res://scripts/magic_door.gd")
 const Expressions = preload("res://scripts/expression_driver.gd")
@@ -20,6 +21,7 @@ var gait = Gait.new()
 var posture_driver = PostureDriver.new()
 var edge_pose = EdgePose.new()
 var edge_life = EdgeLife.new()
+var idle_life = IdleLife.new()
 var context_pose = ContextPose.new()
 var door
 var edge_suspended: bool = false
@@ -85,8 +87,11 @@ func load_model(path: String) -> Dictionary:
 	posture_driver = PostureDriver.new()
 	edge_pose = EdgePose.new()
 	edge_life = EdgeLife.new()
+	idle_life = IdleLife.new()
 	context_pose = ContextPose.new()
-	edge_life.seed_random(42 if OS.get_cmdline_user_args().has("--test-mode") else int(Time.get_ticks_usec()))
+	var life_seed: int = 42 if OS.get_cmdline_user_args().has("--test-mode") else int(Time.get_ticks_usec())
+	edge_life.seed_random(life_seed)
+	idle_life.seed_random(life_seed + 19)
 	expressions = Expressions.new()
 	_cinematic_mode = ""
 	_cinematic_age = 0.0
@@ -130,11 +135,12 @@ func load_model(path: String) -> Dictionary:
 	var posture_report: Dictionary = posture_driver.setup(rig, gait, model_height)
 	edge_pose.setup(posture_driver)
 	var context_report: Dictionary = context_pose.setup(rig, model_height)
+	var idle_report: Dictionary = idle_life.setup(rig)
 	door.setup(model_height)
 	door.hide_door()
 	var face_report: Dictionary = expressions.setup(avatar, loaded["source"], loaded["state"])
 	is_loaded = true
-	report = {"posture": posture_report, "context": context_report, "rig": rig_report, "locomotion": gait_report, "face": face_report, "mesh_count": _mesh_count, "height_m": model_height,
+	report = {"posture": posture_report, "context": context_report, "idle_life": idle_report, "rig": rig_report, "locomotion": gait_report, "face": face_report, "mesh_count": _mesh_count, "height_m": model_height,
 		"status": "ready" if bool(face_report.get("blink_available", false)) else "partial",
 		"warnings": face_report.get("warnings", PackedStringArray())}
 	fit_camera()
@@ -167,6 +173,9 @@ func animate(delta: float, state, gaze: Vector2, walk_frame: Dictionary = {}) ->
 	pivot.rotation.y = deg_to_rad(yaw)
 	pivot.position = Vector3(travel_offset_px * meters_per_pixel(), 0.0, _cinematic_z)
 	var life_frame: Dictionary = edge_life.tick(delta, state, edge_suspended)
+	var walk_weight: float = float(walk_frame.get("weight", 0.0))
+	var idle_blocked: bool = cinematic_active() or context_action != "idle" or edge_suspended
+	idle_life.tick(delta, state, idle_blocked, walk_weight)
 	rig.hair_enabled = state.hair_enabled
 	rig.tick(delta, state.time, gaze, state.wave_weight, state.pet_weight, state.sleep_weight, state.motion_enabled, state.curiosity, walk_frame)
 	var seated: float = state.posture.amount
@@ -175,6 +184,7 @@ func animate(delta: float, state, gaze: Vector2, walk_frame: Dictionary = {}) ->
 		edge_pose.apply(seated, state.time, state.wave_weight, state.motion_enabled and not state.dozing, life_frame)
 	else:
 		posture_driver.apply(seated, state.time, state.wave_weight, state.motion_enabled)
+	idle_life.apply(state.time)
 	var active_context: String = "portal" if cinematic_active() else context_action
 	context_pose.tick(delta, active_context, context_velocity)
 	context_pose.apply(state.time)

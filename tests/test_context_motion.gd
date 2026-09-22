@@ -50,7 +50,25 @@ func _run() -> void:
 	check(Stage.alpha_image_hit(alpha_test, Vector2(20, 20), Vector2(40, 40)), "app-owned alpha hit accepts a visible avatar pixel")
 	check(not Stage.alpha_image_hit(alpha_test, Vector2(3, 3), Vector2(40, 40)), "app-owned alpha hit rejects transparent window space")
 	var state := State.new()
+	state.rest_enabled = false
+	state.autonomy_enabled = true
+	stage.idle_life.seed_random(77)
+	stage.idle_life._wait = 0.0
+	var idle_seen: bool = false
+	for i in range(120):
+		state.tick(1.0 / 30.0, false)
+		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
+		for idle_weight in stage.idle_life.weights.values():
+			idle_seen = idle_seen or float(idle_weight) > 0.55
+	check(idle_seen, "standing autonomy produces a restrained micro-gesture")
 	state.autonomy_enabled = false
+	for i in range(90):
+		state.tick(1.0 / 30.0, false)
+		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
+	var idle_cleared: bool = true
+	for idle_weight in stage.idle_life.weights.values():
+		idle_cleared = idle_cleared and float(idle_weight) < 0.01
+	check(idle_cleared, "standing micro-gesture yields immediately to manual-only mode")
 	var rest: Array[Transform3D] = []
 	for bone in range(stage.rig.skeleton.get_bone_count()):
 		rest.append(stage.rig.skeleton.get_bone_rest(bone))

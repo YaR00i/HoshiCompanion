@@ -19,15 +19,17 @@ func apply(amount: float, time: float, wave: float, motion: bool, life: Dictiona
 	var lean: float = clampf(float(life.get("lean", 0.0)), 0.0, 1.0) * p
 	var swing: float = clampf(float(life.get("swing", 0.0)), 0.0, 1.0) * p
 	var peek: float = clampf(float(life.get("peek", 0.0)), 0.0, 1.0) * p
+	var balance: float = clampf(float(life.get("balance", 0.0)), 0.0, 1.0) * p
+	var balance_wave: float = sin(time * 1.75) * balance
 	var h: float = driver.height_m
 	var skel: Skeleton3D = driver.skeleton
 	var hip: Vector3 = driver.hips_rest
 	hip.y = lerpf(hip.y, driver.ground_y + h * 0.42, p)
 	hip.z -= h * 0.06 * p
 	driver._set_position_global(driver.gait.hips_id, hip)
-	driver._add_rotation("spine", Vector3(3.0 * p - lean * 19.0, 0.0, 0.0))
-	driver._add_rotation("chest", Vector3(-lean * 10.0, 0.0, 0.0))
-	driver._add_rotation("head", Vector3(peek * 14.0 + lean * 9.0, peek * 3.0, 0.0))
+	driver._add_rotation("spine", Vector3(3.0 * p - lean * 19.0, balance_wave * 1.5, balance_wave * 3.8))
+	driver._add_rotation("chest", Vector3(-lean * 10.0, -balance_wave * 1.0, -balance_wave * 2.7))
+	driver._add_rotation("head", Vector3(peek * 14.0 + lean * 9.0, peek * 3.0 - balance_wave * 2.0, -balance_wave * 2.2))
 	seat_point = hip - Vector3(0.0, h * seat_offset_ratio, 0.0)
 	ankle_targets.clear()
 	for side in range(2):

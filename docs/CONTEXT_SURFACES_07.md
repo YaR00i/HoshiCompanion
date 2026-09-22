@@ -5,6 +5,8 @@
 - `air_motion.gd` owns only screen-space jump/fall/landing routes.
 - `context_pose.gd` adds temporary rig rotations for carry/jump/fall/land/portal
   and left/right side leaning. It must never mutate REST transforms or skin binds.
+- `idle_life.gd` adds rare standing weight shifts, hand fidgets and shoulder settling.
+  It owns no routes, foot targets or support placement and yields to user/context actions.
 - `magic_door.gd` is app-owned procedural 3D geometry/shader; no image/network source.
 - `surface_controller.gd` maps walking/leaning to the active support's local geometry.
 - `shelf_playground.gd` still owns support lifecycle and external HWND tracking.

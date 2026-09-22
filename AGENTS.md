@@ -53,6 +53,7 @@
 - Read docs/CONTEXT_SURFACES_07.md before changing carry/jump/fall/portal/surface behavior.
 - air_motion.gd owns screen-space jump/fall/landing only; it must not edit rig bones.
 - context_pose.gd owns temporary carry/jump/fall/land/portal/side-lean overlays.
+- idle_life.gd owns rare standing micro-gestures only; it must never take foot placement or locomotion ownership.
 - magic_door.gd must remain app-owned procedural rendering with no external assets/network.
 - surface_controller.gd owns support-local walking and vertical side leaning.
 - SurfaceController reverse links to app/playground must remain WeakRef to avoid resource cycles.

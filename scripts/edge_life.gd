@@ -2,7 +2,7 @@ extends RefCounted
 ## Small seated activities, not a second locomotion controller.
 ## Pose weights fade to zero for pickup/stand/doze; pelvis support stays fixed.
 var kind: String = "calm"
-var weights: Dictionary = {"swing": 0.0, "lean": 0.0, "peek": 0.0}
+var weights: Dictionary = {"swing": 0.0, "lean": 0.0, "peek": 0.0, "balance": 0.0}
 var _wait: float = 9.0
 var _left: float = 0.0
 var _last: String = "peek"
@@ -21,11 +21,11 @@ func tick(delta: float, state, suspended: bool = false) -> Dictionary:
 		_left = maxf(0.0, _left - dt)
 		_wait -= dt
 		if _left <= 0.0 and _wait <= 0.0:
-			var choices: Array = ["swing", "lean", "peek"]
+			var choices: Array = ["swing", "lean", "peek", "balance"]
 			choices.erase(_last)
 			kind = choices[_rng.randi_range(0, choices.size() - 1)]
 			_last = kind
-			_left = 8.0 if kind == "swing" else (14.0 if kind == "lean" else 4.0)
+			_left = 8.0 if kind == "swing" else (14.0 if kind == "lean" else (4.0 if kind == "peek" else 3.5))
 			_wait = _left + _rng.randf_range(12.0, 24.0)
 		if _left > 0.0:
 			goal = kind
