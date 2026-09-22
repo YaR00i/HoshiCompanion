@@ -323,6 +323,19 @@ func _check_intent_planner() -> void:
 	shadow.seed_random(12)
 	var observed: Dictionary = shadow.observe_legacy_action("walk", context)
 	_check(observed.get("name", "") == "explore_floor" and shadow.current_step() == "walk", "shadow mode maps legacy action without executing it")
+	_check(shadow.cooldown_left("explore_floor") > 17.9 and not shadow.intent_available("explore_floor", context), "activation arms per-intent cooldown")
+	var report: Dictionary = shadow.candidate_report(context, "normal")
+	_check(report["explore_floor"]["reason"] == "cooldown" and float(report["explore_floor"]["weight"]) == 0.0, "candidate report explains cooldown rejection")
+	for i in range(181): shadow.tick(0.1, context)
+	_check(shadow.cooldown_left("explore_floor") <= 0.001 and shadow.intent_available("explore_floor", context), "cooldown expires only through planner time")
+	var invalid_report: Dictionary = shadow.candidate_report({"blocked": false, "location": "floor", "can_walk": false, "can_rest": false, "can_observe": false, "can_social": false}, "normal")
+	_check(invalid_report["explore_floor"]["reason"] == "cannot_walk" and invalid_report["rest"]["reason"] == "cannot_rest", "candidate report preserves concrete precondition reasons")
+	var novelty = IntentPlanner.new()
+	novelty.seed_random(3)
+	var observe_plan: Dictionary = novelty.build_plan("observe", context)
+	novelty.activate(observe_plan)
+	var first_novelty: float = float(novelty.candidate_report(context, "normal")["observe"]["novelty"])
+	_check(first_novelty < 0.2, "most recent intention receives a strong novelty penalty")
 
 func _finish() -> void:
 	var report: Dictionary = {"engine": Engine.get_version_info(), "checks": checks, "failures": failures,

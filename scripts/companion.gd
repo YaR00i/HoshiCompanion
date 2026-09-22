@@ -203,6 +203,7 @@ func _process(delta: float) -> void:
 		"can_surface_walk": playground.active() and playground.phase == "attached" and not playground.surface_busy(),
 		"can_side": playground.active() and playground.external_mode and playground.phase == "attached" and not playground.surface_busy(),
 		"can_leave": playground.active() and playground.phase == "attached"}
+	intent_planner.tick(dt, behavior_context)
 	var action: String = director.tick(dt, behavior_context)
 	# 0.8.0 shadow mode: planner records the intention behind legacy decisions,
 	# but only the existing director/controllers are allowed to execute anything.
