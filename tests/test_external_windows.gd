@@ -195,7 +195,7 @@ func _read_ack(expected: String) -> bool:
 		var data: Variant = JSON.parse_string(line.strip_edges())
 		if data is Dictionary and str(data.get("ack", "")) == expected:
 			if expected == "restore":
-				return not bool(data.get("iconic", true)) and bool(data.get("visible", false))
+				return not bool(data.get("iconic", true)) and bool(data.get("visible", false)) and bool(data.get("enabled", false)) and not bool(data.get("zoomed", true)) and not bool(data.get("cloaked", true)) and int(data.get("stable", 0)) >= 3
 			return true
 	return false
 

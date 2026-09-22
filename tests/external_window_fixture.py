@@ -29,6 +29,13 @@ u.IsWindowVisible.argtypes = [W.HWND]
 u.IsWindowVisible.restype = W.BOOL
 u.ShowWindow.argtypes = [W.HWND, C.c_int]
 u.ShowWindow.restype = W.BOOL
+u.IsWindowEnabled.argtypes = [W.HWND]
+u.IsWindowEnabled.restype = W.BOOL
+u.IsZoomed.argtypes = [W.HWND]
+u.IsZoomed.restype = W.BOOL
+d = C.WinDLL("dwmapi")
+d.DwmGetWindowAttribute.argtypes = [W.HWND, W.DWORD, C.c_void_p, W.DWORD]
+d.DwmGetWindowAttribute.restype = C.c_long
 
 class MONITORINFO(C.Structure):
     _fields_ = [("cbSize", W.DWORD), ("rcMonitor", W.RECT),
@@ -90,11 +97,31 @@ def ack(op, **extra):
     payload.update(extra)
     print(json.dumps(payload), flush=True)
 
+_restore_last_rect = None
+_restore_stable = 0
+
 def ack_when_restored(attempt=0):
+    global _restore_last_rect, _restore_stable
     iconic = bool(u.IsIconic(hwnd))
     visible = bool(u.IsWindowVisible(hwnd))
-    if (not iconic and visible) or attempt >= 80:
-        ack("restore", iconic=iconic, visible=visible)
+    enabled = bool(u.IsWindowEnabled(hwnd))
+    zoomed = bool(u.IsZoomed(hwnd))
+    cloaked = W.DWORD()
+    cloak_ok = d.DwmGetWindowAttribute(hwnd, 14, C.byref(cloaked), C.sizeof(cloaked)) == 0
+    frame = W.RECT()
+    frame_ok = d.DwmGetWindowAttribute(hwnd, 9, C.byref(frame), C.sizeof(frame)) == 0
+    rect = (int(frame.left), int(frame.top), int(frame.right), int(frame.bottom)) if frame_ok else None
+    size_ok = rect is not None and rect[2] - rect[0] >= 180 and rect[3] - rect[1] >= 80
+    ready = not iconic and visible and enabled and not zoomed and (not cloak_ok or not cloaked.value) and size_ok
+    if ready and rect == _restore_last_rect:
+        _restore_stable += 1
+    else:
+        _restore_stable = 0
+    _restore_last_rect = rect
+    if (ready and _restore_stable >= 3) or attempt >= 100:
+        ack("restore", iconic=iconic, visible=visible, enabled=enabled,
+            zoomed=zoomed, cloaked=bool(cloaked.value) if cloak_ok else False,
+            stable=_restore_stable, frame=list(rect) if rect is not None else [])
         return
     root.after(15, lambda: ack_when_restored(attempt + 1))
 
