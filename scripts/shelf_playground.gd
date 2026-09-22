@@ -34,6 +34,7 @@ func active() -> bool:
 	return phase != "off"
 
 func show_demo(use_cozy: bool = false) -> bool:
+	app._abort_autonomous_intent("support_enter")
 	if external_mode or (is_instance_valid(shelf) and cozy_mode != use_cozy):
 		release_for_mode_change()
 	if app.host.headless or not app.stage.is_loaded or not app.stage.edge_pose.available:

@@ -10,6 +10,7 @@ var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _walk_started: bool = false
 var _auto_side_return: float = 0.0
 var _last_auto_action: String = ""
+var internal_autonomy_enabled: bool = false
 
 func setup(companion, playground) -> void:
 	app_ref = weakref(companion)
@@ -57,11 +58,22 @@ func label() -> String:
 		"side_left", "side_right": return "Опирается на бок окна"
 	return ""
 
+func can_walk_route() -> bool:
+	return _owner().phase == "attached" and _owner()._shelf_usable() and mode == "sit" and bool(_route_plan().get("ok", false))
+
+func available_side() -> String:
+	if _owner().phase != "attached" or not _owner().external_mode or not _owner()._shelf_usable() or mode != "sit":
+		return ""
+	var first: String = "right" if side == "left" else "left"
+	var second: String = "left" if first == "right" else "right"
+	if bool(_side_placement(first).get("ok", false)):
+		return first
+	if bool(_side_placement(second).get("ok", false)):
+		return second
+	return ""
+
 func request_walk() -> bool:
-	if _owner().phase != "attached" or not _owner()._shelf_usable() or mode != "sit":
-		return false
-	# Plan first. Never stand up only to discover there is nowhere to go.
-	if not bool(_route_plan().get("ok", false)):
+	if not can_walk_route():
 		return false
 	_app().state.dozing = false
 	_app().state.posture.kind = "edge"
@@ -105,7 +117,7 @@ func before_tick(delta: float) -> void:
 	if _owner().phase != "attached":
 		return
 	var dt: float = clampf(delta, 0.0, 0.1)
-	if mode == "sit":
+	if mode == "sit" and internal_autonomy_enabled:
 		_tick_autonomy(dt)
 	elif mode == "rise":
 		if _app().state.posture.mode == "standing":

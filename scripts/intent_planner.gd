@@ -53,9 +53,10 @@ func tick(delta: float, context: Dictionary = {}) -> void:
 		observe_context(context)
 
 func observe_context(context: Dictionary) -> void:
+	# "blocked" prevents choosing a new intent. It must not erase an intent that
+	# is blocked by its own in-flight controller (walking, jumping, posture).
+	# User input and support loss interrupt explicitly through interrupt().
 	last_context = context.duplicate(true)
-	if bool(context.get("blocked", false)):
-		active_intent = {}
 
 func observe_legacy_action(action: String, context: Dictionary) -> Dictionary:
 	observe_context(context)

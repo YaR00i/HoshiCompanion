@@ -48,6 +48,9 @@ var _pending_auto: bool = false
 var _rest_after_walk: bool = false
 var _floor_intent_step_started: bool = false
 var _floor_intent_wait: float = 4.0
+var _surface_intent_step_started: bool = false
+var _surface_step_wait: float = 0.0
+var _surface_intent_wait: float = 5.0
 var _test_mode: bool = false
 var _settings: ConfigFile = ConfigFile.new()
 
@@ -189,39 +192,34 @@ func _process(delta: float) -> void:
 	director.enabled = state.autonomy_enabled
 	director.walk_enabled = state.walk_enabled and state.motion_enabled
 	director.rest_enabled = state.rest_enabled and state.motion_enabled and state.place_mode == "off"
-	var blocked: bool = playground.active() or air.active() or stage.cinematic_active() or not _quit_phase.is_empty() or _press_active or ui.menu.visible or state.dozing or walker.active() or state.posture.transitioning() or not _pending_action.is_empty() or state.pet_weight > 0.1 or state.wave_weight > 0.1
+	var control_blocked: bool = air.active() or stage.cinematic_active() or not _quit_phase.is_empty() or _press_active or ui.menu.visible or state.dozing or walker.active() or state.posture.transitioning() or not _pending_action.is_empty() or state.pet_weight > 0.1 or state.wave_weight > 0.1
+	var blocked: bool = playground.active() or control_blocked
 	var place_request: String = places.tick(dt, state, {"blocked": blocked or host.preview, "can_place": not host.preview and host.is_grounded() and state.posture.mode == "standing"})
 	if place_request == "cozy":
 		blocked = playground.show_demo(true) or blocked
 	elif place_request == "smart":
 		blocked = playground.auto_choose_window() or blocked
-	var behavior_context: Dictionary = {"blocked": blocked, "cursor_gaze": cursor_gaze,
+	var preferred_side: String = playground.surface.available_side() if playground.active() else ""
+	var surface_ready: bool = playground.active() and playground.phase == "attached" and not playground.surface_busy()
+	var behavior_context: Dictionary = {"blocked": control_blocked or (playground.active() and not surface_ready), "cursor_gaze": cursor_gaze,
 		"cursor_near": distance < stage.body_pixels * 1.8,
 		"location": "surface" if playground.active() else "floor",
 		"can_observe": state.look_enabled and not state.dozing,
 		"can_social": not state.dozing,
-		"can_walk": not host.preview and host.is_grounded() and stage.gait.available and state.posture.mode == "standing",
-		"can_rest": (host.preview or host.is_grounded()) and stage.posture_driver.available and state.posture.mode == "standing",
-		"can_surface_walk": playground.active() and playground.phase == "attached" and not playground.surface_busy(),
-		"can_side": playground.active() and playground.external_mode and playground.phase == "attached" and not playground.surface_busy(),
-		"can_leave": playground.active() and playground.phase == "attached"}
+		"can_walk": not playground.active() and not host.preview and host.is_grounded() and stage.gait.available and state.posture.mode == "standing",
+		"can_rest": not playground.active() and (host.preview or host.is_grounded()) and stage.posture_driver.available and state.posture.mode == "standing",
+		"can_surface_walk": surface_ready and playground.surface.can_walk_route(),
+		"can_side": surface_ready and not preferred_side.is_empty(),
+		"preferred_side": preferred_side,
+		"can_leave": surface_ready}
 	intent_planner.tick(dt, behavior_context)
-	var action: String = ""
-	if playground.active():
-		# Surface autonomy stays on the proven 0.7 path for now.
-		director.decisions_enabled = true
-		action = director.tick(dt, behavior_context)
-		intent_planner.observe_legacy_action(action, behavior_context)
-		if action == "walk":
-			_start_walk(true)
-		elif action == "wave":
-			state.wave()
-		elif action == "sit":
-			_request_sit(true)
+	var active_intent_name: String = str(intent_planner.active_intent.get("name", ""))
+	var surface_intent_active: bool = active_intent_name in ["explore_surface", "visit_side", "leave_support"]
+	director.decisions_enabled = false
+	director.tick(dt, behavior_context)
+	if playground.active() or surface_intent_active:
+		_tick_surface_intent(dt, behavior_context, cursor_gaze, distance < stage.body_pixels * 1.8)
 	else:
-		# 0.8.1 first migration: planner owns floor decisions; Director still owns gaze.
-		director.decisions_enabled = false
-		director.tick(dt, behavior_context)
 		_tick_floor_intent(dt, behavior_context, cursor_gaze, distance < stage.body_pixels * 1.8)
 	var target: Vector2 = Vector2.ZERO
 	if state.look_enabled and not state.dozing and not ui.menu.visible and not walker.active() and absf(stage.yaw) < 55.0:
@@ -279,10 +277,13 @@ func _finish_floor_intent_step() -> void:
 	if not finished.is_empty() and intent_planner.active_intent.is_empty():
 		_floor_intent_wait = _floor_intent_delay()
 
-func _abort_floor_intent(reason: String) -> void:
+func _abort_autonomous_intent(reason: String) -> void:
 	intent_planner.interrupt(reason)
 	_floor_intent_step_started = false
+	_surface_intent_step_started = false
+	_surface_step_wait = 0.0
 	_floor_intent_wait = maxf(_floor_intent_wait, 2.0)
+	_surface_intent_wait = maxf(_surface_intent_wait, 2.0)
 
 func _tick_floor_intent(delta: float, context: Dictionary, cursor_gaze: Vector2, cursor_near: bool) -> void:
 	if playground.active():
@@ -299,40 +300,40 @@ func _tick_floor_intent(delta: float, context: Dictionary, cursor_gaze: Vector2,
 			return
 	var step: String = intent_planner.current_step()
 	if step.is_empty():
-		_abort_floor_intent("empty_step")
+		_abort_autonomous_intent("empty_step")
 		return
 	if not _floor_intent_step_started:
 		match step:
 			"walk":
 				if not bool(context.get("can_walk", false)):
-					_abort_floor_intent("walk_unavailable")
+					_abort_autonomous_intent("walk_unavailable")
 					return
 				_start_walk(true, true)
 				if not walker.active():
-					_abort_floor_intent("walk_failed")
+					_abort_autonomous_intent("walk_failed")
 					return
 				_floor_intent_step_started = true
 			"look":
 				if not bool(context.get("can_observe", false)):
-					_abort_floor_intent("observe_unavailable")
+					_abort_autonomous_intent("observe_unavailable")
 					return
 				director.request_observe(cursor_gaze, cursor_near)
 				_floor_intent_step_started = true
 			"sit":
 				if not bool(context.get("can_rest", false)):
-					_abort_floor_intent("rest_unavailable")
+					_abort_autonomous_intent("rest_unavailable")
 					return
 				_request_sit(true)
 				_floor_intent_step_started = true
 			"wave":
 				if not bool(context.get("can_social", false)):
-					_abort_floor_intent("social_unavailable")
+					_abort_autonomous_intent("social_unavailable")
 					return
 				state.wave()
 				_floor_intent_step_started = true
 				_finish_floor_intent_step()
 			_:
-				_abort_floor_intent("unsupported_floor_step")
+				_abort_autonomous_intent("unsupported_floor_step")
 		return
 	match step:
 		"walk":
@@ -344,6 +345,103 @@ func _tick_floor_intent(delta: float, context: Dictionary, cursor_gaze: Vector2,
 		"sit":
 			if state.posture.mode == "seated":
 				_finish_floor_intent_step()
+
+func _surface_intent_delay() -> float:
+	match state.activity:
+		"quiet": return 16.0
+		"playful": return 6.0
+	return 10.0
+
+func _finish_surface_intent_step() -> void:
+	_surface_intent_step_started = false
+	_surface_step_wait = 0.0
+	var finished: String = intent_planner.complete_step()
+	if not finished.is_empty() and intent_planner.active_intent.is_empty():
+		_surface_intent_wait = _surface_intent_delay()
+
+func _tick_surface_intent(delta: float, context: Dictionary, cursor_gaze: Vector2, cursor_near: bool) -> void:
+	var active_name: String = str(intent_planner.active_intent.get("name", ""))
+	if not playground.active() and active_name not in ["leave_support"]:
+		if not intent_planner.active_intent.is_empty():
+			_abort_autonomous_intent("support_lost")
+		return
+	if intent_planner.active_intent.is_empty():
+		_surface_intent_step_started = false
+		_surface_step_wait = 0.0
+		_surface_intent_wait = maxf(0.0, _surface_intent_wait - delta)
+		if _surface_intent_wait > 0.0 or not state.autonomy_enabled or state.edge_activity != "auto" or bool(context.get("blocked", false)):
+			return
+		var plan: Dictionary = intent_planner.choose(context, state.activity)
+		if plan.is_empty() or not intent_planner.activate(plan):
+			_surface_intent_wait = 1.5
+			return
+	var step: String = intent_planner.current_step()
+	if step.is_empty():
+		_abort_autonomous_intent("empty_surface_step")
+		return
+	if not _surface_intent_step_started:
+		match step:
+			"surface_walk":
+				if not playground.active() or not playground.surface.request_walk():
+					_abort_autonomous_intent("surface_walk_unavailable")
+					return
+				_surface_intent_step_started = true
+			"surface_settle":
+				_surface_step_wait = 1.4 if state.activity == "playful" else (3.2 if state.activity == "quiet" else 2.2)
+				_surface_intent_step_started = true
+			"side_left", "side_right":
+				var side_name: String = step.trim_prefix("side_")
+				if not playground.active() or not playground.surface.request_side(side_name, false):
+					_abort_autonomous_intent("side_unavailable")
+					return
+				_surface_intent_step_started = true
+			"side_wait":
+				_surface_step_wait = 4.0 if state.activity == "playful" else 5.5
+				_surface_intent_step_started = true
+			"side_return":
+				if not playground.active() or not playground.surface.request_sit_top():
+					_abort_autonomous_intent("side_return_failed")
+					return
+				_surface_intent_step_started = true
+			"return_floor":
+				if not playground.active():
+					_finish_surface_intent_step()
+					return
+				playground.return_home()
+				_surface_intent_step_started = true
+			"look":
+				if not bool(context.get("can_observe", true)):
+					_abort_autonomous_intent("surface_observe_unavailable")
+					return
+				director.request_observe(cursor_gaze, cursor_near)
+				_surface_intent_step_started = true
+			"wave":
+				state.wave()
+				_surface_intent_step_started = true
+				_finish_surface_intent_step()
+			_:
+				_abort_autonomous_intent("unsupported_surface_step")
+		return
+	match step:
+		"surface_walk":
+			if playground.active() and playground.surface.mode == "sit" and state.posture.mode == "seated":
+				_finish_surface_intent_step()
+		"surface_settle", "side_wait":
+			_surface_step_wait = maxf(0.0, _surface_step_wait - delta)
+			if _surface_step_wait <= 0.0:
+				_finish_surface_intent_step()
+		"side_left", "side_right":
+			if playground.active() and playground.surface.mode == step:
+				_finish_surface_intent_step()
+		"side_return":
+			if playground.active() and playground.surface.mode == "sit" and state.posture.mode == "seated":
+				_finish_surface_intent_step()
+		"return_floor":
+			if not playground.active() and state.posture.mode == "standing":
+				_finish_surface_intent_step()
+		"look":
+			if not director.look_active():
+				_finish_surface_intent_step()
 
 func _start_walk(automatic: bool, planner_owned: bool = false) -> void:
 	if playground.active():
@@ -402,6 +500,7 @@ func _stop_walk(keep_facing: bool = false) -> void:
 func _hard_stop() -> void:
 	if stage == null:
 		return
+	_abort_autonomous_intent("hard_stop")
 	_clear_intent()
 	state.posture.keep_rest()
 	walker.reset(stage.travel_offset_px if host.preview else float(get_window().position.x), stage.yaw)
@@ -490,7 +589,7 @@ func _update_drag(delta: float) -> void:
 func _finish_press() -> void:
 	if not _press_active:
 		return
-	_abort_floor_intent("pointer")
+	_abort_autonomous_intent("pointer")
 	var was_dragged: bool = _dragged
 	_press_active = false
 	_dragged = false
@@ -526,7 +625,7 @@ func _zoom(direction: int) -> void:
 	_save_settings()
 
 func _open_menu() -> void:
-	_abort_floor_intent("menu")
+	_abort_autonomous_intent("menu")
 	places.manual_pause()
 	playground.cancel_queued_walk()
 	_clear_intent()
@@ -543,7 +642,7 @@ func _on_menu_hidden() -> void:
 	director.user_interaction()
 
 func _on_action(action: int) -> void:
-	_abort_floor_intent("manual_action")
+	_abort_autonomous_intent("manual_action")
 	if action == 199:
 		_quit()
 		return

@@ -106,6 +106,21 @@ func _run() -> void:
 	check(await until(func(): return app.playground.surface.mode == "walk" and app.walker.active(), 6.0), "external support starts local edge walk")
 	check(await until(func(): return app.playground.surface.mode == "sit" and app.state.posture.mode == "seated", 12.0), "external edge walk settles back into seated support")
 	check(app.playground.phase == "attached" and app.playground.external_mode and app.playground.last_support_error < 1.5, "external edge walk preserves selected support")
+	# Planner-driven surface intent: use the same fixture and real controller path.
+	app.state.autonomy_enabled = true
+	app.state.edge_activity = "auto"
+	app.intent_planner.cooldowns.clear()
+	app.intent_planner.interrupt("test_reset")
+	app._surface_intent_wait = 0.0
+	var auto_side: String = app.playground.surface.available_side()
+	check(not auto_side.is_empty(), "surface planner preflights at least one real side on fixture")
+	if not auto_side.is_empty():
+		var surface_context: Dictionary = {"blocked": false, "location": "surface", "can_observe": true, "can_social": true, "can_surface_walk": true, "can_side": true, "preferred_side": auto_side, "can_leave": true}
+		var side_plan: Dictionary = app.intent_planner.build_plan("visit_side", surface_context)
+		check(app.intent_planner.activate(side_plan), "surface intent planner accepts bounded side visit")
+		check(await until(func(): return app.playground.surface.mode == "side_" + auto_side, 8.0), "planner-driven side visit reaches vertical frame")
+		check(await until(func(): return app.playground.surface.mode == "sit" and app.state.posture.mode == "seated" and app.intent_planner.active_intent.is_empty(), 16.0), "planner-driven side visit waits then returns to top and completes")
+	app.state.autonomy_enabled = false
 	app._on_action(306)
 	check(await until(func(): return app.playground.surface.mode == "side_left", 8.0), "left side action reaches floor-supported window lean")
 	var left_contact: Vector2 = Vector2(app.host.window.position) + app.stage.side_anchor_pixel("left")
