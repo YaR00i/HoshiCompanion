@@ -176,15 +176,21 @@ func _check_autonomous_sequence() -> void:
 	app._on_action(141)
 	app.state.autonomy_enabled = true
 	app.state.rest_enabled = true
+	app.director.rest_after_walk = false
 	app._start_walk(true)
 	_frames(360)
-	_check(app.state.posture.mode == "seated" and app.state.posture.automatic, "automatic walk is followed by timed seated rest")
+	_check(app.state.posture.mode == "standing", "automatic walk can end standing instead of forcing the old walk-then-sit loop")
+	app.director.rest_after_walk = true
+	app._start_walk(true)
+	_frames(360)
+	_check(app.state.posture.mode == "seated" and app.state.posture.automatic, "director can still choose a timed rest after a walk")
 	app._on_action(11)
 	_check(not app.state.posture.automatic, "pet claims automatic rest in the real coordinator")
 	app._on_action(33)
 	_frames(120)
 	app._on_action(141)
 	app.state.rest_enabled = false
+	app.director.rest_after_walk = true
 	app._start_walk(true)
 	_frames(360)
 	_check(app.state.posture.mode == "standing", "disabled automatic rest does not queue a seat")

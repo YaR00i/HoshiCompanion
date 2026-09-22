@@ -8,6 +8,8 @@ var side: String = ""
 var _auto_wait: float = 24.0
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _walk_started: bool = false
+var _auto_side_return: float = 0.0
+var _last_auto_action: String = ""
 
 func setup(companion, playground) -> void:
 	app_ref = weakref(companion)
@@ -25,6 +27,8 @@ func reset() -> void:
 	mode = "sit"
 	side = ""
 	_walk_started = false
+	_auto_side_return = 0.0
+	_last_auto_action = ""
 	_auto_wait = _rng.randf_range(22.0, 42.0)
 
 func busy() -> bool:
@@ -56,6 +60,9 @@ func label() -> String:
 func request_walk() -> bool:
 	if _owner().phase != "attached" or not _owner()._shelf_usable() or mode != "sit":
 		return false
+	# Plan first. Never stand up only to discover there is nowhere to go.
+	if not bool(_route_plan().get("ok", false)):
+		return false
 	_app().state.dozing = false
 	_app().state.posture.kind = "edge"
 	_app().state.posture.request_stand()
@@ -64,10 +71,13 @@ func request_walk() -> bool:
 	_walk_started = false
 	return true
 
-func request_side(window_side: String) -> bool:
+func request_side(window_side: String, automatic: bool = false) -> bool:
 	if _owner().phase != "attached" or not _owner().external_mode or not _owner()._shelf_usable():
 		return false
 	if not window_side in ["left", "right"]:
+		return false
+	# As with walking, reject impossible geometry before Hoshi visibly stands up.
+	if not bool(_side_placement(window_side).get("ok", false)):
 		return false
 	_app().state.dozing = false
 	_app()._stop_walk(true)
@@ -75,6 +85,7 @@ func request_side(window_side: String) -> bool:
 	_app().state.posture.request_stand()
 	side = window_side
 	mode = "side_move"
+	_auto_side_return = _rng.randf_range(5.5, 9.0) if automatic else 0.0
 	return true
 
 func request_sit_top() -> bool:
@@ -85,6 +96,7 @@ func request_sit_top() -> bool:
 		return false
 	_app().stage.set_context_action("idle")
 	_app().air.begin_jump(Vector2(_app().host.window.position), Vector2(placement["position"]), float(_app().host.body_pixels))
+	_auto_side_return = 0.0
 	mode = "mount"
 	_walk_started = true # mount ends by sitting instead of starting a route.
 	return true
@@ -129,6 +141,10 @@ func before_tick(delta: float) -> void:
 				mode = "side_" + side
 		elif _app().state.posture.mode == "standing" and _app().air.mode == "idle":
 			mode = "side_" + side
+	elif mode in ["side_left", "side_right"] and _auto_side_return > 0.0:
+		_auto_side_return = maxf(0.0, _auto_side_return - dt)
+		if _auto_side_return <= 0.0:
+			request_sit_top()
 
 func after_tick() -> void:
 	if _owner().phase != "attached" or not owns_placement():
@@ -163,26 +179,38 @@ func _tick_autonomy(delta: float) -> void:
 	if _app()._press_active or _app().ui.menu.visible or _app().state.wave_weight > 0.1 or _app().state.pet_weight > 0.1:
 		return
 	_auto_wait = maxf(0.0, _auto_wait - delta)
-	if _auto_wait <= 0.0:
-		if not request_walk():
-			_auto_wait = _rng.randf_range(22.0, 40.0)
+	if _auto_wait > 0.0:
+		return
+	var activity: String = _app().state.activity
+	var side_chance: float = 0.0 if not _owner().external_mode else (0.28 if activity == "playful" else (0.16 if activity == "normal" else 0.05))
+	var leave_chance: float = 0.15 if activity == "playful" else (0.07 if activity == "normal" else 0.02)
+	var roll: float = _rng.randf()
+	if _owner().external_mode and roll < side_chance:
+		var first_side: String = "left" if _rng.randf() < 0.5 else "right"
+		var other_side: String = "right" if first_side == "left" else "left"
+		if request_side(first_side, true) or request_side(other_side, true):
+			_last_auto_action = "side"
+			return
+	if roll < side_chance + leave_chance:
+		_last_auto_action = "leave"
+		_owner().return_home()
+		return
+	if request_walk():
+		_last_auto_action = "walk"
+		return
+	# No valid route: remain seated instead of doing a visible stand->sit no-op.
+	_last_auto_action = "stay"
+	_auto_wait = _rng.randf_range(16.0, 28.0)
+
+func _route_plan() -> Dictionary:
+	return plan_route(_owner().support_rect(), _current_local_x(), _app().stage.standing_anchor_pixel(), _app().host.window.size, _owner().support_area(), float(_app().host.body_pixels), _app().stage.meters_per_pixel(), _app().stage.model_height, _app().state.activity == "playful")
 
 func _start_route() -> void:
-	var lane: Vector2 = top_lane(_owner().support_rect(), _app().stage.standing_anchor_pixel(), _app().host.window.size, _owner().support_area())
-	if lane.y <= lane.x + 8.0:
+	var plan: Dictionary = _route_plan()
+	if not bool(plan.get("ok", false)):
 		_resit()
 		return
-	var start: float = clampf(_current_local_x(), lane.x, lane.y)
-	var right_room: float = lane.y - start
-	var left_room: float = start - lane.x
-	var direction: int = 1 if right_room >= left_room else -1
-	var span: float = minf(float(_app().host.body_pixels) * (0.72 if _app().state.activity == "playful" else 0.56), maxf(right_room, left_room))
-	if direction > 0 and right_room < span * 0.55:
-		direction = -1
-	if direction < 0 and left_room < span * 0.55:
-		direction = 1
-	var target: float = start + float(direction) * span
-	if not _app().walker.request(start, target, lane, _app().stage.meters_per_pixel(), _app().stage.model_height, _app().stage.yaw, _app().state.activity == "playful"):
+	if not _app().walker.request(float(plan["start"]), float(plan["target"]), Vector2(plan["lane"]), _app().stage.meters_per_pixel(), _app().stage.model_height, _app().stage.yaw, _app().state.activity == "playful"):
 		_resit()
 		return
 	_app()._walk_area = _app().host.walking_area()
@@ -215,6 +243,25 @@ func _top_placement(local_x: float) -> Dictionary:
 
 func _side_placement(window_side: String) -> Dictionary:
 	return solve_side(_owner().support_rect(), window_side, _app().stage.side_anchor_pixel(window_side), _app().host.window.size, _owner().support_area())
+
+static func plan_route(rect: Rect2i, current_local_x: float, foot_pixel: Vector2, viewport: Vector2i, area: Rect2i, body_pixels: float, mpp: float, model_height: float, playful: bool = false) -> Dictionary:
+	var lane: Vector2 = top_lane(rect, foot_pixel, viewport, area)
+	if lane.y <= lane.x + 8.0 or mpp <= 0.0 or model_height <= 0.1:
+		return {"ok": false}
+	var start: float = clampf(current_local_x, lane.x, lane.y)
+	if not bool(solve_top(rect, start, foot_pixel, viewport, area).get("ok", false)):
+		return {"ok": false}
+	var right_room: float = lane.y - start
+	var left_room: float = start - lane.x
+	var direction: int = 1 if right_room >= left_room else -1
+	var room: float = maxf(right_room, left_room)
+	var span: float = minf(body_pixels * (0.72 if playful else 0.56), room)
+	if span * mpp < model_height * 0.12:
+		return {"ok": false}
+	var target: float = start + float(direction) * span
+	if not bool(solve_top(rect, target, foot_pixel, viewport, area).get("ok", false)):
+		return {"ok": false}
+	return {"ok": true, "start": start, "target": target, "lane": lane}
 
 static func solve_top(rect: Rect2i, local_x: float, foot_pixel: Vector2, viewport: Vector2i, area: Rect2i) -> Dictionary:
 	if rect.size.x < 180 or rect.size.y < 80 or not foot_pixel.is_finite() or not is_finite(local_x):

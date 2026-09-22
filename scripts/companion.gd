@@ -286,7 +286,7 @@ func _start_walk(automatic: bool) -> void:
 			ui.say("Здесь тесно для двух шагов")
 		return
 	_walk_direction = -chosen
-	_rest_after_walk = automatic and state.rest_enabled
+	_rest_after_walk = automatic and state.rest_enabled and director.rest_after_walk
 	state.dozing = false
 	director.user_interaction()
 	_walk_area = host.walking_area()
@@ -692,7 +692,7 @@ func _resolve_posture_intent() -> void:
 			_start_walk(automatic)
 		return
 	if not state.posture.target_seated:
-		state.posture.request_sit(_pending_auto, 75.0 if state.activity == "quiet" else 45.0)
+		state.posture.request_sit(_pending_auto, director.automatic_rest_duration() if _pending_auto else 45.0)
 		director.rest_started()
 	if not _pending_auto:
 		state.posture.keep_rest()

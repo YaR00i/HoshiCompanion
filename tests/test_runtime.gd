@@ -259,6 +259,13 @@ func _check_behavior() -> void:
 			_check(walks == 0 and waves == 0, "quiet mode never starts an autonomous walk or wave")
 		else:
 			_check(walks > 0 and walks < 30, "bounded autonomous initiative: " + activity)
+	var playful_rest = Director.new()
+	playful_rest.set_activity("playful")
+	var normal_rest = Director.new()
+	normal_rest.set_activity("normal")
+	var quiet_rest = Director.new()
+	quiet_rest.set_activity("quiet")
+	_check(playful_rest.automatic_rest_duration() < normal_rest.automatic_rest_duration() and normal_rest.automatic_rest_duration() < quiet_rest.automatic_rest_duration(), "activity changes autonomous rest duration, not just timer frequency")
 	var blocked = Director.new()
 	blocked.seed_random(2)
 	var no_action: bool = true

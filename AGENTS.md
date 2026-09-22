@@ -58,6 +58,9 @@
 - surface_controller.gd owns support-local walking and vertical side leaning.
 - SurfaceController reverse links to app/playground must remain WeakRef to avoid resource cycles.
 - A support-local walk must suppress normal floor host.walk_to mapping.
+- Autonomous surface actions must validate geometry before standing; never animate a stand just to
+  discover the route is invalid and sit back at the same point.
+- Automatic floor walks do not imply automatic sitting; BehaviorDirector owns that choice.
 - Side leaning is geometry-gated; never fake contact when the companion window cannot fit.
 - Windows precise input uses only Hoshi's own HWND plus alpha from Hoshi's own SubViewport;
   no global hooks, foreign-window enumeration or desktop pixel reads are allowed.

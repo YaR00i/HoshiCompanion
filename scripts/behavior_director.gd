@@ -6,6 +6,7 @@ var activity: String = "normal"
 var enabled: bool = true
 var walk_enabled: bool = true
 var rest_enabled: bool = true
+var rest_after_walk: bool = false
 var _rest_wait: float = 50.0
 var gaze: Vector2 = Vector2.ZERO
 var curiosity: float = 0.0
@@ -25,6 +26,7 @@ func seed_random(value: int) -> void:
 	_rng.seed = value
 	_wait = _rng.randf_range(8.0, 14.0)
 	_walk_wait = _rng.randf_range(18.0, 28.0)
+	_gesture_wait = _rng.randf_range(35.0, 60.0)
 
 func set_activity(value: String) -> void:
 	if not value in ["quiet", "normal", "playful"]:
@@ -34,7 +36,8 @@ func set_activity(value: String) -> void:
 	curiosity = 0.0
 	gaze = Vector2.ZERO
 	_wait = 4.0
-	_walk_wait = maxf(_walk_wait, 10.0)
+	_walk_wait = maxf(_walk_wait, 8.0)
+	rest_after_walk = false
 
 func user_interaction() -> void:
 	_cooldown = 8.0
@@ -42,7 +45,8 @@ func user_interaction() -> void:
 	_look_duration = 2.2
 	_look_mode = "cursor"
 	curiosity = 0.0
-	_walk_wait = maxf(_walk_wait, 12.0)
+	_walk_wait = maxf(_walk_wait, 10.0)
+	rest_after_walk = false
 
 func tick(delta: float, context: Dictionary) -> String:
 	var dt: float = clampf(delta, 0.0, 0.1)
@@ -51,6 +55,7 @@ func tick(delta: float, context: Dictionary) -> String:
 	_walk_wait = maxf(0.0, _walk_wait - dt)
 	_gesture_wait = maxf(0.0, _gesture_wait - dt)
 	_rest_wait = maxf(0.0, _rest_wait - dt)
+	rest_after_walk = false
 	if blocked:
 		gaze = Vector2.ZERO
 		curiosity = move_toward(curiosity, 0.0, dt * 3.0)
@@ -66,7 +71,6 @@ func tick(delta: float, context: Dictionary) -> String:
 	_wait -= dt
 	_look_left = maxf(0.0, _look_left - dt)
 	if _look_left > 0.0:
-		# A short glance, then a return to neutral rather than permanent tracking.
 		var blend: float = minf(smoothstep(0.0, 0.5, _look_left), smoothstep(0.0, 0.4, _look_duration - _look_left))
 		gaze = (cursor if _look_mode == "cursor" and near else _away) * blend
 		curiosity = blend * (0.65 if _look_mode == "cursor" else 0.15)
@@ -77,28 +81,67 @@ func tick(delta: float, context: Dictionary) -> String:
 		attention_label = ""
 	if _wait > 0.0 or _cooldown > 0.0:
 		return ""
-	_wait = _rng.randf_range(22.0, 42.0) if activity == "quiet" else _rng.randf_range(8.0, 16.0)
-	if activity == "playful":
-		_wait = _rng.randf_range(5.0, 11.0)
-	if rest_enabled and bool(context.get("can_rest", false)) and _rest_wait <= 0.0:
-		rest_started()
-		_last_kind = "sit"
-		return "sit"
-	# One route, then a substantial rest; no bouncing forever at the screen edge.
-	if activity != "quiet" and walk_enabled and bool(context.get("can_walk", false)) and _walk_wait <= 0.0 and _last_kind != "walk":
-		_walk_wait = _rng.randf_range(35.0, 65.0) if activity == "normal" else _rng.randf_range(20.0, 40.0)
-		_last_kind = "walk"
-		return "walk"
-	if activity == "playful" and _gesture_wait <= 0.0 and _last_kind != "wave" and _rng.randf() < 0.22:
-		_gesture_wait = _rng.randf_range(70.0, 120.0)
-		_last_kind = "wave"
-		return "wave"
+	_wait = _next_decision_wait()
+	var can_rest: bool = rest_enabled and bool(context.get("can_rest", false)) and _rest_wait <= 0.0
+	var can_walk: bool = activity != "quiet" and walk_enabled and bool(context.get("can_walk", false)) and _walk_wait <= 0.0 and _last_kind != "walk"
+	var can_wave: bool = activity == "playful" and _gesture_wait <= 0.0 and _last_kind != "wave"
+	var roll: float = _rng.randf()
+	if activity == "quiet":
+		if can_rest and roll < 0.24:
+			_begin_rest()
+			return "sit"
+	elif activity == "normal":
+		if can_rest and roll < 0.18:
+			_begin_rest()
+			return "sit"
+		if can_walk and roll < 0.50:
+			_begin_walk(0.30)
+			return "walk"
+	elif activity == "playful":
+		if can_rest and roll < 0.07:
+			_begin_rest()
+			return "sit"
+		if can_walk and roll < 0.56:
+			_begin_walk(0.10)
+			return "walk"
+		if can_wave and roll < 0.74:
+			_gesture_wait = _rng.randf_range(35.0, 70.0)
+			_last_kind = "wave"
+			return "wave"
+	_begin_look(cursor, near)
+	return ""
+
+func _next_decision_wait() -> float:
+	match activity:
+		"quiet":
+			return _rng.randf_range(18.0, 32.0)
+		"playful":
+			return _rng.randf_range(4.5, 9.0)
+	return _rng.randf_range(8.0, 15.0)
+
+func _begin_rest() -> void:
+	rest_started()
+	_last_kind = "sit"
+
+func _begin_walk(rest_probability: float) -> void:
+	_walk_wait = _rng.randf_range(32.0, 58.0) if activity == "normal" else _rng.randf_range(16.0, 30.0)
+	rest_after_walk = rest_enabled and _rng.randf() < rest_probability
+	_last_kind = "walk"
+
+func _begin_look(cursor: Vector2, near: bool) -> void:
 	_look_mode = "cursor" if near and _last_kind != "cursor" else "away"
 	_away = Vector2(_rng.randf_range(-0.6, 0.6), _rng.randf_range(-0.23, 0.15))
 	_look_duration = _rng.randf_range(1.8, 3.8)
 	_look_left = _look_duration
 	_last_kind = _look_mode
-	return ""
+
+func automatic_rest_duration() -> float:
+	match activity:
+		"quiet":
+			return 78.0
+		"playful":
+			return 22.0
+	return 44.0
 
 func rest_started() -> void:
 	_rest_wait = _rng.randf_range(110.0, 150.0)

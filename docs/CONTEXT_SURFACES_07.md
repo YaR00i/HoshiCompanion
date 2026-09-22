@@ -19,6 +19,10 @@
 ## Surface rules
 
 - A top-edge walking route is local to the support, not the virtual desktop.
+- Autonomous support motion must preflight a real route/contact before changing posture; an invalid
+  route must remain seated instead of producing a visible stand-then-immediate-resit no-op.
+- On external supports, normal/playful autonomy may briefly visit a valid side frame and return;
+  it may also rarely choose to leave the support and continue life on the floor.
 - If the support moves while walking, placement is recomputed from the current support rect.
 - Side leaning is allowed only when the complete companion window fits in the usable area
   and the vertical frame crosses the configured body contact height.
