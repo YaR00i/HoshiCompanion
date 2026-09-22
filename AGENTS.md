@@ -75,6 +75,7 @@
 - Windows precise input uses only Hoshi's own HWND plus alpha from Hoshi's own SubViewport;
   no global hooks, foreign-window enumeration or desktop pixel reads are allowed.
 - The Win32 input helper must verify that its target HWND belongs to its parent Godot process.
+- Hover click-through may toggle only WS_EX_TRANSPARENT; never rebuild Godot's layered-window composition per pointer transition.
 - Startup/outro stays pointer-pass-through; polygon masking is compatibility fallback only.
 - Normal close should return from support, stand, play portal outro, then quit.
 - Keep the 0.6 privacy contract: geometry/state/Z-order only for external windows.

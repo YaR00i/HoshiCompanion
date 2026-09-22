@@ -56,6 +56,13 @@ func _run() -> void:
 	check(app.host.pointer_passthrough_requested(), "transparent Hoshi-window space requests OS click-through")
 	app.host.update_pointer_interaction(true)
 	check(not app.host.pointer_passthrough_requested(), "visible Hoshi pixel requests native input capture")
+	app.host.update_pointer_interaction(false)
+	check(not app.host.pointer_passthrough_requested(), "leaving Hoshi keeps capture for one stabilizing frame")
+	app.host.update_pointer_interaction(false)
+	check(app.host.pointer_passthrough_requested(), "stable transparent hover releases input after hysteresis")
+	for index in range(24):
+		app.host.update_pointer_interaction(index % 2 == 0)
+	check(app.host.precise_input_available(), "rapid own-alpha boundary transitions keep native helper alive")
 	var area: Rect2i = app.host.walking_area()
 	var own_handle: int = DisplayServer.window_get_native_handle(DisplayServer.WINDOW_HANDLE)
 	var python_path: String = FileAccess.get_file_as_string("res://python_path.txt").strip_edges()

@@ -15,6 +15,8 @@ var _input_passthrough: bool = false
 var _input_passthrough_known: bool = false
 var _native_passthrough_available: bool = false
 var _cinematic_input: bool = false
+var _release_candidate_frames: int = 0
+const RELEASE_STABLE_FRAMES: int = 2
 
 func setup(root_window: Window) -> void:
 	window = root_window
@@ -156,11 +158,27 @@ func update_pointer_interaction(avatar_hit: bool, force_capture: bool = false) -
 	if headless or preview or not _native_passthrough_available:
 		return
 	if _cinematic_input:
+		_release_candidate_frames = 0
 		_set_native_passthrough(true)
-	elif not mask_enabled:
+		return
+	if not mask_enabled:
+		_release_candidate_frames = 0
 		_set_native_passthrough(false)
-	else:
-		_set_native_passthrough(not (avatar_hit or force_capture))
+		return
+	if avatar_hit or force_capture:
+		# Capture immediately so a click that follows pointer entry is never lost.
+		_release_candidate_frames = 0
+		_set_native_passthrough(false)
+		return
+	# Releasing input back through the transparent window is intentionally a
+	# little sticky. Alpha edges (hair, skirt, antialiasing) can otherwise flip
+	# the native HWND style on adjacent frames while the cursor crosses Hoshi.
+	if _input_passthrough_known and not _input_passthrough:
+		_release_candidate_frames += 1
+		if _release_candidate_frames < RELEASE_STABLE_FRAMES:
+			return
+	_release_candidate_frames = 0
+	_set_native_passthrough(true)
 
 func menu_focus(active: bool) -> void:
 	if headless or preview:
@@ -218,6 +236,7 @@ func _start_input_helper() -> void:
 	_input_io = pipe.get("stdio") as FileAccess
 	_native_passthrough_available = _input_io != null
 	_input_passthrough_known = false
+	_release_candidate_frames = 0
 
 func _input_helper_alive() -> bool:
 	if _input_process.is_empty():
@@ -252,6 +271,7 @@ func _stop_input_helper() -> void:
 	_native_passthrough_available = false
 	_input_passthrough = false
 	_input_passthrough_known = false
+	_release_candidate_frames = 0
 	_cinematic_input = false
 
 func shutdown() -> void:

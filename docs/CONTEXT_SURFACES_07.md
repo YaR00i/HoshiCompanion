@@ -11,8 +11,10 @@
 - `surface_controller.gd` maps walking/leaning to the active support's local geometry.
 - `shelf_playground.gd` still owns support lifecycle and external HWND tracking.
 - `desktop_host.gd` remains the only owner of native companion-window placement and input pass-through.
-- On Windows, `tools/window_input_passthrough.py` may change style bits only on Hoshi's own HWND;
-  it verifies the HWND belongs to its parent Godot process, installs no hooks and enumerates no windows.
+- On Windows, `tools/window_input_passthrough.py` may change only `WS_EX_TRANSPARENT` on Hoshi's own HWND;
+  Godot keeps ownership of layered/composition styles. The helper must not force `WS_EX_LAYERED` or
+  `SWP_FRAMECHANGED` during hover transitions, because rebuilding transparent composition can flash the HWND.
+  It verifies the HWND belongs to its parent Godot process, installs no hooks and enumerates no windows.
 - Precise desktop hit testing samples alpha only from Hoshi's own 3D SubViewport. It never reads
   desktop/application pixels. Transparent window space passes input through; visible Hoshi captures it.
 
