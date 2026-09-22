@@ -7,6 +7,7 @@ const UI = preload("res://scripts/companion_ui.gd")
 const Locomotion = preload("res://scripts/locomotion.gd")
 const AirMotion = preload("res://scripts/air_motion.gd")
 const Director = preload("res://scripts/behavior_director.gd")
+const IntentPlanner = preload("res://scripts/intent_planner.gd")
 const PlaceDirector = preload("res://scripts/place_director.gd")
 const Playground = preload("res://scripts/shelf_playground.gd")
 const SETTINGS_PATH: String = "user://companion.cfg"
@@ -17,6 +18,7 @@ var state = State.new()
 var walker = Locomotion.new()
 var air = AirMotion.new()
 var director = Director.new()
+var intent_planner = IntentPlanner.new()
 var places = PlaceDirector.new()
 var playground = Playground.new()
 var stage
@@ -50,8 +52,10 @@ var _settings: ConfigFile = ConfigFile.new()
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	host.setup(get_window())
-	state.seed_random(int(Time.get_ticks_usec()))
-	director.seed_random(int(Time.get_ticks_usec()) + 7)
+	var seed_value: int = 70420 if OS.get_cmdline_user_args().has("--test-mode") else int(Time.get_ticks_usec())
+	state.seed_random(seed_value)
+	director.seed_random(seed_value + 7)
+	intent_planner.seed_random(seed_value + 17)
 	_test_mode = OS.get_cmdline_user_args().has("--test-mode")
 	_read_settings()
 	director.set_activity(state.activity)
@@ -189,10 +193,20 @@ func _process(delta: float) -> void:
 		blocked = playground.show_demo(true) or blocked
 	elif place_request == "smart":
 		blocked = playground.auto_choose_window() or blocked
-	var action: String = director.tick(dt, {"blocked": blocked, "cursor_gaze": cursor_gaze,
+	var behavior_context: Dictionary = {"blocked": blocked, "cursor_gaze": cursor_gaze,
 		"cursor_near": distance < stage.body_pixels * 1.8,
+		"location": "surface" if playground.active() else "floor",
+		"can_observe": state.look_enabled and not state.dozing,
+		"can_social": not state.dozing,
 		"can_walk": not host.preview and host.is_grounded() and stage.gait.available and state.posture.mode == "standing",
-		"can_rest": (host.preview or host.is_grounded()) and stage.posture_driver.available and state.posture.mode == "standing"})
+		"can_rest": (host.preview or host.is_grounded()) and stage.posture_driver.available and state.posture.mode == "standing",
+		"can_surface_walk": playground.active() and playground.phase == "attached" and not playground.surface_busy(),
+		"can_side": playground.active() and playground.external_mode and playground.phase == "attached" and not playground.surface_busy(),
+		"can_leave": playground.active() and playground.phase == "attached"}
+	var action: String = director.tick(dt, behavior_context)
+	# 0.8.0 shadow mode: planner records the intention behind legacy decisions,
+	# but only the existing director/controllers are allowed to execute anything.
+	intent_planner.observe_legacy_action(action, behavior_context)
 	if action == "walk":
 		_start_walk(true)
 	elif action == "wave":
@@ -387,6 +401,7 @@ func _update_drag(delta: float) -> void:
 func _finish_press() -> void:
 	if not _press_active:
 		return
+	intent_planner.interrupt("pointer")
 	var was_dragged: bool = _dragged
 	_press_active = false
 	_dragged = false
@@ -422,6 +437,7 @@ func _zoom(direction: int) -> void:
 	_save_settings()
 
 func _open_menu() -> void:
+	intent_planner.interrupt("menu")
 	places.manual_pause()
 	playground.cancel_queued_walk()
 	_clear_intent()
@@ -438,6 +454,7 @@ func _on_menu_hidden() -> void:
 	director.user_interaction()
 
 func _on_action(action: int) -> void:
+	intent_planner.interrupt("manual_action")
 	if action == 199:
 		_quit()
 		return

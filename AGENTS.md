@@ -52,6 +52,7 @@
 ## Living roadmap
 - Read docs/ROADMAP_LIVING_RU.md before adding new autonomous behavior systems.
 - Prefer a small intent planner with short plans over a large generic behavior framework.
+- intent_planner.gd is initially shadow-only: it may choose/record intent but must not move windows or bones.
 - Existing motion/pose controllers keep ownership; planners choose actions but do not animate bones or place windows directly.
 - User input always interrupts autonomous intent immediately.
 

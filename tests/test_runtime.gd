@@ -6,6 +6,7 @@ const State = preload("res://scripts/companion_state.gd")
 const Stage = preload("res://scripts/avatar_stage.gd")
 const Locomotion = preload("res://scripts/locomotion.gd")
 const Director = preload("res://scripts/behavior_director.gd")
+const IntentPlanner = preload("res://scripts/intent_planner.gd")
 const UI = preload("res://scripts/companion_ui.gd")
 
 var failures: int = 0
@@ -123,6 +124,7 @@ func _run() -> void:
 	_check(all_zero, "expression channels clear without residual smile")
 	_check_walk_runtime(stage)
 	_check_behavior()
+	_check_intent_planner()
 	stage.rig.reset()
 	var finite_rest: bool = true
 	for bone in range(stage.rig.skeleton.get_bone_count()):
@@ -277,6 +279,50 @@ func _check_behavior() -> void:
 	for index in range(3600):
 		no_action = no_action and blocked.tick(1.0 / 30.0, {"can_walk": true}).is_empty()
 	_check(no_action, "disabled autonomy never emits actions")
+
+func _check_intent_planner() -> void:
+	var context: Dictionary = {"blocked": false, "location": "floor", "can_observe": true, "can_walk": true, "can_rest": true, "can_social": true}
+	var a = IntentPlanner.new()
+	var b = IntentPlanner.new()
+	a.seed_random(991)
+	b.seed_random(991)
+	var seq_a: Array[String] = []
+	var seq_b: Array[String] = []
+	for i in range(18):
+		var pa: Dictionary = a.choose(context, "normal")
+		var pb: Dictionary = b.choose(context, "normal")
+		seq_a.append(str(pa.get("name", "")))
+		seq_b.append(str(pb.get("name", "")))
+		if not pa.is_empty(): a.activate(pa)
+		if not pb.is_empty(): b.activate(pb)
+	_check(seq_a == seq_b, "intent planner is deterministic for identical seed and context")
+	var impossible: Dictionary = a.build_plan("explore_floor", {"blocked": false, "location": "floor", "can_walk": false})
+	_check(impossible.is_empty(), "intent planner rejects impossible actions before execution")
+	var surface: Dictionary = {"blocked": false, "location": "surface", "can_surface_walk": true, "can_side": true, "can_leave": true, "can_observe": true}
+	var side_plan: Dictionary = a.build_plan("visit_side", surface)
+	_check(not side_plan.is_empty() and (side_plan.get("steps", []) as Array).size() <= IntentPlanner.MAX_STEPS, "intent planner creates bounded short plans")
+	var no_triplicate: bool = true
+	var c = IntentPlanner.new()
+	c.seed_random(881)
+	var previous: String = ""
+	var run_length: int = 0
+	for i in range(80):
+		var plan: Dictionary = c.choose(context, "playful")
+		if plan.is_empty(): continue
+		var name: String = str(plan["name"])
+		run_length = run_length + 1 if name == previous else 1
+		previous = name
+		no_triplicate = no_triplicate and run_length < 3
+		c.activate(plan)
+	_check(no_triplicate, "novelty memory prevents three identical intentions in a row")
+	var active: Dictionary = a.build_plan("explore_floor", context)
+	_check(a.activate(active) and not a.active_intent.is_empty(), "intent planner can hold one active plan")
+	a.interrupt("manual_test")
+	_check(a.active_intent.is_empty() and a.last_interrupt_reason == "manual_test", "manual input cancels active intention immediately")
+	var shadow = IntentPlanner.new()
+	shadow.seed_random(12)
+	var observed: Dictionary = shadow.observe_legacy_action("walk", context)
+	_check(observed.get("name", "") == "explore_floor" and shadow.current_step() == "walk", "shadow mode maps legacy action without executing it")
 
 func _finish() -> void:
 	var report: Dictionary = {"engine": Engine.get_version_info(), "checks": checks, "failures": failures,
