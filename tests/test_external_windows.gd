@@ -47,11 +47,9 @@ func _run() -> void:
 	app._switch_mode(false)
 	await process_frame
 	var area: Rect2i = app.host.walking_area()
-	var origin_area: Rect2i = app.host.usable_area(DisplayServer.get_primary_screen())
-	var x: int = area.position.x + int(area.size.x * 0.25)
-	var y: int = area.position.y + int(area.size.y * 0.48)
+	var own_handle: int = DisplayServer.window_get_native_handle(DisplayServer.WINDOW_HANDLE)
 	var python_path: String = FileAccess.get_file_as_string("res://python_path.txt").strip_edges()
-	fixture = OS.execute_with_pipe(python_path, PackedStringArray(["-u", ProjectSettings.globalize_path("res://tests/external_window_fixture.py"), str(x), str(y), str(origin_area.position.x), str(origin_area.position.y), "560"]), false)
+	fixture = OS.execute_with_pipe(python_path, PackedStringArray(["-u", ProjectSettings.globalize_path("res://tests/external_window_fixture.py"), str(own_handle), "560"]), false)
 	check(not fixture.is_empty(), "create separate-process test fixture")
 	if fixture.is_empty():
 		await finish()
@@ -82,7 +80,7 @@ func _run() -> void:
 	check(app.playground.support_area() == area, "host-DPI virtual-desktop coordinates agree with Godot on this monitor")
 	var remembered: Vector2i = app.playground.saved_floor_position
 	var before: Vector2i = app.host.window.position
-	command({"op": "move", "x": x + 90, "y": y + 30, "w": 740})
+	command({"op": "move_by", "dx": 90, "dy": 30, "dw": 100})
 	await create_timer(0.45).timeout
 	check(app.host.window.position.x > before.x + 80, "follows external window move and resize")
 	check(app.playground.last_support_error < 1.0, "contact retained after external resize")
@@ -97,7 +95,7 @@ func _run() -> void:
 	var side_rect: Rect2i = app.playground.support_rect()
 	check(absf(left_contact.x - float(side_rect.position.x)) < 1.5 and left_contact.y > side_rect.position.y + 25 and left_contact.y < side_rect.end.y - 25, "left shoulder contact aligns to external vertical frame")
 	var side_before: Vector2i = app.host.window.position
-	command({"op": "move", "x": x + 135, "y": y + 30, "w": 740, "h": 560})
+	command({"op": "move_by", "dx": 45, "dy": 0, "dw": 0, "dh": 0})
 	await create_timer(0.45).timeout
 	left_contact = Vector2(app.host.window.position) + app.stage.side_anchor_pixel("left")
 	side_rect = app.playground.support_rect()
