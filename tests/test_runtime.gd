@@ -337,12 +337,12 @@ func _check_intent_planner() -> void:
 	var first_novelty: float = float(novelty.candidate_report(context, "normal")["observe"]["novelty"])
 	_check(first_novelty < 0.2, "most recent intention receives a strong novelty penalty")
 	var keep = IntentPlanner.new()
-	var keep_plan: Dictionary = keep.build_plan("explore_floor", context)
+	var keep_plan: Dictionary = {"name": "explore_floor", "variant": "blocked_test", "steps": ["walk", "look"], "index": 0}
 	keep.activate(keep_plan)
 	keep.tick(0.1, {"blocked": true, "location": "floor", "can_walk": false})
 	_check(keep.current_step() == "walk", "controller-blocked frame does not erase an in-flight intent")
 	var chain = IntentPlanner.new()
-	var chain_plan: Dictionary = chain.build_plan("explore_floor", context)
+	var chain_plan: Dictionary = {"name": "explore_floor", "variant": "test_walk_look", "steps": ["walk", "look"], "index": 0}
 	_check(chain.activate(chain_plan) and chain.current_step() == "walk", "floor exploration begins with locomotion")
 	_check(chain.complete_step() == "look" and chain.current_step() == "look", "floor exploration advances to observation only after walk completion")
 	_check(chain.complete_step() == "explore_floor" and chain.active_intent.is_empty(), "short floor intent completes after its final real step")
@@ -354,6 +354,24 @@ func _check_intent_planner() -> void:
 	for i in range(120):
 		emitted = emitted or not attention.tick(1.0 / 30.0, {"cursor_near": true, "cursor_gaze": Vector2(0.3, 0.1), "can_walk": true, "can_rest": true}).is_empty()
 	_check(not emitted and not attention.look_active(), "attention-only director finishes gaze without emitting legacy actions")
+	var scenes = IntentPlanner.new()
+	scenes.seed_random(404)
+	var scene_ids: Array[String] = []
+	for i in range(12):
+		var scene: Dictionary = scenes.build_plan("explore_floor", context, "playful")
+		_check((scene.get("steps", []) as Array).size() >= 2 and (scene.get("steps", []) as Array).size() <= IntentPlanner.MAX_STEPS, "floor scene stays within bounded step count")
+		scene_ids.append(str(scene.get("variant", "")))
+		scenes.activate(scene)
+		scenes.interrupt("scene_test")
+	var repeated_variant: bool = false
+	for i in range(1, scene_ids.size()):
+		repeated_variant = repeated_variant or scene_ids[i] == scene_ids[i - 1]
+	var unique_scene_ids: Dictionary = {}
+	for scene_id in scene_ids:
+		unique_scene_ids[scene_id] = true
+	_check(not repeated_variant and unique_scene_ids.size() >= 3, "scene memory rotates among multiple floor variants without immediate repeats")
+	var quiet_report: Dictionary = scenes.candidate_report(context, "quiet")
+	_check(float(quiet_report["social_react"]["weight"]) == 0.0, "quiet activity suppresses autonomous social wave intents")
 
 func _finish() -> void:
 	var report: Dictionary = {"engine": Engine.get_version_info(), "checks": checks, "failures": failures,

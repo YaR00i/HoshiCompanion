@@ -4,6 +4,7 @@ extends RefCounted
 var rig
 var skeleton: Skeleton3D
 var available: bool = false
+var autonomous_enabled: bool = true
 var kind: String = "calm"
 var weights: Dictionary = {
 	"weight_left": 0.0,
@@ -16,6 +17,9 @@ var weights: Dictionary = {
 var _wait: float = 7.0
 var _left: float = 0.0
 var _last: String = "shoulders"
+var _forced_kind: String = ""
+var _forced_left: float = 0.0
+var _forced_release: float = 0.0
 var _rng := RandomNumberGenerator.new()
 
 func setup(rig_driver) -> Dictionary:
@@ -32,13 +36,23 @@ func seed_random(value: int) -> void:
 
 func tick(delta: float, state, blocked: bool = false, walk_weight: float = 0.0) -> Dictionary:
 	var dt: float = clampf(delta, 0.0, 0.1)
-	var allowed: bool = available and not blocked
-	allowed = allowed and state.autonomy_enabled and state.motion_enabled and not state.dozing
+	var forced_requested: bool = not _forced_kind.is_empty() or _forced_release > 0.0
+	var allowed: bool = available and not blocked and state.motion_enabled and not state.dozing
+	allowed = allowed and (state.autonomy_enabled or forced_requested)
 	allowed = allowed and state.posture.mode == "standing" and state.posture.kind == "floor"
 	allowed = allowed and state.pet_weight < 0.08 and state.wave_weight < 0.08
 	allowed = allowed and walk_weight < 0.05
 	var goal: String = "calm"
-	if allowed:
+	if allowed and not _forced_kind.is_empty():
+		_forced_left = maxf(0.0, _forced_left - dt)
+		if _forced_left > 0.0:
+			goal = _forced_kind
+		else:
+			_forced_kind = ""
+			_forced_release = 0.45
+	elif allowed and _forced_release > 0.0:
+		_forced_release = maxf(0.0, _forced_release - dt)
+	elif allowed and autonomous_enabled:
 		_left = maxf(0.0, _left - dt)
 		_wait -= dt
 		if _left <= 0.0 and _wait <= 0.0:
@@ -48,7 +62,8 @@ func tick(delta: float, state, blocked: bool = false, walk_weight: float = 0.0) 
 			_wait = _left + _pause(state.activity)
 		if _left > 0.0:
 			goal = kind
-	else:
+	elif not allowed:
+		cancel_forced()
 		_left = 0.0
 		_wait = maxf(_wait, 4.0)
 		kind = "calm"
@@ -56,6 +71,31 @@ func tick(delta: float, state, blocked: bool = false, walk_weight: float = 0.0) 
 		var target: float = 1.0 if key == goal else 0.0
 		weights[key] = lerpf(float(weights[key]), target, 1.0 - exp(-dt * (2.8 if target > 0.0 else 4.4)))
 	return weights.duplicate()
+
+func request_gesture(value: String) -> bool:
+	if not available or not weights.has(value):
+		return false
+	_forced_kind = value
+	_forced_left = 2.2 if value.begins_with("peek_") else (2.0 if value == "hands" else (2.6 if value == "shoulders" else 2.4))
+	_forced_release = 0.0
+	_left = 0.0
+	kind = value
+	_wait = maxf(_wait, _forced_left + 4.0)
+	return true
+
+func forced_active() -> bool:
+	return not _forced_kind.is_empty() or _forced_release > 0.0
+
+func cancel_forced() -> void:
+	_forced_kind = ""
+	_forced_left = 0.0
+	_forced_release = 0.0
+
+func label() -> String:
+	if float(weights["peek_left"]) > 0.55 or float(weights["peek_right"]) > 0.55: return "С любопытством заглядывает"
+	if float(weights["hands"]) > 0.55: return "Немного возится с руками"
+	if float(weights["shoulders"]) > 0.55: return "Разминает плечи"
+	return ""
 
 func _choose_kind(activity: String) -> String:
 	var choices: Array = ["weight_left", "weight_right", "hands", "shoulders"]

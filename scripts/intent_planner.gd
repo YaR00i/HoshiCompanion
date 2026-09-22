@@ -3,6 +3,7 @@ extends RefCounted
 ## 0.8.0 runs in shadow mode: it may choose/record plans, but it never moves the
 ## window, edits bones or invokes controllers. Existing owners execute actions.
 const MAX_HISTORY: int = 6
+const MAX_VARIANT_HISTORY: int = 5
 const MAX_STEPS: int = 4
 const INTENTS: Array[String] = [
 	"observe", "explore_floor", "rest", "social_react",
@@ -21,6 +22,7 @@ const COOLDOWN_SECONDS: Dictionary = {
 var enabled: bool = true
 var active_intent: Dictionary = {}
 var history: Array[String] = []
+var variant_history: Array[String] = []
 var cooldowns: Dictionary = {}
 var last_context: Dictionary = {}
 var last_report: Dictionary = {}
@@ -98,7 +100,7 @@ func choose(context: Dictionary, activity: String = "normal") -> Dictionary:
 		if roll <= 0.0:
 			chosen = candidates[index]
 			break
-	return build_plan(chosen, context)
+	return build_plan(chosen, context, activity)
 
 func candidate_report(context: Dictionary, activity: String = "normal") -> Dictionary:
 	var report: Dictionary = {}
@@ -163,15 +165,27 @@ func rejection_reason(intent_name: String, context: Dictionary) -> String:
 func cooldown_left(intent_name: String) -> float:
 	return maxf(0.0, float(cooldowns.get(intent_name, 0.0)))
 
-func build_plan(intent_name: String, context: Dictionary) -> Dictionary:
+func build_plan(intent_name: String, context: Dictionary, activity: String = "normal") -> Dictionary:
 	if not rejection_reason(intent_name, context).is_empty():
 		return {}
-	var steps: Array[String] = _steps(intent_name, context)
+	var variants: Array = _variants(intent_name, context, activity)
+	if variants.is_empty():
+		return {}
+	var options: Array = []
+	var last_variant: String = variant_history.back() if not variant_history.is_empty() else ""
+	for variant in variants:
+		if variants.size() == 1 or str(variant.get("id", "")) != last_variant:
+			options.append(variant)
+	if options.is_empty():
+		options = variants
+	var selected: Dictionary = options[_rng.randi_range(0, options.size() - 1)]
+	var steps: Array = selected.get("steps", [])
 	if steps.is_empty() or steps.size() > MAX_STEPS:
 		return {}
 	return {
 		"name": intent_name,
-		"steps": steps,
+		"variant": str(selected.get("id", intent_name)),
+		"steps": steps.duplicate(),
 		"index": 0,
 		"source": "planner",
 		"generation": generation,
@@ -188,6 +202,7 @@ func activate(plan: Dictionary, source: String = "planner") -> bool:
 	active_intent["source"] = source
 	active_intent["generation"] = generation
 	_record(name)
+	_record_variant(str(active_intent.get("variant", name)))
 	_arm_cooldown(name)
 	return true
 
@@ -222,25 +237,64 @@ func _legacy_intent(action: String, context: Dictionary) -> String:
 			return "social_react"
 	return ""
 
-func _steps(intent_name: String, context: Dictionary) -> Array[String]:
+func _variants(intent_name: String, context: Dictionary, activity: String) -> Array:
+	var location: String = str(context.get("location", "floor"))
 	match intent_name:
 		"observe":
-			return ["look"]
+			if location == "surface":
+				if activity == "quiet":
+					return [{"id": "edge_peek", "steps": ["edge_peek"]}]
+				return [
+					{"id": "edge_peek", "steps": ["edge_peek"]},
+					{"id": "edge_balance_peek", "steps": ["edge_balance", "edge_peek"]},
+				]
+			if activity == "quiet":
+				return [
+					{"id": "look_only", "steps": ["look"]},
+					{"id": "look_weight_left", "steps": ["look", "floor_weight_left"]},
+					{"id": "look_weight_right", "steps": ["look", "floor_weight_right"]},
+				]
+			return [
+				{"id": "look_peek_left", "steps": ["look", "floor_peek_left"]},
+				{"id": "look_peek_right", "steps": ["look", "floor_peek_right"]},
+				{"id": "look_hands", "steps": ["look", "floor_hands"]},
+			]
 		"explore_floor":
-			return ["walk", "look"]
+			var variants: Array = [
+				{"id": "walk_look", "steps": ["walk", "look"]},
+				{"id": "walk_weight_left_look", "steps": ["walk", "floor_weight_left", "look"]},
+				{"id": "walk_weight_right_look", "steps": ["walk", "floor_weight_right", "look"]},
+			]
+			if activity != "quiet":
+				variants.append({"id": "look_walk_peek_left", "steps": ["look", "walk", "floor_peek_left"]})
+				variants.append({"id": "look_walk_peek_right", "steps": ["look", "walk", "floor_peek_right"]})
+			return variants
 		"rest":
-			return ["sit"]
+			return [{"id": "sit", "steps": ["sit"]}]
 		"social_react":
-			return ["wave"]
+			return [{"id": "wave", "steps": ["wave"]}]
 		"explore_surface":
-			return ["surface_walk", "surface_settle"]
+			var surface_variants: Array = [
+				{"id": "edge_walk_settle", "steps": ["surface_walk", "surface_settle"]},
+			]
+			if activity != "quiet":
+				surface_variants.append({"id": "edge_walk_peek", "steps": ["surface_walk", "surface_settle", "edge_peek"]})
+				surface_variants.append({"id": "edge_walk_balance", "steps": ["surface_walk", "surface_settle", "edge_balance"]})
+			if activity == "playful":
+				surface_variants.append({"id": "edge_walk_swing", "steps": ["surface_walk", "surface_settle", "edge_swing"]})
+			return surface_variants
 		"visit_side":
 			var side: String = str(context.get("preferred_side", "left"))
 			if not side in ["left", "right"]:
 				side = "left"
-			return ["side_" + side, "side_wait", "side_return"]
+			return [{"id": "side_" + side + "_peek", "steps": ["side_" + side, "side_wait", "side_return", "edge_peek"]}]
 		"leave_support":
-			return ["return_floor", "look"]
+			if activity == "quiet":
+				return [{"id": "return_look", "steps": ["return_floor", "look"]}]
+			return [
+				{"id": "return_look_peek_left", "steps": ["return_floor", "look", "floor_peek_left"]},
+				{"id": "return_look_peek_right", "steps": ["return_floor", "look", "floor_peek_right"]},
+			]
 	return []
 
 func _weight(intent_name: String, activity: String) -> float:
@@ -252,11 +306,11 @@ func _weight(intent_name: String, activity: String) -> float:
 		"rest":
 			return 3.0 if activity == "quiet" else (0.7 if activity == "playful" else 1.6)
 		"social_react":
-			return 2.0
+			return 2.0 if activity == "playful" else 0.0
 		"visit_side":
-			return 2.2 if activity == "playful" else 1.2
+			return 0.0 if activity == "quiet" else (2.2 if activity == "playful" else 1.2)
 		"leave_support":
-			return 0.8
+			return 0.25 if activity == "quiet" else (1.1 if activity == "playful" else 0.8)
 	return 1.0
 
 func _novelty_multiplier(intent_name: String) -> float:
@@ -288,3 +342,8 @@ func _record(name: String) -> void:
 	history.append(name)
 	while history.size() > MAX_HISTORY:
 		history.pop_front()
+
+func _record_variant(name: String) -> void:
+	variant_history.append(name)
+	while variant_history.size() > MAX_VARIANT_HISTORY:
+		variant_history.pop_front()

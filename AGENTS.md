@@ -57,6 +57,8 @@
 - Floor and surface intent execution are coordinated by companion.gd and must wait for real controller completion before advancing a step.
 - A controller-busy frame must not erase its own active intent; only explicit interruption/support loss may cancel it.
 - SurfaceController owns all support geometry/movement; IntentPlanner may only choose among preflighted surface actions.
+- Planner mini-scenes may request existing idle_life/edge_life gestures, but those drivers keep sole ownership of their bone rotations.
+- While a planner scene is active, ambient random micro-gestures must yield so two autonomous pose choices do not overlap.
 - BehaviorDirector may provide gaze while floor decisions are disabled; do not let it emit a second autonomous floor action in parallel.
 - Existing motion/pose controllers keep ownership; planners choose actions but do not animate bones or place windows directly.
 - User input always interrupts autonomous intent immediately.

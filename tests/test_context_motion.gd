@@ -96,6 +96,15 @@ func _run() -> void:
 	check(peek_left_hand.z < base_left_hand.z and peek_right_hand.z < base_right_hand.z, "curiosity peek sends both hands behind for balance")
 	for key in stage.idle_life.weights:
 		stage.idle_life.weights[key] = 0.0
+	state.autonomy_enabled = true
+	check(stage.idle_life.request_gesture("peek_right"), "planner can request an explicit standing micro-gesture")
+	var forced_seen: bool = false
+	for i in range(100):
+		state.tick(1.0 / 30.0, false)
+		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
+		forced_seen = forced_seen or float(stage.idle_life.weights["peek_right"]) > 0.7
+	check(forced_seen and not stage.idle_life.forced_active(), "requested standing micro-gesture plays and releases cleanly")
+	state.autonomy_enabled = false
 	var rest: Array[Transform3D] = []
 	for bone in range(stage.rig.skeleton.get_bone_count()):
 		rest.append(stage.rig.skeleton.get_bone_rest(bone))

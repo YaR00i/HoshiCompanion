@@ -87,6 +87,15 @@ func _run() -> void:
 		quiet = quiet and float(weight) < 0.001
 	check(quiet, "quiet mode calms autonomous actions")
 	app.state.activity = "normal"
+	app.state.edge_activity = "auto"
+	app.stage.edge_life.autonomous_enabled = false
+	check(app.stage.edge_life.request_gesture("peek"), "planner can request an explicit seated micro-gesture")
+	var forced_peek_seen: bool = false
+	for i in range(120):
+		frames(1)
+		forced_peek_seen = forced_peek_seen or float(app.stage.edge_life.weights["peek"]) > 0.7
+	check(forced_peek_seen and not app.stage.edge_life.forced_active(), "requested seated micro-gesture plays and releases cleanly")
+	app.stage.edge_life.autonomous_enabled = true
 	app.state.edge_activity = "lean"
 	frames(100)
 	app.stage.edge_suspended = true

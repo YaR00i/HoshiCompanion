@@ -229,6 +229,9 @@ func _process(delta: float) -> void:
 			target = cursor_gaze if distance < 1000.0 else Vector2.ZERO
 	_gaze = _gaze.lerp(target, 1.0 - exp(-dt * 6.0))
 	state.curiosity = lerpf(state.curiosity, director.curiosity if state.motion_enabled and state.look_enabled else 0.0, 1.0 - exp(-dt * 5.0))
+	var planner_scene_active: bool = not intent_planner.active_intent.is_empty()
+	stage.idle_life.autonomous_enabled = not planner_scene_active or playground.active()
+	stage.edge_life.autonomous_enabled = not planner_scene_active or not playground.active()
 	stage.edge_suspended = _press_active or ui.menu.visible or (playground.active() and (playground.phase != "attached" or playground.surface_busy()))
 	var context_action: String = "carry" if _dragged and not host.preview else air.pose_mode()
 	if context_action == "idle":
@@ -259,6 +262,10 @@ func _process(delta: float) -> void:
 		var caption: String = playground.label() if playground.active() else walker.label()
 		if host.preview and walker.mode == "walk":
 			caption = "Проверяет походку в примерочной"
+		if caption.is_empty() and playground.active():
+			caption = stage.edge_life.label()
+		if caption.is_empty() and not playground.active():
+			caption = stage.idle_life.label()
 		if caption.is_empty() and state.posture.mode != "standing":
 			caption = state.state_label()
 		if caption.is_empty() and not blocked and state.look_enabled:
@@ -332,6 +339,12 @@ func _tick_floor_intent(delta: float, context: Dictionary, cursor_gaze: Vector2,
 				state.wave()
 				_floor_intent_step_started = true
 				_finish_floor_intent_step()
+			"floor_peek_left", "floor_peek_right", "floor_weight_left", "floor_weight_right", "floor_hands", "floor_shoulders":
+				var gesture_name: String = step.trim_prefix("floor_")
+				if not stage.idle_life.request_gesture(gesture_name):
+					_abort_autonomous_intent("floor_gesture_unavailable")
+					return
+				_floor_intent_step_started = true
 			_:
 				_abort_autonomous_intent("unsupported_floor_step")
 		return
@@ -344,6 +357,9 @@ func _tick_floor_intent(delta: float, context: Dictionary, cursor_gaze: Vector2,
 				_finish_floor_intent_step()
 		"sit":
 			if state.posture.mode == "seated":
+				_finish_floor_intent_step()
+		"floor_peek_left", "floor_peek_right", "floor_weight_left", "floor_weight_right", "floor_hands", "floor_shoulders":
+			if not stage.idle_life.forced_active():
 				_finish_floor_intent_step()
 
 func _surface_intent_delay() -> float:
@@ -419,6 +435,18 @@ func _tick_surface_intent(delta: float, context: Dictionary, cursor_gaze: Vector
 				state.wave()
 				_surface_intent_step_started = true
 				_finish_surface_intent_step()
+			"edge_peek", "edge_balance", "edge_swing", "edge_lean":
+				var edge_gesture: String = step.trim_prefix("edge_")
+				if not playground.active() or state.posture.mode != "seated" or not stage.edge_life.request_gesture(edge_gesture):
+					_abort_autonomous_intent("edge_gesture_unavailable")
+					return
+				_surface_intent_step_started = true
+			"floor_peek_left", "floor_peek_right", "floor_weight_left", "floor_weight_right", "floor_hands", "floor_shoulders":
+				var floor_gesture: String = step.trim_prefix("floor_")
+				if playground.active() or state.posture.mode != "standing" or not stage.idle_life.request_gesture(floor_gesture):
+					_abort_autonomous_intent("return_gesture_unavailable")
+					return
+				_surface_intent_step_started = true
 			_:
 				_abort_autonomous_intent("unsupported_surface_step")
 		return
@@ -441,6 +469,12 @@ func _tick_surface_intent(delta: float, context: Dictionary, cursor_gaze: Vector
 				_finish_surface_intent_step()
 		"look":
 			if not director.look_active():
+				_finish_surface_intent_step()
+		"edge_peek", "edge_balance", "edge_swing", "edge_lean":
+			if not stage.edge_life.forced_active():
+				_finish_surface_intent_step()
+		"floor_peek_left", "floor_peek_right", "floor_weight_left", "floor_weight_right", "floor_hands", "floor_shoulders":
+			if not stage.idle_life.forced_active():
 				_finish_surface_intent_step()
 
 func _start_walk(automatic: bool, planner_owned: bool = false) -> void:
