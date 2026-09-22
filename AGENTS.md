@@ -49,6 +49,12 @@
 - dev.py check includes place-director checks; also run shelf_windows, external_windows,
   cozy_windows and edge_views before merging changes to support/pose arbitration.
 
+## Living roadmap
+- Read docs/ROADMAP_LIVING_RU.md before adding new autonomous behavior systems.
+- Prefer a small intent planner with short plans over a large generic behavior framework.
+- Existing motion/pose controllers keep ownership; planners choose actions but do not animate bones or place windows directly.
+- User input always interrupts autonomous intent immediately.
+
 ## 0.7 context motion and desktop surfaces
 - Read docs/CONTEXT_SURFACES_07.md before changing carry/jump/fall/portal/surface behavior.
 - air_motion.gd owns screen-space jump/fall/landing only; it must not edit rig bones.
