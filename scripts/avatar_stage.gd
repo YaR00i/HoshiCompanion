@@ -10,6 +10,8 @@ const IdleLife = preload("res://scripts/idle_life.gd")
 const ContextPose = preload("res://scripts/context_pose.gd")
 const MagicDoor = preload("res://scripts/magic_door.gd")
 const Expressions = preload("res://scripts/expression_driver.gd")
+const PetEffect = preload("res://scripts/pet_effect.gd")
+const SketchbookProp = preload("res://scripts/sketchbook_prop.gd")
 
 var view: SubViewport
 var pivot: Node3D
@@ -25,6 +27,8 @@ var idle_life = IdleLife.new()
 var context_pose = ContextPose.new()
 var door
 var edge_suspended: bool = false
+var cozy_corner_active: bool = false
+var edge_scoot: Dictionary = {}
 var context_action: String = "idle"
 var context_velocity: Vector2 = Vector2.ZERO
 var context_progress: float = -1.0
@@ -42,6 +46,8 @@ var travel_offset_px: float = 0.0
 var is_loaded: bool = false
 var _mesh_count: int = 0
 var _interaction_image: Image
+var pet_effect
+var sketchbook
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -76,6 +82,12 @@ func _ready() -> void:
 	light.light_energy = 1.0
 	light.shadow_enabled = false
 	view.add_child(light)
+	pet_effect = PetEffect.new()
+	pet_effect.name = "PetEffect"
+	view.add_child(pet_effect)
+	sketchbook = SketchbookProp.new()
+	sketchbook.name = "Sketchbook"
+	pivot.add_child(sketchbook)
 	resized.connect(_on_resized)
 	_on_resized()
 
@@ -91,6 +103,12 @@ func load_model(path: String) -> Dictionary:
 	edge_life = EdgeLife.new()
 	idle_life = IdleLife.new()
 	context_pose = ContextPose.new()
+	if is_instance_valid(sketchbook):
+		pivot.remove_child(sketchbook)
+		sketchbook.queue_free()
+	sketchbook = SketchbookProp.new()
+	sketchbook.name = "Sketchbook"
+	pivot.add_child(sketchbook)
 	var life_seed: int = 42 if OS.get_cmdline_user_args().has("--test-mode") else int(Time.get_ticks_usec())
 	edge_life.seed_random(life_seed)
 	idle_life.seed_random(life_seed + 19)
@@ -128,6 +146,7 @@ func load_model(path: String) -> Dictionary:
 	if not have_bounds or merged.size.y < 0.1:
 		return {"error": "Модель импортирована, но её видимая геометрия не найдена."}
 	model_height = merged.size.y
+	sketchbook.setup(model_height)
 	avatar.position.y -= merged.position.y
 	avatar.position.x -= merged.get_center().x
 	avatar.position.z -= merged.get_center().z
@@ -174,12 +193,15 @@ func animate(delta: float, state, gaze: Vector2, walk_frame: Dictionary = {}) ->
 	_tick_cinematic(delta, state.time)
 	pivot.rotation.y = deg_to_rad(yaw)
 	pivot.position = Vector3(travel_offset_px * meters_per_pixel(), 0.0, _cinematic_z)
-	var life_frame: Dictionary = edge_life.tick(delta, state, edge_suspended)
+	var life_frame: Dictionary = edge_life.tick(delta, state, edge_suspended, cozy_corner_active)
+	life_frame["sketch_progress"] = edge_life.sketch_progress
+	life_frame["scoot_weight"] = float(edge_scoot.get("weight", 0.0))
+	life_frame["scoot_direction"] = float(edge_scoot.get("direction", 0.0))
 	var walk_weight: float = float(walk_frame.get("weight", 0.0))
 	var idle_blocked: bool = cinematic_active() or context_action != "idle" or edge_suspended
 	idle_life.tick(delta, state, idle_blocked, walk_weight)
 	rig.hair_enabled = state.hair_enabled
-	rig.tick(delta, state.time, gaze, state.wave_weight, state.pet_weight, state.sleep_weight, state.motion_enabled, state.curiosity, walk_frame)
+	rig.tick(delta, state.time, gaze, state.wave_weight, state.pet_weight, state.sleep_weight, state.motion_enabled, state.curiosity, state.notice_weight, state.pet_follow, walk_frame, state.welcome_weight)
 	var seated: float = state.posture.amount
 	gait.apply(walk_frame, state.time, 0.45 * (1.0 - seated) if state.motion_enabled and state.autonomy_enabled and not state.dozing else 0.0)
 	if state.posture.kind == "edge":
@@ -188,9 +210,15 @@ func animate(delta: float, state, gaze: Vector2, walk_frame: Dictionary = {}) ->
 		posture_driver.apply(seated, state.time, state.wave_weight, state.motion_enabled)
 	idle_life.apply(state.time)
 	var active_context: String = "portal" if cinematic_active() else context_action
-	context_pose.tick(delta, active_context, context_velocity, context_progress, context_impact)
+	context_pose.tick(delta, active_context, context_velocity, context_progress, context_impact, yaw)
 	context_pose.apply(state.time)
-	expressions.apply(state.expression_weights())
+	sketchbook.update_pose(pivot, rig, float(life_frame.get("sketch", 0.0)) if state.posture.kind == "edge" and cozy_corner_active and not edge_suspended and not state.dozing else 0.0, edge_life.sketch_progress)
+	var face_weights: Dictionary = state.expression_weights()
+	if cozy_corner_active and not edge_suspended and float(life_frame.get("sketch", 0.0)) > 0.01:
+		var show: float = smoothstep(0.70, 0.86, edge_life.sketch_progress) * (1.0 - smoothstep(0.94, 1.0, edge_life.sketch_progress))
+		face_weights["happy"] = maxf(float(face_weights.get("happy", 0.0)), float(life_frame["sketch"]) * show * 0.34)
+	expressions.apply(face_weights)
+	pet_effect.tick(delta, head_pixel() + state.pet_follow * body_pixels * 0.09 + Vector2(0.0, -body_pixels * 0.055), state.pet_contact_active)
 
 func set_context_action(value: String, velocity: Vector2 = Vector2.ZERO, normalized_progress: float = -1.0, impact_strength: float = 0.5) -> void:
 	context_action = value
@@ -268,6 +296,21 @@ func head_pixel() -> Vector2:
 		return size * Vector2(0.5, 0.24)
 	return camera.unproject_position(rig.world_point("head") + Vector3(0.0, model_height * 0.05, 0.0))
 
+func hand_pixel(side: String) -> Vector2:
+	if not is_loaded or side not in ["left", "right"]:
+		return size * 0.5
+	return camera.unproject_position(rig.world_point(side + "Hand") + Vector3(0.0, model_height * 0.015, 0.0))
+
+func hand_contact_side(point: Vector2) -> String:
+	if not visible_avatar_hit(point):
+		return ""
+	var radius: float = maxf(24.0, body_pixels * 0.065)
+	var left_distance: float = point.distance_to(hand_pixel("left"))
+	var right_distance: float = point.distance_to(hand_pixel("right"))
+	if minf(left_distance, right_distance) > radius:
+		return ""
+	return "left" if left_distance <= right_distance else "right"
+
 func standing_anchor_pixel() -> Vector2:
 	if not is_loaded or not gait.available or gait.legs.size() < 2:
 		return Vector2(size.x * 0.5, size.y - foot_margin)
@@ -305,6 +348,20 @@ func visible_avatar_hit(point: Vector2) -> bool:
 	if _interaction_image == null or _interaction_image.is_empty():
 		return hit_avatar(point)
 	return alpha_image_hit(_interaction_image, point, size)
+
+func head_contact_hit(point: Vector2) -> bool:
+	if not visible_avatar_hit(point):
+		return false
+	return _head_zone_hit(point, Vector2(maxf(40.0, body_pixels * 0.17), maxf(48.0, body_pixels * 0.20)))
+
+func head_stroke_zone_hit(point: Vector2) -> bool:
+	# Follow the projected head with a little room for hair and stale alpha
+	# snapshots. Only the initial press requires a visible-avatar hit.
+	return _head_zone_hit(point, Vector2(maxf(52.0, body_pixels * 0.22), maxf(62.0, body_pixels * 0.26)))
+
+func _head_zone_hit(point: Vector2, radius: Vector2) -> bool:
+	var relative: Vector2 = (point - head_pixel()) / radius
+	return relative.length_squared() <= 1.0
 
 static func alpha_image_hit(image: Image, point: Vector2, logical_size: Vector2, radius_px: int = 2, alpha_threshold: float = 0.035) -> bool:
 	if image == null or image.is_empty() or logical_size.x <= 0.0 or logical_size.y <= 0.0:

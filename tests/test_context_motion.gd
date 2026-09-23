@@ -16,6 +16,15 @@ func check(ok: bool, label: String) -> void:
 		failures += 1
 		push_error("FAIL: " + label)
 
+func screen_point(stage, semantic: String) -> Vector2:
+	return stage.camera.unproject_position(stage.rig.world_point(semantic))
+
+func advance_context(stage, state, mode: String, velocity: Vector2, frames: int) -> void:
+	for i in range(frames):
+		stage.set_context_action(mode, velocity, 1.0 if mode == "cursor_hang" else -1.0)
+		state.tick(1.0 / 30.0, false)
+		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
+
 func _run() -> void:
 	var air := Air.new()
 	air.begin_jump(Vector2(100, 500), Vector2(500, 300), 360.0)
@@ -41,6 +50,10 @@ func _run() -> void:
 		monotonic = monotonic and air.position.y >= previous_y - 0.01
 		previous_y = air.position.y
 	check(monotonic and air.mode == "idle" and air.position.distance_to(Vector2(360, 620)) < 0.01, "fall accelerates downward and lands exactly")
+	air.begin_fall(Vector2(300, 400), Vector2(300, 520), 360.0, "soft")
+	var soft_impact: float = air.impact_strength()
+	air.begin_fall(Vector2(300, 400), Vector2(300, 520), 360.0, "rough")
+	check(air.impact_strength() > soft_impact + 0.25 and air.target == Vector2(300, 520), "abrupt release strengthens the same fall without changing its route")
 	var stage := Stage.new()
 	stage.size = Vector2(560, 620)
 	root.add_child(stage)
@@ -115,8 +128,8 @@ func _run() -> void:
 	var rest: Array[Transform3D] = []
 	for bone in range(stage.rig.skeleton.get_bone_count()):
 		rest.append(stage.rig.skeleton.get_bone_rest(bone))
-	for mode in ["carry", "jump", "fall", "land"]:
-		stage.set_context_action(mode, Vector2(420, 260), 0.55 if mode in ["jump", "fall"] else (0.28 if mode == "land" else -1.0), 1.0)
+	for mode in ["carry", "cursor_hang", "jump", "fall", "land"]:
+		stage.set_context_action(mode, Vector2(420, 260), 0.55 if mode in ["jump", "fall"] else (0.28 if mode == "land" else (1.0 if mode == "cursor_hang" else -1.0)), 1.0)
 		for i in range(50):
 			state.tick(1.0 / 30.0)
 			stage.animate(1.0 / 30.0, state, Vector2.ZERO)
@@ -124,6 +137,42 @@ func _run() -> void:
 		for bone in range(stage.rig.skeleton.get_bone_count()):
 			finite = finite and stage.rig.skeleton.get_bone_global_pose(bone).origin.is_finite()
 		check(finite, mode + " context pose keeps every bone finite")
+	stage.set_context_action("cursor_hang", Vector2(320, -160), 1.0)
+	for i in range(24):
+		state.tick(1.0 / 30.0)
+		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
+	check(stage.rig.world_point("leftHand").y > stage.rig.world_point("head").y and stage.rig.world_point("rightHand").y > stage.rig.world_point("head").y, "cursor hang raises both hands above the head")
+	var hang_head: Vector2 = stage.head_pixel()
+	var left_elbow: Vector2 = stage.camera.unproject_position(stage.rig.world_point("leftLowerArm"))
+	var right_elbow: Vector2 = stage.camera.unproject_position(stage.rig.world_point("rightLowerArm"))
+	check(absf(left_elbow.x - hang_head.x) > stage.body_pixels * 0.10 and absf(right_elbow.x - hang_head.x) > stage.body_pixels * 0.10, "cursor grip keeps both elbows outside the head")
+	check(left_elbow.y > stage.hand_pixel("left").y and right_elbow.y > stage.hand_pixel("right").y, "cursor grip bends forearms upward toward the hands")
+	check(stage.rig.world_point("leftFoot").is_finite() and stage.rig.world_point("rightFoot").is_finite(), "cursor hang keeps dangling legs finite")
+	for mode in ["carry", "cursor_hang"]:
+		for yaw_angle in [0.0, 80.0, -80.0, 180.0]:
+			advance_context(stage, state, "idle", Vector2.ZERO, 70)
+			stage.yaw = yaw_angle
+			advance_context(stage, state, mode, Vector2.ZERO, 30)
+			var neutral_offset: float = screen_point(stage, "head").x - screen_point(stage, "hips").x if mode == "carry" else screen_point(stage, "hips").x - screen_point(stage, "leftHand").x
+			advance_context(stage, state, mode, Vector2(-700.0, 0.0), 8)
+			var left_offset: float = screen_point(stage, "head").x - screen_point(stage, "hips").x if mode == "carry" else screen_point(stage, "hips").x - screen_point(stage, "leftHand").x
+			check(left_offset > neutral_offset + 4.0, mode + " torso lags right when the cursor moves left at yaw " + str(yaw_angle))
+			advance_context(stage, state, mode, Vector2.ZERO, 3)
+			var coast_offset: float = screen_point(stage, "head").x - screen_point(stage, "hips").x if mode == "carry" else screen_point(stage, "hips").x - screen_point(stage, "leftHand").x
+			check(coast_offset > neutral_offset + 2.0, mode + " retains visible momentum just after the cursor stops at yaw " + str(yaw_angle))
+			advance_context(stage, state, mode, Vector2(700.0, 0.0), 24)
+			var right_offset: float = screen_point(stage, "head").x - screen_point(stage, "hips").x if mode == "carry" else screen_point(stage, "hips").x - screen_point(stage, "leftHand").x
+			check(right_offset < neutral_offset - 4.0, mode + " torso lags left when the cursor moves right at yaw " + str(yaw_angle))
+		for yaw_angle in [80.0, -80.0]:
+			advance_context(stage, state, "idle", Vector2.ZERO, 70)
+			stage.yaw = yaw_angle
+			advance_context(stage, state, mode, Vector2.ZERO, 30)
+			var facing: float = 1.0 if yaw_angle > 0.0 else -1.0
+			for side in ["left", "right"]:
+				var thigh: Vector2 = screen_point(stage, side + "UpperLeg")
+				var knee: Vector2 = screen_point(stage, side + "LowerLeg")
+				var ankle: Vector2 = screen_point(stage, side + "Foot")
+				check(facing * (knee.x - thigh.x) > 5.0 and facing * (knee.x - ankle.x) > 12.0, mode + " knee bends forward and shin folds back at yaw " + str(yaw_angle) + " " + side)
 	# Jump/fall/landing phases must be visually different poses, not one static overlay.
 	stage.set_context_action("jump", Vector2(220, -420), 0.08, 0.55)
 	for i in range(12):

@@ -92,27 +92,34 @@ func pose(semantic: String, euler_degrees: Vector3) -> void:
 	if bones.has(semantic):
 		set_offset(int(bones[semantic]), euler_degrees)
 
-func tick(delta: float, time: float, gaze: Vector2, wave: float, pet: float, sleepy: float, moving: bool, curiosity: float = 0.0, gait: Dictionary = {}) -> void:
+func tick(delta: float, time: float, gaze: Vector2, wave: float, pet: float, sleepy: float, moving: bool, curiosity: float = 0.0, notice: float = 0.0, pet_follow: Vector2 = Vector2.ZERO, gait: Dictionary = {}, welcome: float = 0.0) -> void:
 	if skeleton == null:
 		return
 	var motion: float = 1.0 if moving else 0.0
 	var breathe: float = sin(time * 1.65) * motion
 	var sway: float = sin(time * 0.62) * motion
+	# Petting is a single soft nuzzle. The small, smoothed cursor offset follows
+	# the hand instead of choosing a new head pose after release.
+	var pet_chest: Vector3 = Vector3(1.2, 0.0, pet_follow.x * 0.6)
+	var pet_neck: Vector3 = Vector3(1.5 + pet_follow.y * 1.0, pet_follow.x * 2.0, pet_follow.x * 1.8)
+	var pet_head: Vector3 = Vector3(3.0 + pet_follow.y * 2.0, pet_follow.x * 3.0, pet_follow.x * 3.5)
+	var pet_shoulder: float = 1.5
+	var pet_arm: float = 1.5
 	# Feet/hips stay anchored. Most life is in shoulders, head and soft hands.
 	pose("hips", Vector3.ZERO)
 	pose("spine", Vector3(breathe * 0.35, 0.0, sway * 0.35))
-	pose("chest", Vector3(breathe * 0.45 + sleepy * 1.0, 0.0, sway * -0.22))
+	pose("chest", Vector3(breathe * 0.45 + sleepy * 1.0, 0.0, sway * -0.22) + pet_chest * pet + Vector3(-0.8, 0.0, 1.4) * welcome)
 	pose("upperChest", Vector3(breathe * 0.2, 0.0, 0.0))
-	pose("neck", Vector3(gaze.y * 3.0 + sleepy * 3.0, gaze.x * 4.0, pet * -1.5))
-	pose("head", Vector3(gaze.y * 6.0 + sleepy * 8.0, gaze.x * 10.0, sway * 0.7 - pet * 5.0 + curiosity * 4.0))
+	pose("neck", Vector3(gaze.y * 3.0 + sleepy * 3.0, gaze.x * 4.0, 0.0) + pet_neck * pet + Vector3(-1.4, 0.0, 1.0) * notice + Vector3(1.0, 0.0, -1.2) * welcome)
+	pose("head", Vector3(gaze.y * 6.0 + sleepy * 8.0, gaze.x * 10.0, sway * 0.7 + curiosity * 4.0) + pet_head * pet + Vector3(-3.4, 0.0, 2.4) * notice + Vector3(2.2, 0.0, -4.2) * welcome)
 	pose("leftEye", Vector3(gaze.y * 4.0, gaze.x * 5.0, 0.0))
 	pose("rightEye", Vector3(gaze.y * 4.0, gaze.x * 5.0, 0.0))
-	pose("leftShoulder", Vector3(0.0, 0.0, -pet * 1.5))
-	pose("rightShoulder", Vector3(0.0, 0.0, pet * 1.5))
-	pose("leftUpperArm", Vector3(0.0, -2.0, -72.0 + sway * 1.1 - pet * 2.0))
+	pose("leftShoulder", Vector3(-notice * 1.2, 0.0, -pet * pet_shoulder))
+	pose("rightShoulder", Vector3(-notice * 1.2, 0.0, pet * pet_shoulder))
+	pose("leftUpperArm", Vector3(0.0, -2.0, -72.0 + sway * 1.1 - pet * pet_arm))
 	pose("leftLowerArm", Vector3(-3.0, -6.0, 6.0 + pet * 3.0))
 	pose("leftHand", Vector3(0.0, 0.0, -2.0))
-	pose("rightUpperArm", Vector3(0.0, 2.0, lerpf(72.0 - sway, 22.0, wave)))
+	pose("rightUpperArm", Vector3(0.0, 2.0, lerpf(72.0 - sway + pet * pet_arm, 22.0, wave)))
 	pose("rightLowerArm", Vector3(-3.0, 6.0, lerpf(-6.0, -125.0, wave)))
 	pose("rightHand", Vector3(wave * -30.0, 0.0, 2.0 + wave * sin(time * 9.5) * 13.0))
 	_apply_walk_upper(gait, wave)

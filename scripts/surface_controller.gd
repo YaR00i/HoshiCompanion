@@ -11,6 +11,11 @@ var _walk_started: bool = false
 var _auto_side_return: float = 0.0
 var _last_auto_action: String = ""
 var internal_autonomy_enabled: bool = false
+var _scoot_from_u: float = 0.0
+var _scoot_to_u: float = 0.0
+var _scoot_age: float = 0.0
+var _scoot_direction: float = 0.0
+const SCOOT_DURATION: float = 1.65
 
 func setup(companion, playground) -> void:
 	app_ref = weakref(companion)
@@ -30,6 +35,8 @@ func reset() -> void:
 	_walk_started = false
 	_auto_side_return = 0.0
 	_last_auto_action = ""
+	_scoot_age = 0.0
+	_scoot_direction = 0.0
 	_auto_wait = _rng.randf_range(22.0, 42.0)
 
 func busy() -> bool:
@@ -39,7 +46,16 @@ func walking() -> bool:
 	return mode in ["rise", "mount", "walk", "resit"]
 
 func owns_placement() -> bool:
-	return mode in ["mount", "walk", "side_move", "side_left", "side_right"]
+	return mode in ["mount", "walk", "scoot", "side_move", "side_left", "side_right"]
+
+func posture_contact_pixel() -> Vector2:
+	# On a surface route, placement follows the feet. A seated pose follows the
+	# seat. Blend the two contacts while rising/resitting so switching owners
+	# cannot move the native window by a whole torso in one frame.
+	var app = _app()
+	var foot: Vector2 = app.stage.standing_anchor_pixel()
+	var seat: Vector2 = app.stage.camera.unproject_position(app.stage.edge_pose.anchor_world())
+	return foot.lerp(seat, clampf(app.state.posture.amount, 0.0, 1.0))
 
 func context_action() -> String:
 	if mode == "side_left":
@@ -54,12 +70,39 @@ func label() -> String:
 		"mount": return "Переставляет ножки на край"
 		"walk": return "Гуляет по краю окна"
 		"resit": return "Снова усаживается"
+		"scoot": return "Тихонько передвигается по уголку"
 		"side_move": return "Спускается к боковой рамке"
 		"side_left", "side_right": return "Опирается на бок окна"
 	return ""
 
 func can_walk_route() -> bool:
 	return _owner().phase == "attached" and _owner()._shelf_usable() and mode == "sit" and bool(_route_plan().get("ok", false))
+
+func can_scoot_route() -> bool:
+	return _owner().phase == "attached" and _owner().cozy_mode and _owner()._shelf_usable() and mode == "sit" and _app().state.posture.mode == "seated" and bool(_scoot_plan().get("ok", false))
+
+func request_scoot() -> bool:
+	if not can_scoot_route():
+		return false
+	var plan: Dictionary = _scoot_plan()
+	_scoot_from_u = _fraction_from_local(float(plan["start"]))
+	_scoot_to_u = _fraction_from_local(float(plan["target"]))
+	_scoot_direction = signf(float(plan["target"]) - float(plan["start"]))
+	_scoot_age = 0.0
+	mode = "scoot"
+	return true
+
+func cancel_scoot() -> void:
+	if mode == "scoot":
+		mode = "sit"
+		_scoot_age = 0.0
+		_scoot_direction = 0.0
+
+func scoot_pose() -> Dictionary:
+	if mode != "scoot":
+		return {}
+	var progress: float = clampf(_scoot_age / SCOOT_DURATION, 0.0, 1.0)
+	return {"weight": pow(sin(PI * progress), 2.0), "progress": progress, "direction": _scoot_direction}
 
 func available_side() -> String:
 	if _owner().phase != "attached" or not _owner().external_mode or not _owner()._shelf_usable() or mode != "sit":
@@ -119,6 +162,8 @@ func before_tick(delta: float) -> void:
 	var dt: float = clampf(delta, 0.0, 0.1)
 	if mode == "sit" and internal_autonomy_enabled:
 		_tick_autonomy(dt)
+	elif mode == "scoot":
+		_scoot_age = minf(SCOOT_DURATION, _scoot_age + dt)
 	elif mode == "rise":
 		if _app().state.posture.mode == "standing":
 			var placement: Dictionary = _top_placement_for_fraction(_owner().anchor_u)
@@ -161,6 +206,21 @@ func before_tick(delta: float) -> void:
 func after_tick() -> void:
 	if _owner().phase != "attached" or not owns_placement():
 		return
+	if mode == "scoot":
+		var progress: float = clampf(_scoot_age / SCOOT_DURATION, 0.0, 1.0)
+		var move: float = smoothstep(0.18, 0.88, progress)
+		var fraction: float = lerpf(_scoot_from_u, _scoot_to_u, move)
+		var seat_pixel: Vector2 = _app().stage.camera.unproject_position(_app().stage.edge_pose.anchor_world())
+		var placement: Dictionary = _owner().solve_placement(_owner().support_rect(), fraction, seat_pixel, _app().host.window.size, _owner().support_area())
+		if not bool(placement.get("ok", false)):
+			cancel_scoot()
+			return
+		_app().host.place_at(Vector2(placement["position"]))
+		_owner().anchor_u = fraction
+		_owner().last_support_error = (Vector2(_app().host.window.position) + seat_pixel).distance_to(placement["anchor"])
+		if progress >= 1.0:
+			mode = "sit"
+		return
 	if mode in ["mount", "walk"]:
 		var local_x: float = _current_local_x()
 		if mode == "walk":
@@ -188,7 +248,7 @@ func after_tick() -> void:
 func _tick_autonomy(delta: float) -> void:
 	if _app().state.edge_activity != "auto" or not _app().state.autonomy_enabled or not _app().state.motion_enabled or _app().state.dozing:
 		return
-	if _app()._press_active or _app().ui.menu.visible or _app().state.wave_weight > 0.1 or _app().state.pet_weight > 0.1:
+	if _app()._press_active or _app().ui.menu.visible or _app().state.notice_weight > 0.1 or _app().state.wave_weight > 0.1 or _app().state.pet_weight > 0.1:
 		return
 	_auto_wait = maxf(0.0, _auto_wait - delta)
 	if _auto_wait > 0.0:
@@ -216,6 +276,24 @@ func _tick_autonomy(delta: float) -> void:
 
 func _route_plan() -> Dictionary:
 	return plan_route(_owner().support_rect(), _current_local_x(), _app().stage.standing_anchor_pixel(), _app().host.window.size, _owner().support_area(), float(_app().host.body_pixels), _app().stage.meters_per_pixel(), _app().stage.model_height, _app().state.activity == "playful")
+
+func _scoot_plan() -> Dictionary:
+	var rect: Rect2i = _owner().support_rect()
+	var start: float = lerpf(24.0, float(rect.size.x - 24), _owner().anchor_u)
+	var seat_pixel: Vector2 = _app().stage.camera.unproject_position(_app().stage.edge_pose.anchor_world())
+	var lane: Vector2 = top_lane(rect, seat_pixel, _app().host.window.size, _owner().support_area())
+	if lane.y <= lane.x + 20.0 or start < lane.x or start > lane.y:
+		return {"ok": false}
+	var left_room: float = start - lane.x
+	var right_room: float = lane.y - start
+	var direction: float = 1.0 if right_room >= left_room else -1.0
+	var span: float = minf(float(_app().host.body_pixels) * 0.22, maxf(left_room, right_room))
+	if span < 20.0:
+		return {"ok": false}
+	var target: float = start + direction * span
+	if not bool(_owner().solve_placement(rect, _fraction_from_local(target), seat_pixel, _app().host.window.size, _owner().support_area()).get("ok", false)):
+		return {"ok": false}
+	return {"ok": true, "start": start, "target": target}
 
 func _start_route() -> void:
 	var plan: Dictionary = _route_plan()

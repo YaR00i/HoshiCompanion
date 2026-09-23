@@ -1,5 +1,5 @@
 extends RefCounted
-## Context-only overlay poses: carry, jump, fall, landing and portal steps.
+## Context-only overlay poses: carry, cursor grip, jump, fall, landing and portal steps.
 ## Adds rotations on top of the normal rig; never edits REST transforms or skin binds.
 var rig
 var skeleton: Skeleton3D
@@ -13,6 +13,7 @@ var impact: float = 0.5
 var height_m: float = 1.5
 var mode_age: float = 0.0
 var _carry_lag: Vector2 = Vector2.ZERO
+var facing_yaw: float = 0.0
 
 func setup(rig_driver, model_height: float) -> Dictionary:
 	rig = rig_driver
@@ -21,22 +22,25 @@ func setup(rig_driver, model_height: float) -> Dictionary:
 	available = skeleton != null and rig.bones.has("hips")
 	return {"available": available}
 
-func tick(delta: float, value: String, screen_velocity: Vector2 = Vector2.ZERO, normalized_progress: float = -1.0, impact_strength: float = 0.5) -> void:
+func tick(delta: float, value: String, screen_velocity: Vector2 = Vector2.ZERO, normalized_progress: float = -1.0, impact_strength: float = 0.5, yaw_degrees: float = 0.0) -> void:
 	if not available:
 		return
 	var dt: float = clampf(delta, 0.0, 0.1)
-	requested = value if value in ["idle", "carry", "jump", "fall", "land", "portal", "side_left", "side_right"] else "idle"
+	facing_yaw = yaw_degrees
+	requested = value if value in ["idle", "carry", "cursor_hang", "jump", "fall", "land", "portal", "side_left", "side_right"] else "idle"
 	if requested != "idle" and requested != pose_mode:
 		pose_mode = requested
 		mode_age = 0.0
 		# Landing should read immediately at contact instead of fading in from zero.
 		if requested == "land":
 			weight = maxf(weight, 0.72)
+		elif requested == "cursor_hang":
+			weight = 0.0
 		else:
 			weight = minf(weight, 0.30)
 	if requested != "idle":
 		mode_age += dt
-	var goal: float = 0.0 if requested == "idle" else 1.0
+	var goal: float = clampf(normalized_progress, 0.0, 1.0) if requested == "cursor_hang" else (0.0 if requested == "idle" else 1.0)
 	weight = lerpf(weight, goal, 1.0 - exp(-dt * (11.0 if goal > weight else 7.0)))
 	if requested == "idle" and weight < 0.002:
 		pose_mode = "idle"
@@ -49,7 +53,7 @@ func tick(delta: float, value: String, screen_velocity: Vector2 = Vector2.ZERO, 
 		clampf(screen_velocity.x / 900.0, -1.25, 1.25),
 		clampf(screen_velocity.y / 900.0, -1.25, 1.25)
 	)
-	if requested == "carry":
+	if requested in ["carry", "cursor_hang"]:
 		# Deliberately slower than the hand/cursor: this residual lag is the
 		# little pendulum motion that remains when the user changes direction.
 		_carry_lag = _carry_lag.lerp(normalized_velocity, 1.0 - exp(-dt * 4.8))
@@ -92,19 +96,62 @@ func apply(time: float) -> void:
 	var sy: float = clampf(velocity.y / 900.0, -1.2, 1.2)
 	var u: float = phase_progress()
 	match pose_mode:
+		"cursor_hang":
+			var lag_x: float = clampf(_carry_lag.x, -1.2, 1.2)
+			var change_x: float = clampf((sx - lag_x) * 1.8, -1.2, 1.2)
+			# The hand stays under the pointer. Lean the hanging body opposite the
+			# cursor so the torso lags behind the grip instead of leading it.
+			var swing: float = -(sin(time * 3.0) * 1.0 + lag_x * 9.0 + change_x * 1.0)
+			var kick: float = sin(time * 5.3) * 3.0
+			_add("hips", Vector3(5.0 + sy * 2.0, 0.0, 0.0) * w)
+			_screen_roll("hips", swing * 0.75 * w)
+			_add("spine", Vector3(-5.0, 0.0, 0.0) * w)
+			_screen_roll("spine", swing * w)
+			_add("chest", Vector3(-4.0, 0.0, 0.0) * w)
+			_screen_roll("chest", -swing * 0.35 * w)
+			_add("neck", Vector3(2.0, -sx * 2.0, 0.0) * w)
+			_screen_roll("neck", -swing * 0.25 * w)
+			_add("head", Vector3(-3.0, -sx * 3.0, 0.0) * w)
+			_screen_roll("head", -swing * 0.35 * w)
+			# The elbows stay beside the head; forearms fold inward to meet the cursor.
+			_add("leftUpperArm", Vector3(20.0, 0.0, 135.0) * w)
+			_add("rightUpperArm", Vector3(20.0, 0.0, -135.0) * w)
+			_screen_roll("leftUpperArm", -swing * 0.12 * w)
+			_screen_roll("rightUpperArm", -swing * 0.12 * w)
+			_add("leftLowerArm", Vector3(-5.0, 0.0, 60.0) * w)
+			_add("rightLowerArm", Vector3(-5.0, 0.0, -60.0) * w)
+			_add("leftHand", Vector3(0.0, 0.0, -10.0) * w)
+			_add("rightHand", Vector3(0.0, 0.0, 10.0) * w)
+			for side in ["left", "right"]:
+				var curl_sign: float = -1.0 if side == "left" else 1.0
+				for finger in ["Index", "Middle", "Ring", "Little"]:
+					_add(side + finger + "Proximal", Vector3(0.0, curl_sign * 28.0, 0.0) * w)
+					_add(side + finger + "Intermediate", Vector3(0.0, curl_sign * 30.0, 0.0) * w)
+			_dangle_legs(time, w, 1.0)
+			_add("leftUpperLeg", Vector3(-3.0 + kick, 0.0, 0.0) * w)
+			_add("rightUpperLeg", Vector3(-5.0 - kick, 0.0, 0.0) * w)
+			_add("leftLowerLeg", Vector3(5.0, 0.0, 0.0) * w)
+			_add("rightLowerLeg", Vector3(7.0, 0.0, 0.0) * w)
 		"carry":
 			var lag_x: float = clampf(_carry_lag.x, -1.2, 1.2)
 			var lag_y: float = clampf(_carry_lag.y, -1.2, 1.2)
 			var direction_change: float = clampf((sx - lag_x) * 2.1, -1.2, 1.2)
 			var speed: float = clampf(Vector2(sx, sy).length(), 0.0, 1.25)
-			var pendulum: float = sin(time * 2.8) * (2.0 + speed * 2.0) + lag_x * 6.0 + direction_change * 5.0
-			_add("hips", Vector3(5.0 + lag_y * 3.0, 0.0, pendulum * 0.42) * w)
-			_add("spine", Vector3(-7.0 - lag_y * 3.5, 0.0, pendulum) * w)
-			_add("chest", Vector3(-4.0 - speed * 1.5, 0.0, -pendulum * 0.55) * w)
-			_add("neck", Vector3(4.0 + sy * 2.0, -sx * 2.5, -pendulum * 0.32) * w)
-			_add("head", Vector3(6.0 + sy * 3.0, -sx * 3.5, -pendulum * 0.55) * w)
-			_add("leftUpperArm", Vector3(6.0 + speed * 4.0, 0.0, -5.0 - speed * 4.0 - pendulum * 0.22) * w)
-			_add("rightUpperArm", Vector3(6.0 + speed * 4.0, 0.0, 5.0 + speed * 4.0 - pendulum * 0.22) * w)
+			var pendulum: float = sin(time * 2.8) * (1.2 + speed * 0.8) + lag_x * 9.0 + direction_change * 5.0
+			_add("hips", Vector3(5.0 + lag_y * 3.0, 0.0, 0.0) * w)
+			_screen_roll("hips", pendulum * 0.42 * w)
+			_add("spine", Vector3(-7.0 - lag_y * 3.5, 0.0, 0.0) * w)
+			_screen_roll("spine", pendulum * w)
+			_add("chest", Vector3(-4.0 - speed * 1.5, 0.0, 0.0) * w)
+			_screen_roll("chest", -pendulum * 0.55 * w)
+			_add("neck", Vector3(4.0 + sy * 2.0, -sx * 2.5, 0.0) * w)
+			_screen_roll("neck", -pendulum * 0.32 * w)
+			_add("head", Vector3(6.0 + sy * 3.0, -sx * 3.5, 0.0) * w)
+			_screen_roll("head", -pendulum * 0.55 * w)
+			_add("leftUpperArm", Vector3(6.0 + speed * 4.0, 0.0, -5.0 - speed * 4.0) * w)
+			_add("rightUpperArm", Vector3(6.0 + speed * 4.0, 0.0, 5.0 + speed * 4.0) * w)
+			_screen_roll("leftUpperArm", -pendulum * 0.22 * w)
+			_screen_roll("rightUpperArm", -pendulum * 0.22 * w)
 			_add("leftLowerArm", Vector3(-6.0, 0.0, -7.0 - speed * 2.0) * w)
 			_add("rightLowerArm", Vector3(-6.0, 0.0, 7.0 + speed * 2.0) * w)
 			_dangle_legs(time, w, 0.85 + speed * 0.35)
@@ -131,15 +178,16 @@ func apply(time: float) -> void:
 			_add("rightLowerLeg", Vector3(knee, 0.0, 0.0) * w)
 		"fall":
 			var severity: float = clampf(impact, 0.45, 1.25)
+			var alarm: float = clampf((severity - 0.50) / 0.35, 0.0, 1.0)
 			var react: float = 1.0 - smoothstep(0.16, 0.48, u)
 			var tuck: float = smoothstep(0.18, 0.76, u)
 			var brace: float = smoothstep(0.68, 0.98, u)
 			_add("hips", Vector3((2.0 + severity * 2.0) * tuck, 0.0, sx * 2.0) * w)
-			_add("spine", Vector3(-3.0 * react + (5.0 + severity * 5.0) * tuck, 0.0, sx * 5.0) * w)
-			_add("chest", Vector3(-2.0 * react + (3.0 + severity * 3.0) * tuck, 0.0, -sx * 3.0) * w)
+			_add("spine", Vector3((-3.0 - 7.0 * alarm) * react + (5.0 + severity * 5.0) * tuck, 0.0, sx * 5.0) * w)
+			_add("chest", Vector3((-2.0 - 4.0 * alarm) * react + (3.0 + severity * 3.0) * tuck, 0.0, -sx * 3.0) * w)
 			_add("neck", Vector3(2.0 * tuck + 3.0 * brace, -sx * 2.0, 0.0) * w)
-			_add("head", Vector3(3.0 * tuck + 4.0 * brace, -sx * 2.8, 0.0) * w)
-			var spread: float = 17.0 * react + 8.0 * brace
+			_add("head", Vector3(-8.0 * alarm * react + 3.0 * tuck + 4.0 * brace, -sx * 2.8, 0.0) * w)
+			var spread: float = (9.0 + 23.0 * alarm) * react + 8.0 * brace
 			_add("leftUpperArm", Vector3(-7.0 * react + 5.0 * brace, 0.0, -spread) * w)
 			_add("rightUpperArm", Vector3(-7.0 * react + 5.0 * brace, 0.0, spread) * w)
 			var thigh: float = (11.0 + severity * 17.0) * tuck + 9.0 * brace
@@ -196,12 +244,26 @@ func apply(time: float) -> void:
 
 func _dangle_legs(time: float, w: float, amount: float) -> void:
 	var swing: float = sin(time * 2.7) * 5.0 * amount
-	_add("leftUpperLeg", Vector3(13.0 + swing, 0.0, -2.0) * w)
-	_add("rightUpperLeg", Vector3(13.0 - swing, 0.0, 2.0) * w)
-	_add("leftLowerLeg", Vector3(-28.0 - swing * 0.5, 0.0, 0.0) * w)
-	_add("rightLowerLeg", Vector3(-28.0 + swing * 0.5, 0.0, 0.0) * w)
-	_add("leftFoot", Vector3(9.0 + swing * 0.15, 0.0, 0.0) * w)
-	_add("rightFoot", Vector3(9.0 - swing * 0.15, 0.0, 0.0) * w)
+	# On this rig, negative thigh X sends the knee forward while positive shin X
+	# folds the foot back. The old signs made the knee point behind the body.
+	_add("leftUpperLeg", Vector3(-16.0 + swing, 0.0, -2.0) * w)
+	_add("rightUpperLeg", Vector3(-16.0 - swing, 0.0, 2.0) * w)
+	_add("leftLowerLeg", Vector3(30.0 - swing * 0.5, 0.0, 0.0) * w)
+	_add("rightLowerLeg", Vector3(30.0 + swing * 0.5, 0.0, 0.0) * w)
+	_add("leftFoot", Vector3(5.0 + swing * 0.15, 0.0, 0.0) * w)
+	_add("rightFoot", Vector3(5.0 - swing * 0.15, 0.0, 0.0) * w)
+
+func _screen_roll(semantic: String, degrees: float) -> void:
+	if not rig.bones.has(semantic):
+		return
+	var bone: int = int(rig.bones[semantic])
+	if not rig.parent_rest_rotations.has(bone):
+		return
+	var yaw_rad: float = deg_to_rad(facing_yaw)
+	var axis := Vector3(-sin(yaw_rad), 0.0, cos(yaw_rad))
+	var parent_q: Quaternion = rig.parent_rest_rotations[bone]
+	var extra: Quaternion = parent_q.inverse() * Quaternion(axis, deg_to_rad(degrees)) * parent_q
+	skeleton.set_bone_pose_rotation(bone, (extra * skeleton.get_bone_pose_rotation(bone)).normalized())
 
 func _add(semantic: String, degrees: Vector3) -> void:
 	if not rig.bones.has(semantic):

@@ -40,7 +40,7 @@ func tick(delta: float, state, blocked: bool = false, walk_weight: float = 0.0) 
 	var allowed: bool = available and not blocked and state.motion_enabled and not state.dozing
 	allowed = allowed and (state.autonomy_enabled or forced_requested)
 	allowed = allowed and state.posture.mode == "standing" and state.posture.kind == "floor"
-	allowed = allowed and state.pet_weight < 0.08 and state.wave_weight < 0.08
+	allowed = allowed and state.notice_weight < 0.08 and state.welcome_weight < 0.08 and state.pet_weight < 0.08 and state.wave_weight < 0.08 and not state.release_reaction_active()
 	allowed = allowed and walk_weight < 0.05
 	var goal: String = "calm"
 	if allowed and not _forced_kind.is_empty():

@@ -114,6 +114,20 @@ func drag_to(position: Vector2i) -> void:
 	if not headless and not preview:
 		window.position = position
 
+func hang_hand_to(cursor: Vector2i, local_hand: Vector2) -> bool:
+	if headless or preview or window == null or not local_hand.is_finite():
+		return false
+	# Keep the hand at the pointer. The body may cross the desktop edge while
+	# being lifted, but the pointer and some part of Hoshi stay on this monitor.
+	var area: Rect2i = walking_area()
+	if not area.has_point(cursor):
+		return false
+	var wanted: Vector2i = cursor - Vector2i(roundi(local_hand.x), roundi(local_hand.y))
+	if not Rect2i(wanted, window.size).intersects(area):
+		return false
+	window.position = wanted
+	return true
+
 func finish_drag() -> void:
 	if not headless and not preview:
 		window.position = clamp_position(window.position)
@@ -316,6 +330,10 @@ func walk_to(x_value: float) -> float:
 func floor_position() -> Vector2i:
 	var area: Rect2i = walking_area()
 	return Vector2i(clampi(window.position.x, area.position.x, maxi(area.position.x, area.end.x - window.size.x)), area.end.y - window.size.y)
+
+func remember_floor_position() -> Vector2i:
+	saved_position = floor_position()
+	return saved_position
 
 func place_at(point: Vector2) -> void:
 	if preview or headless or not point.is_finite():

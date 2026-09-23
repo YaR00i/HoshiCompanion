@@ -7,6 +7,7 @@ const Stage = preload("res://scripts/avatar_stage.gd")
 const Locomotion = preload("res://scripts/locomotion.gd")
 const Director = preload("res://scripts/behavior_director.gd")
 const IntentPlanner = preload("res://scripts/intent_planner.gd")
+const InteractionSession = preload("res://scripts/interaction_session.gd")
 const UI = preload("res://scripts/companion_ui.gd")
 
 var failures: int = 0
@@ -64,6 +65,13 @@ func _run() -> void:
 	_check(stage.model_height > 0.5 and stage.model_height < 3.0, "model scale is plausible")
 	_check(int(result["mesh_count"]) >= 3, "face, body and hair mesh nodes")
 	_check(stage.rig.bones.size() >= 40, "humanoid bones resolved")
+	_check(stage.head_contact_hit(stage.head_pixel()), "projected head center belongs to the petting contact zone")
+	_check(not stage.head_contact_hit(stage.standing_anchor_pixel()), "feet stay outside the head petting contact zone")
+	_check(stage.hand_contact_side(stage.hand_pixel("left")) == "left", "left palm can start a cursor hold")
+	_check(stage.hand_contact_side(stage.hand_pixel("right")) == "right", "right palm can start a cursor hold")
+	_check(stage.hand_contact_side(stage.head_pixel()) == "", "head contact cannot trigger a cursor hold")
+	var hair_edge: Vector2 = stage.head_pixel() + Vector2(stage.body_pixels * 0.20, 0.0)
+	_check(not stage.head_contact_hit(hair_edge) and stage.head_stroke_zone_hit(hair_edge), "an ongoing head stroke tolerates the outer hair zone")
 	for expression in ["blink", "happy", "sad", "surprised", "relaxed", "aa"]:
 		_check(stage.expressions.bindings.has(expression), "morph expression bound: " + expression)
 	var state = State.new()
@@ -95,14 +103,61 @@ func _run() -> void:
 		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
 	_check(state.sleep_weight > 0.95, "smooth dozing transition")
 	_check(float(state.expression_weights().get("blink", 0.0)) > 0.7, "eyes close in dozing state")
-	state.pet()
-	_check(not state.dozing, "pet reaction wakes companion")
+	state.notice()
+	for frame in range(18):
+		state.tick(1.0 / 30.0)
+		stage.animate(1.0 / 30.0, state, Vector2(0.2, -0.1))
+	_check(not state.dozing and state.notice_weight > 0.8, "brief contact wakes Hoshi into a visible attention reaction")
+	_check(float(state.expression_weights().get("surprised", 0.0)) > 0.1, "attention adds a restrained surprised expression")
+	state.dozing = true
+	state.recognize()
+	for frame in range(18):
+		state.tick(1.0 / 30.0)
+		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
+	_check(not state.dozing and state.welcome_weight > 0.8 and float(state.expression_weights().get("happy", 0.0)) > 0.35, "recognition wakes Hoshi with a calm smile and distinct head pose")
+	state.begin_pet_contact()
+	for frame in range(18):
+		state.update_pet_contact(Vector2(-1.0, 0.0), 1.0 / 30.0)
+		state.tick(1.0 / 30.0)
+		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
+	var head_left: Quaternion = stage.rig.skeleton.get_bone_pose_rotation(int(stage.rig.bones["head"]))
+	_check(not state.dozing and state.pet_weight > 0.8, "held head contact wakes Hoshi and sustains a response")
+	_check(float(state.expression_weights().get("happy", 0.0)) > 0.35 and float(state.expression_weights().get("blink", 0.0)) > 0.1, "held petting softens the live facial expression and eyes")
+	for frame in range(2):
+		state.update_pet_contact(Vector2(1.0, 0.0), 1.0 / 30.0)
+		state.tick(1.0 / 30.0)
+		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
+	var head_early: Quaternion = stage.rig.skeleton.get_bone_pose_rotation(int(stage.rig.bones["head"]))
+	_check(head_left.angle_to(head_early) < deg_to_rad(3.0), "reversing the mouse does not snap the head immediately")
+	for frame in range(18):
+		state.update_pet_contact(Vector2(1.0, 0.0), 1.0 / 30.0)
+		state.tick(1.0 / 30.0)
+		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
+	var head_right: Quaternion = stage.rig.skeleton.get_bone_pose_rotation(int(stage.rig.bones["head"]))
+	_check(head_left.angle_to(head_right) > deg_to_rad(3.0) and head_left.angle_to(head_right) < deg_to_rad(12.0), "the head follows the cursor gently across the stroke")
+	state.end_pet_contact()
+	state.begin_cursor_hang()
+	for frame in range(18):
+		state.tick(1.0 / 30.0)
+		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
+	_check(state.cursor_hang_active and float(state.expression_weights().get("happy", 0.0)) > 0.25, "holding the cursor gives Hoshi a temporary pleased expression")
+	state.end_cursor_hang()
+	state.react_to_release("rough")
+	for frame in range(8):
+		state.tick(1.0 / 30.0)
+	_check(state.release_reaction_active() and float(state.expression_weights().get("surprised", 0.0)) > 0.2, "abrupt release briefly startles Hoshi")
+	state.react_to_release("soft")
+	for frame in range(8):
+		state.tick(1.0 / 30.0)
+	_check(float(state.expression_weights().get("happy", 0.0)) > 0.25 and state.state_label() == "Бережно опускается", "gentle release changes to a soft recovery")
+	state.notice()
+	_check(not state.release_reaction_active(), "new manual contact interrupts a release reaction")
 	for frame in range(400):
 		state.tick(1.0 / 30.0)
 		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
 		max_blink = maxf(max_blink, state.blink)
 	_check(max_blink > 0.8, "spontaneous blinking occurs")
-	_check(state.pet_weight < 0.001 and state.wave_weight < 0.001, "temporary reactions return to idle")
+	_check(state.notice_weight < 0.001 and state.pet_weight < 0.001 and state.wave_weight < 0.001, "temporary reactions return to idle")
 	state.set_mood("invalid")
 	_check(state.mood == "neutral", "unknown moods ignored")
 	for mood in State.MOODS:
@@ -125,6 +180,7 @@ func _run() -> void:
 	_check_walk_runtime(stage)
 	_check_behavior()
 	_check_intent_planner()
+	_check_interaction_session()
 	stage.rig.reset()
 	var finite_rest: bool = true
 	for bone in range(stage.rig.skeleton.get_bone_count()):
@@ -247,6 +303,25 @@ func _check_walk_runtime(stage) -> void:
 	stage.gait.reset()
 
 func _check_behavior() -> void:
+	var arrival = State.new()
+	arrival.place_mode = "smart"
+	arrival.activity = "quiet"
+	arrival.time = 120.0
+	_check(not arrival.allows_autonomous_floor_rest(), "smart place keeps automatic floor rest out of the place search")
+	arrival.place_mode = "cozy"
+	_check(not arrival.allows_autonomous_floor_rest(), "cozy place keeps automatic floor rest in the corner")
+	arrival.place_mode = "off"
+	arrival.time = State.FLOOR_REST_GRACE_SECONDS - 0.1
+	_check(not arrival.allows_autonomous_floor_rest(), "arrival has a standing grace period")
+	arrival.time = State.FLOOR_REST_GRACE_SECONDS
+	_check(arrival.allows_autonomous_floor_rest(), "floor rest becomes possible after arrival when no place is selected")
+	arrival.rest_enabled = false
+	_check(not arrival.allows_autonomous_floor_rest(), "disabled automatic rest stays disabled in the planner")
+	arrival.posture.request_sit(false)
+	_check(arrival.posture.target_seated and not arrival.posture.automatic, "manual floor sit remains available")
+	arrival.rest_enabled = true
+	arrival.motion_enabled = false
+	_check(not arrival.allows_autonomous_floor_rest(), "disabled motion cannot select an impossible sit")
 	for activity in ["quiet", "normal", "playful"]:
 		var director = Director.new()
 		director.seed_random(12)
@@ -268,6 +343,7 @@ func _check_behavior() -> void:
 	var quiet_rest = Director.new()
 	quiet_rest.set_activity("quiet")
 	_check(playful_rest.automatic_rest_duration() < normal_rest.automatic_rest_duration() and normal_rest.automatic_rest_duration() < quiet_rest.automatic_rest_duration(), "activity changes autonomous rest duration, not just timer frequency")
+	_check(quiet_rest.automatic_rest_duration() <= 32.0, "quiet automatic floor rest ends within a short scene")
 	var blocked = Director.new()
 	blocked.seed_random(2)
 	var no_action: bool = true
@@ -282,6 +358,9 @@ func _check_behavior() -> void:
 
 func _check_intent_planner() -> void:
 	var context: Dictionary = {"blocked": false, "location": "floor", "can_observe": true, "can_walk": true, "can_rest": true, "can_social": true}
+	var first_choice = IntentPlanner.new()
+	var quiet_first: Dictionary = first_choice.candidate_report(context, "quiet")
+	_check(float(quiet_first["rest"]["weight"]) < float(quiet_first["observe"]["weight"]) * 0.2, "quiet floor rest is rarer than observation")
 	var a = IntentPlanner.new()
 	var b = IntentPlanner.new()
 	a.seed_random(991)
@@ -372,6 +451,143 @@ func _check_intent_planner() -> void:
 	_check(not repeated_variant and unique_scene_ids.size() >= 3, "scene memory rotates among multiple floor variants without immediate repeats")
 	var quiet_report: Dictionary = scenes.candidate_report(context, "quiet")
 	_check(float(quiet_report["social_react"]["weight"]) == 0.0, "quiet activity suppresses autonomous social wave intents")
+	var surface_scenes = IntentPlanner.new()
+	surface_scenes.seed_random(818)
+	var surface_context: Dictionary = {"blocked": false, "location": "surface", "can_observe": true, "can_surface_walk": true, "can_side": true, "can_leave": true, "preferred_side": "left"}
+	var quiet_vibes: Dictionary = {}
+	var quiet_bounded: bool = true
+	var quiet_no_repeat: bool = true
+	var previous_quiet_variant: String = ""
+	for i in range(8):
+		var quiet_scene: Dictionary = surface_scenes.build_plan("observe", surface_context, "quiet")
+		var quiet_steps: Array = quiet_scene.get("steps", [])
+		var quiet_variant: String = str(quiet_scene.get("variant", ""))
+		quiet_bounded = quiet_bounded and quiet_steps.size() > 0 and quiet_steps.size() <= IntentPlanner.MAX_STEPS
+		quiet_no_repeat = quiet_no_repeat and quiet_variant != previous_quiet_variant
+		previous_quiet_variant = quiet_variant
+		for step in quiet_steps:
+			quiet_vibes[str(step)] = true
+		surface_scenes.activate(quiet_scene)
+		surface_scenes.interrupt("quiet_surface_scene_test")
+	_check(quiet_bounded and quiet_vibes.size() == 1 and quiet_vibes.has("edge_sway"), "quiet surface scenes use only accepted bounded sway")
+	var cozy_scenes = IntentPlanner.new()
+	cozy_scenes.seed_random(819)
+	var cozy_context: Dictionary = surface_context.duplicate()
+	cozy_context["cozy"] = true
+	cozy_context["can_leave"] = false
+	var cozy_steps: Dictionary = {}
+	for i in range(12):
+		var cozy_scene: Dictionary = cozy_scenes.build_plan("observe", cozy_context, "quiet")
+		for step in cozy_scene.get("steps", []):
+			cozy_steps[str(step)] = true
+		cozy_scenes.activate(cozy_scene)
+		cozy_scenes.interrupt("cozy_scene_test")
+	_check(cozy_steps.has("edge_sway") and cozy_steps.has("edge_sketch") and cozy_steps.has("look"), "cozy quiet scenes alternate sway, notebook and looking around")
+	_check(cozy_scenes.rejection_reason("leave_support", cozy_context) == "cannot_leave", "cozy corner remains the autonomous home")
+	var normal_vibes: Dictionary = {}
+	var normal_bounded: bool = true
+	var normal_no_repeat: bool = true
+	var previous_normal_variant: String = ""
+	for i in range(36):
+		var normal_scene: Dictionary = surface_scenes.build_plan("explore_surface", surface_context, "normal")
+		var normal_steps: Array = normal_scene.get("steps", [])
+		var normal_variant: String = str(normal_scene.get("variant", ""))
+		normal_bounded = normal_bounded and normal_steps.size() > 0 and normal_steps.size() <= IntentPlanner.MAX_STEPS
+		normal_no_repeat = normal_no_repeat and normal_variant != previous_normal_variant
+		previous_normal_variant = normal_variant
+		for step in normal_steps:
+			if str(step) == "edge_sway":
+				normal_vibes[str(step)] = true
+		surface_scenes.activate(normal_scene)
+		surface_scenes.interrupt("normal_surface_scene_test")
+	_check(normal_bounded and normal_no_repeat and normal_vibes.size() == 1, "normal surface exploration reaches accepted sway without immediate variant repeats")
+	var side_endings: Dictionary = {}
+	var side_bounded: bool = true
+	for i in range(6):
+		var side_scene: Dictionary = surface_scenes.build_plan("visit_side", surface_context, "playful")
+		var side_steps: Array = side_scene.get("steps", [])
+		side_bounded = side_bounded and side_steps.size() == IntentPlanner.MAX_STEPS
+		if not side_steps.is_empty():
+			side_endings[str(side_steps.back())] = true
+		surface_scenes.activate(side_scene)
+		surface_scenes.interrupt("side_surface_scene_test")
+	_check(side_bounded and side_endings.size() == 1 and side_endings.has("edge_peek"), "side visits keep the accepted bounded peek ending while hum remains manual")
+
+func _check_interaction_session() -> void:
+	var session = InteractionSession.new()
+	session.begin(Vector2.ZERO, false, 480.0)
+	session.update(Vector2(2.0, 1.0), 0.06, false)
+	_check(not session.should_begin_drag() and session.finish(false, false) == "attention", "short body click is classified as attention")
+	session.begin(Vector2.ZERO, true, 480.0)
+	session.update(Vector2(7.0, 0.0), 0.08, true)
+	session.update(Vector2(-5.0, 0.0), 0.08, true)
+	_check(session.petting_now() and not session.should_begin_drag() and session.finish(false, false) == "pet", "soft head movement starts a response while the button is held")
+	session.begin(Vector2.ZERO, true, 360.0)
+	session.update(Vector2(38.0, 0.0), 0.09, true)
+	_check(not session.should_begin_drag() and session.finish(false, false) == "pet", "one gentle head stroke at desktop scale remains a pet, not a pickup")
+	session.begin(Vector2.ZERO, true, 360.0)
+	session.update(Vector2(80.0, 0.0), 0.10, true)
+	_check(session.petting_now() and not session.should_begin_drag() and session.finish(false, false) == "pet", "a wide stroke remains petting while the pointer stays on the head")
+	session.begin(Vector2.ZERO, false, 480.0)
+	session.update(Vector2(7.0, 0.0), 0.03, false)
+	_check(session.should_begin_drag(), "body drag keeps the original six-pixel pickup threshold")
+	session.finish(true, false)
+	session.begin(Vector2.ZERO, true, 360.0)
+	session.update(Vector2(24.0, 0.0), 0.08, true)
+	session.update(Vector2(35.0, 0.0), 0.08, false)
+	var hair_gap_safe: bool = not session.should_begin_drag()
+	session.update(Vector2(54.0, 0.0), 0.08, false)
+	_check(hair_gap_safe and session.should_begin_drag(), "a head stroke never falls back to body pickup after a hair gap, but a deliberate pull still works")
+	session.finish(true, false)
+	session.begin(Vector2.ZERO, true, 360.0)
+	session.update(Vector2(20.0, 0.0), 0.10, true)
+	session.update(Vector2(70.0, 0.0), 0.05, false)
+	var exit_grace: bool = not session.should_begin_drag()
+	session.update(Vector2(76.0, 0.0), 0.08, false)
+	_check(exit_grace and session.should_begin_drag(), "an active pet tolerates a brief zone exit before deliberate head pickup")
+	session.finish(true, false)
+	session.begin(Vector2.ZERO, true, 360.0)
+	for index in range(90):
+		session.update(Vector2(12.0 if index % 2 == 0 else -12.0, 0.0), 0.05, true)
+	_check(session.petting_now() and not session.should_begin_drag() and session.finish(false, false) == "pet", "a long held back-and-forth stroke remains active until release")
+	session.begin(Vector2.ZERO, true, 360.0)
+	session.update(Vector2(14.0, 0.0), 0.1, true)
+	session.update(Vector2(18.0, 0.0), 0.05, false)
+	var temporarily_outside: bool = not session.petting_now() and not session.should_begin_drag()
+	session.update(Vector2(12.0, 0.0), 0.05, true)
+	_check(temporarily_outside and session.petting_now(), "a brief exit from the head zone pauses and resumes the same stroke")
+	session.finish(false, false)
+	for index in range(20):
+		session.begin(Vector2.ZERO, false, 360.0)
+		session.finish(false, false)
+	_check(session.recent_events().size() <= InteractionSession.MAX_HISTORY, "interaction session history stays bounded")
+	session.begin(Vector2.ZERO, false, 360.0)
+	_check(session.release_style(Vector2(120.0, 60.0), 90.0) == "soft", "slow low release is gentle")
+	_check(session.release_style(Vector2(1150.0, 0.0), 90.0) == "rough", "fast sideways flick is abrupt")
+	_check(session.release_style(Vector2(0.0, 760.0), 90.0) == "rough", "fast downward drop is abrupt")
+	_check(session.release_style(Vector2.ZERO, 300.0) == "rough", "high release remains a significant drop")
+	session.record_release("soft")
+	_check(session.recent_events().size() == InteractionSession.MAX_HISTORY and str(session.recent_events().back().get("kind", "")) == "release_soft", "release joins bounded local history")
+	var social = InteractionSession.new()
+	social.tick(50.0)
+	social.begin(Vector2.ZERO, false, 360.0)
+	_check(social.finish(false, false) == "attention", "first contact is ordinary attention even after startup idle")
+	social.begin(Vector2.ZERO, false, 360.0)
+	_check(social.finish(false, false) == "quiet", "rapid repeated click does not restart the full reaction")
+	social.tick(3.0)
+	social.begin(Vector2.ZERO, false, 360.0)
+	_check(social.finish(false, false) == "attention", "attention can respond again after its short cooldown")
+	social.tick(46.0)
+	social.begin(Vector2.ZERO, false, 360.0)
+	_check(social.finish(false, false) == "return", "contact after a real pause recognizes the returning user")
+	social.begin(Vector2.ZERO, false, 360.0)
+	_check(social.finish(false, false, true) == "wake", "sleeping contact wins over click cooldown")
+	_check(social.accept_wave() and not social.accept_wave(), "rapid repeated wave starts once")
+	_check(social.accept_button_pet() and not social.accept_button_pet(), "rapid pet button presses start one short response")
+	_check(social.allow_bubble() and not social.allow_bubble(), "rapid actions share a quiet bubble cooldown")
+	social.tick(8.1)
+	_check(social.accept_wave() and social.accept_button_pet() and social.allow_bubble(), "manual reactions and bubble recover after cooldown")
+	_check(social.accept_palm_attention() and not social.accept_palm_attention(), "repeated palm taps stay quiet between full attention reactions")
 
 func _finish() -> void:
 	var report: Dictionary = {"engine": Engine.get_version_info(), "checks": checks, "failures": failures,

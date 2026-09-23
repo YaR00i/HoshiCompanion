@@ -27,6 +27,12 @@ func _run() -> void:
 		app.stage.yaw = 65.0
 		_advance(1)
 		await _capture(activity + "_side")
+	for sample in [
+		{"activity": "sway", "time": 1.00},
+		{"activity": "hum", "time": 0.20},
+		{"activity": "nod", "time": 0.33},
+	]:
+		await _capture_vibe(str(sample["activity"]), float(sample["time"]))
 	app.stage.yaw = 0.0
 	app._on_action(10)
 	_advance(28)
@@ -40,3 +46,15 @@ func _run() -> void:
 	await process_frame
 	print("HOSHI_EDGE_CAPTURE_RESULT checks=", checks, " failures=", failures)
 	quit(0 if failures == 0 else 1)
+
+func _capture_vibe(activity: String, sample_time: float) -> void:
+	app.state.edge_activity = activity
+	app.stage.yaw = 0.0
+	_advance(120)
+	app.state.time = sample_time - 1.0 / 30.0
+	_advance(1)
+	await _capture(activity + "_front")
+	app.stage.yaw = 65.0
+	app.state.time = sample_time - 1.0 / 30.0
+	_advance(1)
+	await _capture(activity + "_side")

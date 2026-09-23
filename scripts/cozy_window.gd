@@ -35,18 +35,19 @@ func _ready() -> void:
 	var caption := _label("HOSHI  /  свой уголок", 11, Color("987da4"))
 	caption.position = Vector2(22, 20)
 	panel.add_child(caption)
-	var heading := _label("Побуду рядом", 19, Color("675477"))
+	var heading := _label("Мой тихий уголок", 19, Color("675477"))
 	heading.position = Vector2(22, 40)
 	panel.add_child(heading)
 	support_label = _label("Устраиваюсь поудобнее", 11, Color("99899f"))
 	support_label.position = Vector2(22, 78)
-	support_label.size.x = 172
+	support_label.size.x = 202
 	support_label.clip_text = true
 	panel.add_child(support_label)
 	var row := HBoxContainer.new()
 	row.position = Vector2(18, 112)
-	row.add_theme_constant_override("separation", 8)
+	row.add_theme_constant_override("separation", 5)
 	panel.add_child(row)
+	_add_button(row, "Блокнот ✦", func(): activity_requested.emit(312))
 	_add_button(row, "Ножками", func(): activity_requested.emit(302))
 	_add_button(row, "Откинуться", func(): activity_requested.emit(303))
 	_add_button(row, "На пол", func(): leave_requested.emit())

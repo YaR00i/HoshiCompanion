@@ -46,15 +46,14 @@ func show_demo(use_cozy: bool = false) -> bool:
 	if app.host.preview:
 		app.ui.say("Для полочки нужен настольный режим")
 		return false
-	if phase in ["preparing", "boarding", "attached"] and _shelf_usable():
+	if phase in ["preparing", "boarding", "attached"] and is_instance_valid(shelf) and not shelf.is_queued_for_deletion():
+		_present_shelf()
 		return true
 	cozy_mode = use_cozy
 	surface.reset()
 	if not is_instance_valid(shelf):
 		_create_shelf()
-	shelf.mode = Window.MODE_WINDOWED
-	shelf.show()
-	app.host.raise_companion()
+	_present_shelf()
 	if not active():
 		saved_floor_position = app.host.floor_position()
 	app._clear_intent()
@@ -64,6 +63,33 @@ func show_demo(use_cozy: bool = false) -> bool:
 	_walk_after = false
 	phase = "preparing"
 	return true
+
+func _present_shelf() -> void:
+	if not is_instance_valid(shelf) or shelf.is_queued_for_deletion():
+		return
+	if shelf.mode != Window.MODE_WINDOWED:
+		shelf.mode = Window.MODE_WINDOWED
+		shelf.hide()
+	shelf.show()
+	if not _shelf_visible_on_screen():
+		_place_shelf_near_companion()
+	if not app.host.headless:
+		DisplayServer.window_move_to_foreground(shelf.get_window_id())
+	app.host.raise_companion()
+
+func _shelf_visible_on_screen() -> bool:
+	var bounds: Rect2i = shelf.outer_rect()
+	for screen in range(DisplayServer.get_screen_count()):
+		var overlap: Rect2i = bounds.intersection(app.host.usable_area(screen))
+		if overlap.size.x >= 120 and overlap.size.y >= 70:
+			return true
+	return false
+
+func _place_shelf_near_companion() -> void:
+	var area: Rect2i = app.host.walking_area()
+	shelf.position = area.position + Vector2i((area.size.x - shelf.size.x) / 2, int(area.size.y * 0.54))
+	if cozy_mode:
+		shelf.position = Vector2i(clampi(app.host.window.position.x - 180, area.position.x + 12, maxi(area.position.x + 12, area.end.x - shelf.size.x - 48)), area.end.y - maxi(250, int(app.host.body_pixels * 0.55 + 76.0)))
 
 func _create_shelf() -> void:
 	shelf = Cozy.new() if cozy_mode else Shelf.new()
@@ -78,10 +104,7 @@ func _create_shelf() -> void:
 		shelf.activity_requested.connect(app._on_action)
 	shelf.leave_requested.connect(return_home)
 	shelf.preview_requested.connect(app._switch_mode.bind(true))
-	var area: Rect2i = app.host.walking_area()
-	shelf.position = area.position + Vector2i((area.size.x - shelf.size.x) / 2, int(area.size.y * 0.54))
-	if cozy_mode:
-		shelf.position = Vector2i(clampi(app.host.window.position.x - 180, area.position.x + 12, maxi(area.position.x + 12, area.end.x - shelf.size.x - 48)), area.end.y - maxi(250, int(app.host.body_pixels * 0.55 + 76.0)))
+	_place_shelf_near_companion()
 
 func before_tick(delta: float) -> void:
 	if phase in ["selection_start", "auto_selection_start"]:
@@ -198,8 +221,11 @@ func after_tick() -> void:
 	if phase == "attached" and surface.owns_placement() and _shelf_usable():
 		surface.after_tick()
 	elif phase in ["boarding", "attached"] and _shelf_usable():
-		var anchor_world: Vector3 = app.stage.edge_pose.planned_anchor_world() if phase == "boarding" and not app.state.posture.target_seated else app.stage.edge_pose.anchor_world()
-		var anchor: Vector2 = app.stage.camera.unproject_position(anchor_world)
+		# Keep the jump's planned seat contact through the boarding transition.
+		# Switching to the live seat point when sitting starts can reposition the
+		# native window before the rig has even moved into the seated pose.
+		var anchor_world: Vector3 = app.stage.edge_pose.planned_anchor_world() if phase == "boarding" else app.stage.edge_pose.anchor_world()
+		var anchor: Vector2 = surface.posture_contact_pixel() if phase == "attached" and surface.mode in ["rise", "resit"] else app.stage.camera.unproject_position(anchor_world)
 		var area: Rect2i = support_area()
 		var placement: Dictionary = solve_placement(support_rect(), anchor_u, anchor, app.host.window.size, area)
 		if not bool(placement.get("ok", false)):
@@ -262,9 +288,11 @@ func begin_drag() -> void:
 	_walk_after = false
 
 func finish_drag() -> bool:
+	return finish_drag_at(Vector2(app.host.cursor_global()))
+
+func finish_drag_at(cursor: Vector2) -> bool:
 	if _shelf_usable():
 		var rect: Rect2i = support_rect()
-		var cursor: Vector2 = Vector2(app.host.cursor_global())
 		var seat: Vector2 = cursor
 		if app.state.posture.kind == "edge":
 			seat = Vector2(app.host.window.position) + app.stage.camera.unproject_position(app.stage.edge_pose.anchor_world())
@@ -277,7 +305,7 @@ func finish_drag() -> bool:
 				app.host.raise_companion()
 				surface.reset()
 			else:
-				show_demo()
+				show_demo(cozy_mode)
 			return true
 	if phase == "carried":
 		return_home()
@@ -332,6 +360,12 @@ func handle_action(action: int) -> bool:
 		if active():
 			app.ui.say("Здесь маловато места для прогулки")
 			return true
+	if action == 313:
+		if surface.request_scoot():
+			return true
+		if active():
+			app.ui.say("Здесь сейчас не подвинуться сидя")
+			return true
 	if action in [306, 307]:
 		if surface.request_side("left" if action == 306 else "right"):
 			return true
@@ -382,6 +416,8 @@ func label() -> String:
 		return "Ищет себе уютный край"
 	if external_mode and phase == "attached":
 		return "Дремлет на выбранном окне" if app.state.dozing else "Сидит на выбранном окне"
+	if cozy_mode and phase == "attached":
+		return "Дремлет в уголке" if app.state.dozing else "Сидит в своём уголке"
 	match phase:
 		"preparing", "boarding": return "Устраивается на полочке"
 		"attached": return "Дремлет на полочке" if app.state.dozing else "Сидит на краю — можно двигать окно"

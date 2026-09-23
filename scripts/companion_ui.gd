@@ -36,6 +36,8 @@ var shelf_active: bool = false
 const INK: Color = Color("3b3449")
 const MUTED: Color = Color("82798f")
 const PLUM: Color = Color("8a688f")
+const EDGE_ACTIVITIES: Array[String] = ["auto", "calm", "swing", "lean", "peek", "sway", "hum", "nod"]
+const EDGE_ACTIONS: Array[int] = [300, 301, 302, 303, 304, 309, 310, 311]
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -171,9 +173,9 @@ func _build_panel() -> void:
 	edge_row.add_child(_label("На краю", 12, MUTED))
 	edge_pick = OptionButton.new()
 	edge_pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	for title_value in ["Сама выбирает", "Спокойно", "Ножками", "Откинуться", "Посмотреть вниз"]:
+	for title_value in ["Сама выбирает", "Спокойно", "Ножками", "Откинуться", "Посмотреть вниз", "Покачиваться", "Напевать", "Кивать в такт"]:
 		edge_pick.add_item(title_value)
-	edge_pick.item_selected.connect(func(index: int): action_requested.emit(300 + index))
+	edge_pick.item_selected.connect(func(index: int): action_requested.emit(EDGE_ACTIONS[index]))
 	edge_row.add_child(edge_pick)
 	box.add_child(edge_row)
 	autonomy_check = _check("Самостоятельность", 126)
@@ -188,7 +190,7 @@ func _build_panel() -> void:
 	autonomy_check.tooltip_text = "Выключено: только ручные действия и обычный взгляд за курсором."
 	outer.add_child(_button("На рабочий стол", 101))
 	box.add_child(_button("Вернуть вид спереди", 141))
-	hint = _label("Клик — погладить · двойной — взмах\nW — пройтись · C — сесть/встать\nКолесо — масштаб · ПКМ — меню", 11, MUTED)
+	hint = _label("Клик — внимание · зажать и вести по голове — гладить\nУдержать ладошку и поднять мышь — повиснуть\nДвойной клик — взмах · W — пройтись · C — сесть/встать\nКолесо — масштаб · ПКМ — меню", 11, MUTED)
 	box.add_child(hint)
 	note = _label("Локально, без ИИ и голоса.", 11, MUTED)
 	box.add_child(note)
@@ -282,7 +284,7 @@ func refresh(state, status_override: String = "", walking: bool = false) -> void
 	walk_check.set_pressed_no_signal(state.walk_enabled)
 	activity_pick.select(["quiet", "normal", "playful"].find(state.activity))
 	place_pick.select(["off", "cozy", "smart"].find(state.place_mode))
-	edge_pick.select(["auto", "calm", "swing", "lean", "peek"].find(state.edge_activity))
+	edge_pick.select(EDGE_ACTIVITIES.find(state.edge_activity))
 	look_check.set_pressed_no_signal(state.look_enabled)
 	motion_check.set_pressed_no_signal(state.motion_enabled)
 	hair_check.set_pressed_no_signal(state.hair_enabled)
@@ -328,8 +330,8 @@ func _build_menu() -> void:
 	menu.add_separator()
 	_submenu("Активность", "ActivityMenu", [["Тихая · без прогулок", 200], ["Обычная", 201], ["Игривая", 202]])
 	_submenu("Где отдыхать", "PlaceMenu", [["Только вручную", 210], ["Свой уголок", 211], ["Окна → уголок", 212]])
-	_submenu("Занятие на краю", "EdgeMenu", [["Сама выбирает", 300], ["Спокойно", 301], ["Болтать ножками", 302], ["Откинуться назад", 303], ["Посмотреть вниз", 304]])
-	_submenu("Поверхность окна", "SurfaceMenu", [["Пройтись по краю", 305], ["Опора у левого края", 306], ["Опора у правого края", 307], ["Сесть обратно", 308]])
+	_submenu("Занятие на краю", "EdgeMenu", [["Сама выбирает", 300], ["Спокойно", 301], ["Болтать ножками", 302], ["Откинуться назад", 303], ["Посмотреть вниз", 304], ["Мягко покачиваться", 309], ["Тихонько напевать", 310], ["Кивать в такт", 311]])
+	_submenu("Поверхность окна", "SurfaceMenu", [["Пройтись по краю", 305], ["Подвинуться сидя", 313], ["Опора у левого края", 306], ["Опора у правого края", 307], ["Сесть обратно", 308]])
 	menu.add_check_item("Самостоятельность", 126)
 	menu.add_check_item("Самостоятельные прогулки", 125)
 	menu.add_check_item("Самостоятельный отдых", 127)

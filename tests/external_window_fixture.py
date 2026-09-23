@@ -1,5 +1,5 @@
 """Isolated native test window in a separate process; moves only itself.
-No user documents/apps are opened or modified. stdin EOF or 60s destroys it.
+No user documents/apps are opened or modified. stdin EOF or 120s destroys it.
 The fixture places itself on the same monitor as Hoshi by native HWND, avoiding
 Tk/Godot virtual-desktop coordinate assumptions.
 """
@@ -154,5 +154,5 @@ def tick():
 
 threading.Thread(target=read, daemon=True).start()
 root.after(15, tick)
-root.after(60000, root.destroy)
+root.after(120000, root.destroy)
 root.mainloop()

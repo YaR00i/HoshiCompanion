@@ -104,8 +104,10 @@ func choose(context: Dictionary, activity: String = "normal") -> Dictionary:
 
 func candidate_report(context: Dictionary, activity: String = "normal") -> Dictionary:
 	var report: Dictionary = {}
+	var decision_context: Dictionary = context.duplicate()
+	decision_context["quiet"] = activity == "quiet"
 	for name in INTENTS:
-		var reason: String = rejection_reason(name, context)
+		var reason: String = rejection_reason(name, decision_context)
 		var cooldown: float = cooldown_left(name)
 		var available: bool = reason.is_empty() and cooldown <= 0.0
 		if reason.is_empty() and cooldown > 0.0:
@@ -148,6 +150,10 @@ func rejection_reason(intent_name: String, context: Dictionary) -> String:
 		"explore_surface":
 			if location != "surface":
 				return "not_surface"
+			if bool(context.get("cozy", false)) and bool(context.get("quiet", false)):
+				if not bool(context.get("can_surface_scoot", false)):
+					return "cannot_surface_scoot"
+				return ""
 			if not bool(context.get("can_surface_walk", false)):
 				return "cannot_surface_walk"
 		"visit_side":
@@ -166,9 +172,11 @@ func cooldown_left(intent_name: String) -> float:
 	return maxf(0.0, float(cooldowns.get(intent_name, 0.0)))
 
 func build_plan(intent_name: String, context: Dictionary, activity: String = "normal") -> Dictionary:
-	if not rejection_reason(intent_name, context).is_empty():
+	var decision_context: Dictionary = context.duplicate()
+	decision_context["quiet"] = activity == "quiet"
+	if not rejection_reason(intent_name, decision_context).is_empty():
 		return {}
-	var variants: Array = _variants(intent_name, context, activity)
+	var variants: Array = _variants(intent_name, decision_context, activity)
 	if variants.is_empty():
 		return {}
 	var options: Array = []
@@ -242,9 +250,23 @@ func _variants(intent_name: String, context: Dictionary, activity: String) -> Ar
 	match intent_name:
 		"observe":
 			if location == "surface":
+				if bool(context.get("cozy", false)):
+					if activity == "quiet":
+						return [
+							{"id": "cozy_sway", "steps": ["edge_sway"]},
+							{"id": "cozy_sketch", "steps": ["edge_sketch"]},
+							{"id": "cozy_look", "steps": ["look"]},
+						]
+					return [
+						{"id": "cozy_sway", "steps": ["edge_sway"]},
+						{"id": "cozy_sketch", "steps": ["edge_sketch"]},
+						{"id": "cozy_look", "steps": ["look"]},
+						{"id": "cozy_peek", "steps": ["edge_peek"]},
+					]
 				if activity == "quiet":
-					return [{"id": "edge_peek", "steps": ["edge_peek"]}]
+					return [{"id": "edge_sway", "steps": ["edge_sway"]}]
 				return [
+					{"id": "edge_sway", "steps": ["edge_sway"]},
 					{"id": "edge_peek", "steps": ["edge_peek"]},
 					{"id": "edge_balance_peek", "steps": ["edge_balance", "edge_peek"]},
 				]
@@ -274,8 +296,11 @@ func _variants(intent_name: String, context: Dictionary, activity: String) -> Ar
 		"social_react":
 			return [{"id": "wave", "steps": ["wave"]}]
 		"explore_surface":
+			if activity == "quiet" and bool(context.get("cozy", false)):
+				return [{"id": "cozy_scoot_settle", "steps": ["surface_scoot", "surface_settle"]}]
 			var surface_variants: Array = [
 				{"id": "edge_walk_settle", "steps": ["surface_walk", "surface_settle"]},
+				{"id": "edge_walk_sway", "steps": ["surface_walk", "surface_settle", "edge_sway"]},
 			]
 			if activity != "quiet":
 				surface_variants.append({"id": "edge_walk_peek", "steps": ["surface_walk", "surface_settle", "edge_peek"]})
@@ -304,7 +329,7 @@ func _weight(intent_name: String, activity: String) -> float:
 		"explore_floor", "explore_surface":
 			return 0.7 if activity == "quiet" else (4.0 if activity == "playful" else 2.4)
 		"rest":
-			return 3.0 if activity == "quiet" else (0.7 if activity == "playful" else 1.6)
+			return 0.55 if activity == "quiet" else (0.30 if activity == "playful" else 0.50)
 		"social_react":
 			return 2.0 if activity == "playful" else 0.0
 		"visit_side":

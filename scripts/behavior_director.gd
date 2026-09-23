@@ -146,10 +146,10 @@ func _begin_look(cursor: Vector2, near: bool) -> void:
 func automatic_rest_duration() -> float:
 	match activity:
 		"quiet":
-			return 78.0
+			return 32.0
 		"playful":
-			return 22.0
-	return 44.0
+			return 14.0
+	return 24.0
 
 func rest_started() -> void:
 	_rest_wait = _rng.randf_range(110.0, 150.0)

@@ -8,18 +8,16 @@ func _ready() -> void:
 	resized.connect(queue_redraw)
 
 func _draw() -> void:
-	var c := Vector2(183.0, 65.0)
-	draw_circle(c + Vector2(1, 8), 22, Color("e9d8c3"))
-	draw_circle(c + Vector2(16, 0), 13, Color("e9d8c3"))
-	draw_colored_polygon(PackedVector2Array([c + Vector2(5,-7), c + Vector2(7,-20), c + Vector2(16,-11)]), Color("e9d8c3"))
-	draw_colored_polygon(PackedVector2Array([c + Vector2(19,-11), c + Vector2(28,-20), c + Vector2(29,-1)]), Color("e9d8c3"))
-	draw_arc(c + Vector2(13,-2), 3, 0.2, PI - 0.2, 12, INK, 1.3, true)
-	draw_arc(c + Vector2(22,-2), 3, 0.2, PI - 0.2, 12, INK, 1.3, true)
-	draw_arc(c + Vector2(-8,10), 12, 0.1, PI * 1.6, 25, Color("c7aa8c"), 3.5, true)
-	for pair in [[Vector2(20,20), 5.0], [Vector2(219,24), 4.0], [Vector2(407,59), 5.0], [Vector2(383,92), 3.0]]:
+	# A pinned drawing quietly echoes the notebook scene without competing with Hoshi.
+	draw_rect(Rect2(Vector2(355, 43), Vector2(61, 59)), Color("eadccf"), true)
+	draw_rect(Rect2(Vector2(352, 40), Vector2(61, 59)), Color("fff9ed"), true)
+	draw_rect(Rect2(Vector2(352, 40), Vector2(61, 59)), Color("d7c4d6"), false, 1.2)
+	draw_circle(Vector2(382, 43), 3.5, INK)
+	_star(Vector2(383, 69), 12.0)
+	draw_line(Vector2(366, 87), Vector2(400, 87), Color("ddc8d7"), 1.0, true)
+	for pair in [[Vector2(20,20), 5.0], [Vector2(219,24), 4.0], [Vector2(330,72), 2.5], [Vector2(426,103), 3.0]]:
 		_star(pair[0], pair[1])
-	draw_circle(Vector2(42,96), 2, GOLD)
-	draw_circle(Vector2(421,92), 2, GOLD)
+	draw_circle(Vector2(42,97), 2, GOLD)
 
 func _star(center: Vector2, radius: float) -> void:
 	var points := PackedVector2Array()

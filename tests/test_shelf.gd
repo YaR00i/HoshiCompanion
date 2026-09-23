@@ -144,12 +144,18 @@ func _native_checks() -> void:
 	await _capture("02_moved_resized")
 	app._on_action(305)
 	var surface_walk_seen: bool = false
+	var previous_surface_position: Vector2i = root.position
+	var max_posture_window_step: float = 0.0
 	for index in range(720):
 		_advance(1)
+		if app.playground.surface.mode in ["rise", "resit"]:
+			max_posture_window_step = maxf(max_posture_window_step, Vector2(root.position - previous_surface_position).length())
+		previous_surface_position = root.position
 		surface_walk_seen = surface_walk_seen or (app.playground.surface.mode == "walk" and app.walker.active())
 		if surface_walk_seen and app.playground.surface.mode == "sit" and app.state.posture.mode == "seated":
 			break
 	_check(surface_walk_seen, "surface route walks along the app-owned support")
+	_check(max_posture_window_step <= maxf(12.0, float(app.host.body_pixels) * 0.035), "surface rise and resit keep native window movement continuous")
 	_check(app.playground.phase == "attached" and app.playground.surface.mode == "sit" and app.state.posture.mode == "seated", "surface walk returns to a stable seated edge")
 	_check(app.playground.last_support_error < 1.5, "surface walk keeps support contact after resitting")
 	var window_id: int = shelf.get_window_id()

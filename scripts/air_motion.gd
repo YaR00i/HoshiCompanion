@@ -57,7 +57,7 @@ func begin_jump(from: Vector2, to: Vector2, body_pixels: float) -> void:
 	_screen_velocity = Vector2.ZERO
 	mode = "jump"
 
-func begin_fall(from: Vector2, to: Vector2, body_pixels: float) -> void:
+func begin_fall(from: Vector2, to: Vector2, body_pixels: float, release_style: String = "") -> void:
 	_start = from
 	position = from
 	target = to
@@ -66,6 +66,10 @@ func begin_fall(from: Vector2, to: Vector2, body_pixels: float) -> void:
 	_duration = clampf(0.36 + sqrt(vertical / maxf(body_pixels, 1.0)) * 0.34, 0.38, 0.92)
 	_arc_px = 0.0
 	_impact_strength = clampf(0.45 + vertical / maxf(body_pixels, 1.0) * 0.55, 0.45, 1.25)
+	if release_style == "soft":
+		_impact_strength = maxf(0.35, _impact_strength - 0.12)
+	elif release_style == "rough":
+		_impact_strength = minf(1.25, _impact_strength + 0.20)
 	_screen_velocity = Vector2.ZERO
 	mode = "fall"
 

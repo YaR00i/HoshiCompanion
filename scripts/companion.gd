@@ -10,6 +10,7 @@ const Director = preload("res://scripts/behavior_director.gd")
 const IntentPlanner = preload("res://scripts/intent_planner.gd")
 const PlaceDirector = preload("res://scripts/place_director.gd")
 const Playground = preload("res://scripts/shelf_playground.gd")
+const InteractionSession = preload("res://scripts/interaction_session.gd")
 const SETTINGS_PATH: String = "user://companion.cfg"
 const DEFAULT_AVATAR: String = "res://assets/Hoshi_v1.vrm"
 
@@ -21,6 +22,7 @@ var director = Director.new()
 var intent_planner = IntentPlanner.new()
 var places = PlaceDirector.new()
 var playground = Playground.new()
+var interaction = InteractionSession.new()
 var stage
 var ui
 var background: ColorRect
@@ -35,6 +37,9 @@ var _press_window: Vector2i = Vector2i.ZERO
 var _press_yaw: float = 0.0
 var _last_drag_cursor: Vector2i = Vector2i.ZERO
 var _drag_velocity: Vector2 = Vector2.ZERO
+var _hand_side: String = ""
+var _hand_hold_age: float = 0.0
+var _cursor_hanging: bool = false
 var _quit_phase: String = ""
 var _cinematic_mask_active: bool = false
 var _preview_zoom: float = 1.0
@@ -123,6 +128,13 @@ func _switch_mode(preview: bool) -> void:
 	air.cancel(Vector2(host.window.position) if host.window != null else Vector2.ZERO)
 	_press_active = false
 	_dragged = false
+	_hand_side = ""
+	_hand_hold_age = 0.0
+	_cursor_hanging = false
+	interaction.cancel()
+	state.cancel_pet_contact()
+	state.cancel_release_reaction()
+	state.end_cursor_hang()
 	if stage != null:
 		stage.cancel_cinematic()
 		stage.clear_interaction_alpha()
@@ -153,6 +165,7 @@ func _process(delta: float) -> void:
 	if not _ready_to_run:
 		return
 	var dt: float = clampf(delta, 0.0, 0.1)
+	interaction.tick(delta, _press_active or ui.menu.visible)
 	_update_drag(dt)
 	playground.before_tick(dt)
 	var air_was_active: bool = air.active()
@@ -192,7 +205,7 @@ func _process(delta: float) -> void:
 	director.enabled = state.autonomy_enabled
 	director.walk_enabled = state.walk_enabled and state.motion_enabled
 	director.rest_enabled = state.rest_enabled and state.motion_enabled and state.place_mode == "off"
-	var control_blocked: bool = air.active() or stage.cinematic_active() or not _quit_phase.is_empty() or _press_active or ui.menu.visible or state.dozing or walker.active() or state.posture.transitioning() or not _pending_action.is_empty() or state.pet_weight > 0.1 or state.wave_weight > 0.1
+	var control_blocked: bool = air.active() or stage.cinematic_active() or not _quit_phase.is_empty() or _press_active or ui.menu.visible or state.dozing or walker.active() or state.posture.transitioning() or not _pending_action.is_empty() or state.notice_weight > 0.1 or state.welcome_weight > 0.1 or state.pet_weight > 0.1 or state.wave_weight > 0.1 or state.release_reaction_active()
 	var blocked: bool = playground.active() or control_blocked
 	var place_request: String = places.tick(dt, state, {"blocked": blocked or host.preview, "can_place": not host.preview and host.is_grounded() and state.posture.mode == "standing"})
 	if place_request == "cozy":
@@ -204,14 +217,17 @@ func _process(delta: float) -> void:
 	var behavior_context: Dictionary = {"blocked": control_blocked or (playground.active() and not surface_ready), "cursor_gaze": cursor_gaze,
 		"cursor_near": distance < stage.body_pixels * 1.8,
 		"location": "surface" if playground.active() else "floor",
+		"cozy": playground.active() and playground.cozy_mode,
+		"quiet": state.activity == "quiet",
 		"can_observe": state.look_enabled and not state.dozing,
 		"can_social": not state.dozing,
 		"can_walk": not playground.active() and not host.preview and host.is_grounded() and stage.gait.available and state.posture.mode == "standing",
-		"can_rest": not playground.active() and (host.preview or host.is_grounded()) and stage.posture_driver.available and state.posture.mode == "standing",
+		"can_rest": state.allows_autonomous_floor_rest() and not playground.active() and (host.preview or host.is_grounded()) and stage.posture_driver.available and state.posture.mode == "standing",
 		"can_surface_walk": surface_ready and playground.surface.can_walk_route(),
+		"can_surface_scoot": surface_ready and state.activity == "quiet" and playground.cozy_mode and playground.surface.can_scoot_route(),
 		"can_side": surface_ready and not preferred_side.is_empty(),
 		"preferred_side": preferred_side,
-		"can_leave": surface_ready}
+		"can_leave": surface_ready and not playground.cozy_mode}
 	intent_planner.tick(dt, behavior_context)
 	var active_intent_name: String = str(intent_planner.active_intent.get("name", ""))
 	var surface_intent_active: bool = active_intent_name in ["explore_surface", "visit_side", "leave_support"]
@@ -225,7 +241,9 @@ func _process(delta: float) -> void:
 	if state.look_enabled and not state.dozing and not ui.menu.visible and not walker.active() and absf(stage.yaw) < 55.0:
 		target = director.gaze
 		# Deliberate interaction briefly wins over independent attention.
-		if state.pet_weight > 0.1 or state.wave_weight > 0.1:
+		if state.pet_contact_active:
+			target = Vector2.ZERO
+		elif state.notice_weight > 0.1 or state.welcome_weight > 0.1 or state.pet_weight > 0.1 or state.wave_weight > 0.1:
 			target = cursor_gaze if distance < 1000.0 else Vector2.ZERO
 	_gaze = _gaze.lerp(target, 1.0 - exp(-dt * 6.0))
 	state.curiosity = lerpf(state.curiosity, director.curiosity if state.motion_enabled and state.look_enabled else 0.0, 1.0 - exp(-dt * 5.0))
@@ -233,14 +251,18 @@ func _process(delta: float) -> void:
 	stage.idle_life.autonomous_enabled = not planner_scene_active or playground.active()
 	stage.edge_life.autonomous_enabled = not planner_scene_active or not playground.active()
 	stage.edge_suspended = _press_active or ui.menu.visible or (playground.active() and (playground.phase != "attached" or playground.surface_busy()))
-	var context_action: String = "carry" if _dragged and not host.preview else air.pose_mode()
+	stage.cozy_corner_active = playground.active() and playground.cozy_mode and playground.phase == "attached"
+	stage.edge_scoot = playground.surface.scoot_pose() if playground.active() else {}
+	var context_action: String = "cursor_hang" if _cursor_hanging else ("carry" if _dragged and not host.preview else air.pose_mode())
 	if context_action == "idle":
 		context_action = playground.surface_context()
-	var context_velocity: Vector2 = _drag_velocity if context_action == "carry" else (air.screen_velocity() if air.active() else Vector2.ZERO)
-	var context_progress: float = air.pose_progress() if air.active() and context_action in ["jump", "fall", "land"] else -1.0
+	var context_velocity: Vector2 = _drag_velocity if context_action in ["carry", "cursor_hang"] else (air.screen_velocity() if air.active() else Vector2.ZERO)
+	var context_progress: float = clampf(float(_press_cursor.y - host.cursor_global().y) / maxf(stage.body_pixels * 0.60, 1.0), 0.0, 1.0) if context_action == "cursor_hang" else (air.pose_progress() if air.active() and context_action in ["jump", "fall", "land"] else -1.0)
 	var context_impact: float = air.impact_strength() if air.active() and context_action in ["jump", "fall", "land"] else 0.5
 	stage.set_context_action(context_action, context_velocity, context_progress, context_impact)
 	stage.animate(dt, state, _gaze, walker.sample())
+	if _cursor_hanging and not host.hang_hand_to(host.cursor_global(), stage.hand_pixel(_hand_side)):
+		_end_cursor_hang()
 	if not host.preview:
 		_input_alpha_clock += dt
 		if not stage.cinematic_active() and _input_alpha_clock >= 0.18:
@@ -273,6 +295,8 @@ func _process(delta: float) -> void:
 			caption = state.state_label()
 		if caption.is_empty() and not blocked and state.look_enabled:
 			caption = director.attention_label
+		if state.notice_weight > 0.1 or state.welcome_weight > 0.1 or state.pet_weight > 0.1 or state.release_reaction_active():
+			caption = state.state_label()
 		ui.refresh(state, caption, walker.active())
 
 func _floor_intent_delay() -> float:
@@ -289,6 +313,8 @@ func _finish_floor_intent_step() -> void:
 
 func _abort_autonomous_intent(reason: String) -> void:
 	intent_planner.interrupt(reason)
+	if playground.active():
+		playground.surface.cancel_scoot()
 	_floor_intent_step_started = false
 	_surface_intent_step_started = false
 	_surface_step_wait = 0.0
@@ -388,7 +414,7 @@ func _tick_surface_intent(delta: float, context: Dictionary, cursor_gaze: Vector
 		_surface_intent_step_started = false
 		_surface_step_wait = 0.0
 		_surface_intent_wait = maxf(0.0, _surface_intent_wait - delta)
-		if _surface_intent_wait > 0.0 or not state.autonomy_enabled or state.edge_activity != "auto" or bool(context.get("blocked", false)):
+		if _surface_intent_wait > 0.0 or not state.autonomy_enabled or not state.edge_activity in ["auto", "sway"] or stage.edge_life.forced_active() or bool(context.get("blocked", false)):
 			return
 		var plan: Dictionary = intent_planner.choose(context, state.activity)
 		if plan.is_empty() or not intent_planner.activate(plan):
@@ -400,6 +426,11 @@ func _tick_surface_intent(delta: float, context: Dictionary, cursor_gaze: Vector
 		return
 	if not _surface_intent_step_started:
 		match step:
+			"surface_scoot":
+				if not playground.active() or not playground.surface.request_scoot():
+					_abort_autonomous_intent("surface_scoot_unavailable")
+					return
+				_surface_intent_step_started = true
 			"surface_walk":
 				if not playground.active() or not playground.surface.request_walk():
 					_abort_autonomous_intent("surface_walk_unavailable")
@@ -438,9 +469,9 @@ func _tick_surface_intent(delta: float, context: Dictionary, cursor_gaze: Vector
 				state.wave()
 				_surface_intent_step_started = true
 				_finish_surface_intent_step()
-			"edge_peek", "edge_balance", "edge_swing", "edge_lean":
+			"edge_peek", "edge_balance", "edge_swing", "edge_lean", "edge_sway", "edge_hum", "edge_nod", "edge_sketch":
 				var edge_gesture: String = step.trim_prefix("edge_")
-				if not playground.active() or state.posture.mode != "seated" or not stage.edge_life.request_gesture(edge_gesture):
+				if not playground.active() or state.posture.mode != "seated" or (edge_gesture == "sketch" and not playground.cozy_mode) or not stage.edge_life.request_gesture(edge_gesture):
 					_abort_autonomous_intent("edge_gesture_unavailable")
 					return
 				_surface_intent_step_started = true
@@ -454,7 +485,7 @@ func _tick_surface_intent(delta: float, context: Dictionary, cursor_gaze: Vector
 				_abort_autonomous_intent("unsupported_surface_step")
 		return
 	match step:
-		"surface_walk":
+		"surface_walk", "surface_scoot":
 			if playground.active() and playground.surface.mode == "sit" and state.posture.mode == "seated":
 				_finish_surface_intent_step()
 		"surface_settle", "side_wait":
@@ -473,7 +504,7 @@ func _tick_surface_intent(delta: float, context: Dictionary, cursor_gaze: Vector
 		"look":
 			if not director.look_active():
 				_finish_surface_intent_step()
-		"edge_peek", "edge_balance", "edge_swing", "edge_lean":
+		"edge_peek", "edge_balance", "edge_swing", "edge_lean", "edge_sway", "edge_hum", "edge_nod", "edge_sketch":
 			if not stage.edge_life.forced_active():
 				_finish_surface_intent_step()
 		"floor_peek_left", "floor_peek_right", "floor_weight_left", "floor_weight_right", "floor_hands", "floor_shoulders":
@@ -563,20 +594,36 @@ func _unhandled_input(event: InputEvent) -> void:
 			_zoom(-1)
 		elif button.button_index == MOUSE_BUTTON_LEFT:
 			if button.pressed and stage.hit_avatar(local_point):
+				_abort_autonomous_intent("pointer")
 				_stop_walk()
 				_clear_intent()
 				state.posture.keep_rest()
 				_press_active = true
 				_dragged = false
+				_hand_side = ""
+				_hand_hold_age = 0.0
+				_cursor_hanging = false
 				_double_clicked = button.double_click
 				_press_cursor = host.cursor_global()
 				_press_window = get_window().position
 				_press_yaw = stage.yaw
 				_last_drag_cursor = _press_cursor
 				_drag_velocity = Vector2.ZERO
-				if button.double_click:
+				state.cancel_release_reaction()
+				var on_head: bool = stage.head_contact_hit(local_point)
+				if not on_head and not button.double_click and not host.preview and host.is_grounded() and not playground.active() and not air.active() and state.posture.mode == "standing" and not state.posture.transitioning() and state.wave_weight < 0.1:
+					_hand_side = stage.hand_contact_side(local_point)
+				if _hand_side.is_empty():
+					interaction.begin(Vector2(_press_cursor), on_head, stage.body_pixels)
+				else:
+					interaction.cancel()
+					interaction.manual_activity()
+				if not on_head:
+					state.cancel_pet_contact()
+				if button.double_click and interaction.accept_wave():
 					state.wave()
-					ui.say("Привет-привет!")
+					if interaction.allow_bubble():
+						ui.say("Привет-привет!")
 			elif not button.pressed and _press_active:
 				_finish_press()
 	elif event is InputEventKey:
@@ -603,17 +650,41 @@ func _update_drag(delta: float) -> void:
 	var movement: Vector2i = cursor_now - _press_cursor
 	var frame_move: Vector2 = Vector2(cursor_now - _last_drag_cursor)
 	_last_drag_cursor = cursor_now
+	var pointer_local: Vector2 = host.cursor_local() - stage.position
+	interaction.update(Vector2(cursor_now), delta, stage.head_stroke_zone_hit(pointer_local) if not _dragged else false)
 	var instant_velocity: Vector2 = frame_move / maxf(delta, 0.001)
 	_drag_velocity = _drag_velocity.lerp(instant_velocity, 1.0 - exp(-delta * 10.0))
-	if Vector2(movement).length() > 6.0:
+	if not _hand_side.is_empty():
+		_hand_hold_age += delta
+		if _cursor_hanging and cursor_now.y > _press_cursor.y + 24:
+			_end_cursor_hang()
+			return
+		if not _cursor_hanging and _hand_hold_age >= 0.16 and _press_cursor.y - cursor_now.y >= 12:
+			_hard_stop()
+			state.begin_cursor_hang()
+			state.posture.request_stand()
+			_cursor_hanging = true
+			places.manual_pause()
+		if (DisplayServer.mouse_get_button_state() & MOUSE_BUTTON_MASK_LEFT) == 0:
+			_finish_press()
+		return
+	if interaction.should_begin_drag():
 		if not _dragged:
 			# Carrying supersedes navigation and releases the body into a hanging pose.
+			state.cancel_pet_contact()
 			_hard_stop()
 			air.cancel(Vector2(host.window.position))
 			playground.begin_drag()
 			state.dozing = false
 			state.posture.request_stand()
 			_dragged = true
+	if not _dragged and not _double_clicked and interaction.petting_now():
+		if not state.pet_contact_active:
+			state.begin_pet_contact()
+		var head_offset: Vector2 = (pointer_local - stage.head_pixel()) / maxf(stage.body_pixels * 0.18, 1.0)
+		state.update_pet_contact(head_offset, delta)
+	elif state.pet_contact_active:
+		state.end_pet_contact()
 	if _dragged:
 		if host.preview:
 			stage.yaw = clampf(_press_yaw + float(movement.x) * 0.4, -180.0, 180.0)
@@ -627,9 +698,26 @@ func _finish_press() -> void:
 	if not _press_active:
 		return
 	_abort_autonomous_intent("pointer")
+	if not _hand_side.is_empty():
+		if _cursor_hanging:
+			_end_cursor_hang()
+		else:
+			_press_active = false
+			_hand_side = ""
+			_hand_hold_age = 0.0
+			if interaction.accept_palm_attention():
+				state.notice()
+		director.user_interaction()
+		return
 	var was_dragged: bool = _dragged
+	var floor_goal: Vector2i = host.floor_position() if was_dragged and not host.preview else Vector2i.ZERO
+	var drop_pixels: float = maxf(0.0, float(floor_goal.y - host.window.position.y)) if was_dragged and not host.preview else 0.0
+	var release_style: String = interaction.release_style(_drag_velocity, drop_pixels) if was_dragged and not host.preview else ""
+	var gesture: String = interaction.finish(was_dragged, _double_clicked, state.dozing)
 	_press_active = false
 	_dragged = false
+	if state.pet_contact_active:
+		state.end_pet_contact()
 	if was_dragged:
 		var support_handled: bool = playground.finish_drag()
 		if not support_handled:
@@ -638,17 +726,43 @@ func _finish_press() -> void:
 			else:
 				state.dozing = false
 				state.posture.request_stand()
-				air.begin_fall(Vector2(host.window.position), Vector2(host.floor_position()), float(host.body_pixels))
+				floor_goal = host.remember_floor_position()
+				interaction.record_release(release_style)
+				state.react_to_release(release_style)
+				air.begin_fall(Vector2(host.window.position), Vector2(floor_goal), float(host.body_pixels), release_style)
 		_drag_velocity = Vector2.ZERO
 		_save_settings()
-	elif not _double_clicked:
+	elif gesture in ["attention", "pet", "wake", "return", "quiet"]:
 		places.manual_pause()
 		_clear_intent()
 		playground.cancel_queued_walk()
 		state.posture.keep_rest()
-		state.pet()
-		ui.say("М-м, спасибо!")
+		if gesture == "pet":
+			if interaction.allow_bubble():
+				ui.say("М-м…")
+		elif gesture in ["wake", "return"]:
+			state.recognize()
+		elif gesture == "attention":
+			state.notice()
 	director.user_interaction()
+
+func _end_cursor_hang() -> void:
+	var was_hanging: bool = _cursor_hanging
+	_press_active = false
+	_cursor_hanging = false
+	state.end_cursor_hang()
+	_hand_side = ""
+	_hand_hold_age = 0.0
+	_drag_velocity = Vector2.ZERO
+	interaction.cancel()
+	if not was_hanging or host.preview:
+		return
+	var floor: Vector2i = host.remember_floor_position()
+	if host.window.position.y >= floor.y:
+		host.place_at(Vector2(floor))
+	else:
+		air.begin_fall(Vector2(host.window.position), Vector2(floor), float(host.body_pixels))
+	_save_settings()
 
 func _zoom(direction: int) -> void:
 	_hard_stop()
@@ -662,12 +776,19 @@ func _zoom(direction: int) -> void:
 	_save_settings()
 
 func _open_menu() -> void:
+	if _cursor_hanging:
+		_end_cursor_hang()
 	_abort_autonomous_intent("menu")
 	places.manual_pause()
 	playground.cancel_queued_walk()
 	_clear_intent()
 	state.posture.keep_rest()
 	_press_active = false
+	_hand_side = ""
+	_hand_hold_age = 0.0
+	interaction.cancel()
+	interaction.manual_activity()
+	state.cancel_pet_contact()
 	_stop_walk()
 	ui.refresh(state, walker.label(), walker.active())
 	host.menu_focus(true)
@@ -688,7 +809,8 @@ func _on_action(action: int) -> void:
 		return
 	if not _ready_to_run:
 		return
-	if action in [10, 11, 12, 30, 31, 32, 33, 40, 41, 42, 43, 100, 101, 110, 111, 112, 140, 141, 305, 306, 307, 308]:
+	interaction.manual_activity()
+	if action in [10, 11, 12, 30, 31, 32, 33, 40, 41, 42, 43, 100, 101, 110, 111, 112, 140, 141, 305, 306, 307, 308, 313]:
 		places.manual_pause()
 	if action in [210, 211, 212]:
 		state.place_mode = ["off", "cozy", "smart"][action - 210]
@@ -696,8 +818,14 @@ func _on_action(action: int) -> void:
 		ui.refresh(state, playground.label(), walker.active())
 		_save_settings()
 		return
-	if action >= 300 and action <= 304:
-		state.edge_activity = ["auto", "calm", "swing", "lean", "peek"][action - 300]
+	if action == 312:
+		if playground.active() and playground.cozy_mode and playground.phase == "attached" and state.posture.mode == "seated" and state.motion_enabled and not state.dozing:
+			stage.edge_life.request_gesture("sketch")
+		return
+	var edge_actions: Dictionary = {300: "auto", 301: "calm", 302: "swing", 303: "lean", 304: "peek", 309: "sway", 310: "hum", 311: "nod"}
+	if edge_actions.has(action):
+		stage.edge_life.cancel_forced()
+		state.edge_activity = str(edge_actions[action])
 		ui.refresh(state, playground.label(), walker.active())
 		_save_settings()
 		return
@@ -714,17 +842,26 @@ func _on_action(action: int) -> void:
 	director.user_interaction()
 	match action:
 		10:
-			state.wave()
-			ui.say("Я тут!")
+			if interaction.accept_wave():
+				state.wave()
+				if interaction.allow_bubble():
+					ui.say("Я тут!")
 		11:
-			state.pet()
-			ui.say("Спасибо!")
+			if interaction.accept_button_pet():
+				state.pet()
+				if interaction.allow_bubble():
+					ui.say("Спасибо!")
 		12:
 			if state.dozing or state.sleep_requested:
+				var was_dozing: bool = state.dozing
 				_clear_intent()
-				state.dozing = false
+				if was_dozing:
+					state.recognize()
+				else:
+					state.dozing = false
 				state.posture.keep_rest()
-				ui.say("Проснулась!")
+				if was_dozing and interaction.allow_bubble():
+					ui.say("Проснулась!")
 			else:
 				_request_sit(false, true)
 		20: state.set_mood("neutral")
@@ -799,7 +936,7 @@ func _read_settings() -> void:
 	var place_mode: String = str(_settings.get_value("behavior", "place_mode", "off"))
 	state.place_mode = place_mode if place_mode in ["off", "cozy", "smart"] else "off"
 	var edge_activity: String = str(_settings.get_value("behavior", "edge_activity", "auto"))
-	state.edge_activity = edge_activity if edge_activity in ["auto", "calm", "swing", "lean", "peek"] else "auto"
+	state.edge_activity = edge_activity if edge_activity in ["auto", "calm", "swing", "lean", "peek", "sway", "hum", "nod"] else "auto"
 	var activity: String = str(_settings.get_value("behavior", "activity", "normal"))
 	state.activity = activity if activity in ["quiet", "normal", "playful"] else "normal"
 	frame_rate = 60 if int(_settings.get_value("render", "fps", 30)) == 60 else 30
@@ -808,7 +945,7 @@ func _save_settings() -> void:
 	if host.headless or _test_mode:
 		return
 	_settings.set_value("window", "body_pixels", host.body_pixels)
-	var saved_window: Vector2i = host.saved_position if host.preview else get_window().position
+	var saved_window: Vector2i = host.saved_position if host.preview or air.active() else get_window().position
 	if playground.active():
 		saved_window = playground.saved_floor_position
 	_settings.set_value("window", "position", saved_window)
@@ -855,6 +992,8 @@ func _start_intro() -> void:
 func _quit() -> void:
 	if not _quit_phase.is_empty():
 		return
+	if _cursor_hanging:
+		_end_cursor_hang()
 	if _ready_to_run and not host.preview and not _test_mode and stage != null:
 		places.manual_pause(999.0)
 		_clear_intent()
