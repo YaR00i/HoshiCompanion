@@ -1,8 +1,9 @@
 extends Control
 const SurfaceMap = preload("res://scripts/window_surface_map.gd")
 const QuickMenu = preload("res://scripts/hoshi_quick_menu.gd")
+const Commands = preload("res://scripts/hoshi_commands.gd")
 
-signal action_requested(action: int)
+signal action_requested(command: String)
 signal light_position_changed(position: Vector3)
 signal shading_changed(settings: Dictionary)
 
@@ -62,7 +63,6 @@ const INK: Color = Color("3b3449")
 const MUTED: Color = Color("82798f")
 const PLUM: Color = Color("8a688f")
 const EDGE_ACTIVITIES: Array[String] = ["auto", "calm", "swing", "lean", "peek", "sway", "hum", "nod"]
-const EDGE_ACTIONS: Array[int] = [300, 301, 302, 303, 304, 309, 310, 311]
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -105,20 +105,26 @@ func _label(text: String, font_size: int = 14, color: Color = INK) -> Label:
 	item.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return item
 
-func _button(text: String, action: int) -> Button:
+func _button(text: String, action: String) -> Button:
 	var item: Button = Button.new()
 	item.text = text
 	item.custom_minimum_size.y = 32
 	item.pressed.connect(_emit_action.bind(action))
 	return item
 
-func _emit_action(action: int) -> void:
+func _emit_action(action: String) -> void:
 	action_requested.emit(action)
 
-func _on_toggle(_enabled: bool, action: int) -> void:
+## Пункты PopupMenu несут внутренний номер; переводим его обратно в имя команды.
+func _on_menu_id(id: int) -> void:
+	var command: String = Commands.from_menu_id(id)
+	if not command.is_empty():
+		action_requested.emit(command)
+
+func _on_toggle(_enabled: bool, action: String) -> void:
 	action_requested.emit(action)
 
-func _check(text: String, action: int) -> CheckButton:
+func _check(text: String, action: String) -> CheckButton:
 	var item: CheckButton = CheckButton.new()
 	item.text = text
 	item.custom_minimum_size.y = 30
@@ -165,23 +171,23 @@ func _build_panel() -> void:
 	reactions.add_theme_constant_override("h_separation", 6)
 	reactions.add_theme_constant_override("v_separation", 6)
 	box.add_child(reactions)
-	for item in [["Пройтись", 30], ["Стоп", 31], ["Сесть", 32], ["Встать", 33], ["Погладить", 11], ["Помахать", 10], ["Улыбка", 21], ["Дремать", 12]]:
-		var button: Button = _button(str(item[0]), int(item[1]))
+	for item in [["Пройтись", "walk"], ["Стоп", "stop"], ["Сесть", "sit"], ["Встать", "stand"], ["Погладить", "pet"], ["Помахать", "wave"], ["Улыбка", "mood_happy"], ["Дремать", "doze"]]:
+		var button: Button = _button(str(item[0]), str(item[1]))
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		reactions.add_child(button)
-		match int(item[1]):
-			12: sleep_button = button
-			30: walk_button = button
-			31: stop_button = button
-			32: sit_button = button
-			33: stand_button = button
-	box.add_child(_button("Выбрать окно · 4 секунды", 42))
-	box.add_child(_button("Видимые края окна · 1 кадр", 161))
-	box.add_child(_button("Структура окна · без снимка", 160))
-	box.add_child(_button("Полочка — попробовать", 40))
-	box.add_child(_button("Мой уютный уголок", 43))
-	box.add_child(_button("Пройтись по опоре", 305))
-	box.add_child(_button("Настроить свет", 150))
+		match str(item[1]):
+			"doze": sleep_button = button
+			"walk": walk_button = button
+			"stop": stop_button = button
+			"sit": sit_button = button
+			"stand": stand_button = button
+	box.add_child(_button("Выбрать окно · 4 секунды", "pick_window"))
+	box.add_child(_button("Видимые края окна · 1 кадр", "scan_window_visual"))
+	box.add_child(_button("Структура окна · без снимка", "scan_window_structure"))
+	box.add_child(_button("Полочка — попробовать", "shelf_demo"))
+	box.add_child(_button("Мой уютный уголок", "cozy_corner"))
+	box.add_child(_button("Пройтись по опоре", "surface_walk"))
+	box.add_child(_button("Настроить свет", "light_editor"))
 	var activity_row: HBoxContainer = HBoxContainer.new()
 	activity_row.add_child(_label("Активность", 12, MUTED))
 	activity_pick = OptionButton.new()
@@ -197,7 +203,7 @@ func _build_panel() -> void:
 	place_pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	for title_value in ["Только вручную", "Свой уголок", "Окна → уголок"]:
 		place_pick.add_item(title_value)
-	place_pick.item_selected.connect(func(index: int): action_requested.emit(210 + index))
+	place_pick.item_selected.connect(func(index: int): action_requested.emit(Commands.PLACE_CHOICES[index]))
 	place_row.add_child(place_pick)
 	box.add_child(place_row)
 	var edge_row := HBoxContainer.new()
@@ -206,29 +212,29 @@ func _build_panel() -> void:
 	edge_pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	for title_value in ["Сама выбирает", "Спокойно", "Ножками", "Откинуться", "Посмотреть вниз", "Покачиваться", "Напевать", "Кивать в такт"]:
 		edge_pick.add_item(title_value)
-	edge_pick.item_selected.connect(func(index: int): action_requested.emit(EDGE_ACTIONS[index]))
+	edge_pick.item_selected.connect(func(index: int): action_requested.emit(Commands.EDGE_CHOICES[index]))
 	edge_row.add_child(edge_pick)
 	box.add_child(edge_row)
-	autonomy_check = _check("Самостоятельность", 126)
-	rest_check = _check("Самостоятельный отдых", 127)
-	walk_check = _check("Самостоятельные прогулки", 125)
-	look_check = _check("Внимание к курсору", 120)
-	motion_check = _check("Мягкие движения", 121)
-	hair_check = _check("Движение волос", 122)
+	autonomy_check = _check("Самостоятельность", "toggle_autonomy")
+	rest_check = _check("Самостоятельный отдых", "toggle_auto_rest")
+	walk_check = _check("Самостоятельные прогулки", "toggle_auto_walk")
+	look_check = _check("Внимание к курсору", "toggle_look")
+	motion_check = _check("Мягкие движения", "toggle_motion")
+	hair_check = _check("Движение волос", "toggle_hair")
 	for item in [autonomy_check, walk_check, rest_check, look_check, motion_check, hair_check]:
 		box.add_child(item)
 	walk_check.tooltip_text = "Автоматически гуляет только у нижнего края, не в тихом режиме. Кнопка «Пройтись» работает отдельно."
 	autonomy_check.tooltip_text = "Выключено: только ручные действия и обычный взгляд за курсором."
-	outer.add_child(_button("На рабочий стол", 101))
-	box.add_child(_button("Вернуть вид спереди", 141))
+	outer.add_child(_button("На рабочий стол", "to_desktop"))
+	box.add_child(_button("Вернуть вид спереди", "reset_view"))
 	hint = _label("Клик — внимание · зажать и вести по голове — гладить\nУдержать ладошку и поднять мышь — повиснуть\nДвойной клик — взмах · W — пройтись · C — сесть/встать\nКолесо — масштаб · ПКМ — меню", 11, MUTED)
 	box.add_child(hint)
 	note = _label("Локально, без ИИ и голоса.", 11, MUTED)
 	box.add_child(note)
-	outer.add_child(_button("Закрыть", 199))
+	outer.add_child(_button("Закрыть", "quit"))
 
 func _on_activity_selected(index: int) -> void:
-	action_requested.emit(200 + index)
+	action_requested.emit(Commands.ACTIVITY_CHOICES[index])
 
 func _build_bubble() -> void:
 	bubble = PanelContainer.new()
@@ -302,15 +308,15 @@ func show_error(message: String) -> void:
 	note.custom_minimum_size.x = 255
 
 func refresh(state, status_override: String = "", walking: bool = false) -> void:
-	_set_action_disabled(41, not shelf_active)
+	_set_action_disabled("return_floor", not shelf_active)
 	status.text = status_override if not status_override.is_empty() else state.state_label()
 	walk_button.disabled = not _walk_available or walking or not state.motion_enabled
 	stop_button.disabled = not walking and not state.posture.transitioning() and not state.sleep_requested
 	sit_button.disabled = not _posture_available or state.posture.target_seated or not state.motion_enabled
 	stand_button.disabled = not _posture_available or state.posture.mode == "standing"
 	rest_check.set_pressed_no_signal(state.rest_enabled)
-	_set_action_disabled(32, sit_button.disabled)
-	_set_action_disabled(33, stand_button.disabled)
+	_set_action_disabled("sit", sit_button.disabled)
+	_set_action_disabled("stand", stand_button.disabled)
 	autonomy_check.set_pressed_no_signal(state.autonomy_enabled)
 	walk_check.set_pressed_no_signal(state.walk_enabled)
 	activity_pick.select(["quiet", "normal", "playful"].find(state.activity))
@@ -319,12 +325,12 @@ func refresh(state, status_override: String = "", walking: bool = false) -> void
 	look_check.set_pressed_no_signal(state.look_enabled)
 	motion_check.set_pressed_no_signal(state.motion_enabled)
 	hair_check.set_pressed_no_signal(state.hair_enabled)
-	_set_action_disabled(30, not _walk_available or walking or not state.motion_enabled)
-	_set_action_disabled(31, stop_button.disabled)
+	_set_action_disabled("walk", not _walk_available or walking or not state.motion_enabled)
+	_set_action_disabled("stop", stop_button.disabled)
 	sleep_button.text = "Разбудить" if state.dozing or state.sleep_requested else "Дремать"
-	for pair in [[127, state.rest_enabled], [125, state.walk_enabled], [126, state.autonomy_enabled], [120, state.look_enabled], [121, state.motion_enabled], [122, state.hair_enabled], [123, bubbles_enabled], [124, clickthrough_enabled]]:
-		_set_action_checked(int(pair[0]), bool(pair[1]))
-	_set_action_text(12, "Разбудить" if state.dozing or state.sleep_requested else "Подремать сидя")
+	for pair in [["toggle_auto_rest", state.rest_enabled], ["toggle_auto_walk", state.walk_enabled], ["toggle_autonomy", state.autonomy_enabled], ["toggle_look", state.look_enabled], ["toggle_motion", state.motion_enabled], ["toggle_hair", state.hair_enabled], ["toggle_bubbles", bubbles_enabled], ["toggle_clickthrough", clickthrough_enabled]]:
+		_set_action_checked(str(pair[0]), bool(pair[1]))
+	_set_action_text("doze", "Разбудить" if state.dozing or state.sleep_requested else "Подремать сидя")
 	quick_menu.set_snapshot(state, status.text, not walk_button.disabled, not stop_button.disabled)
 
 func menu_open() -> bool:
@@ -347,39 +353,41 @@ func _submenu(parent: PopupMenu, title_value: String, node_name: String, entries
 	_style_popup(sub)
 	parent.add_child(sub)
 	for pair in entries:
-		_add_menu_item(sub, str(pair[0]), int(pair[1]))
-	sub.id_pressed.connect(_emit_action)
+		_add_menu_item(sub, str(pair[0]), str(pair[1]))
+	sub.id_pressed.connect(_on_menu_id)
 	parent.add_submenu_item(title_value, node_name)
 	return sub
 
-func _add_menu_item(parent: PopupMenu, title_value: String, action: int, checked: bool = false) -> void:
+func _add_menu_item(parent: PopupMenu, title_value: String, action: String, checked: bool = false) -> void:
+	var id: int = Commands.menu_id(action)
+	assert(id >= 0, "Unknown Hoshi command in menu: " + action)
 	if checked:
-		parent.add_check_item(title_value, action)
+		parent.add_check_item(title_value, id)
 	else:
-		parent.add_item(title_value, action)
+		parent.add_item(title_value, id)
 	_menus_by_action[action] = parent
 
-func action_menu(action: int) -> PopupMenu:
+func action_menu(action: String) -> PopupMenu:
 	return _menus_by_action.get(action) as PopupMenu
 
-func _action_index(action: int) -> int:
+func _action_index(action: String) -> int:
 	var owner: PopupMenu = action_menu(action)
-	return owner.get_item_index(action) if owner != null else -1
+	return owner.get_item_index(Commands.menu_id(action)) if owner != null else -1
 
-func _set_action_disabled(action: int, disabled: bool) -> void:
+func _set_action_disabled(action: String, disabled: bool) -> void:
 	var owner: PopupMenu = action_menu(action)
 	if owner != null:
-		owner.set_item_disabled(owner.get_item_index(action), disabled)
+		owner.set_item_disabled(owner.get_item_index(Commands.menu_id(action)), disabled)
 
-func _set_action_checked(action: int, checked: bool) -> void:
+func _set_action_checked(action: String, checked: bool) -> void:
 	var owner: PopupMenu = action_menu(action)
 	if owner != null:
-		owner.set_item_checked(owner.get_item_index(action), checked)
+		owner.set_item_checked(owner.get_item_index(Commands.menu_id(action)), checked)
 
-func _set_action_text(action: int, title_value: String) -> void:
+func _set_action_text(action: String, title_value: String) -> void:
 	var owner: PopupMenu = action_menu(action)
 	if owner != null:
-		owner.set_item_text(owner.get_item_index(action), title_value)
+		owner.set_item_text(owner.get_item_index(Commands.menu_id(action)), title_value)
 
 func _build_light_window() -> void:
 	light_window = Window.new()
@@ -441,7 +449,7 @@ func _build_light_window() -> void:
 	_outline_color_button = _shading_color_row(column, "Цвет обводки")
 	var footer := HBoxContainer.new()
 	column.add_child(footer)
-	var reset := _button("Сбросить настройки", 151)
+	var reset := _button("Сбросить настройки", "light_reset")
 	footer.add_child(reset)
 	var close := Button.new()
 	close.text = "Готово"
@@ -533,37 +541,37 @@ func _build_menu() -> void:
 	menu.add_item("✦  ХОШИ · все действия", 999)
 	menu.set_item_disabled(0, true)
 	menu.add_separator()
-	_submenu(menu, "Разговор и приложения  ›", "TalkMenu", [["Поговорить через ChatGPT ↗", 170], ["Открыть текстовый чат ↗", 171]])
-	var movement := _submenu(menu, "Места и движение  ›", "MovementMenu", [["Мой уютный уголок", 43], ["Выбрать окно под курсором · 4 с", 42], ["Полочка — попробовать", 40], ["Пройтись", 30], ["Остановиться", 31], ["Сесть отдохнуть", 32], ["Встать", 33], ["Вернуться на пол", 41]])
+	_submenu(menu, "Разговор и приложения  ›", "TalkMenu", [["Поговорить через ChatGPT ↗", "talk_voice"], ["Открыть текстовый чат ↗", "talk_text"]])
+	var movement := _submenu(menu, "Места и движение  ›", "MovementMenu", [["Мой уютный уголок", "cozy_corner"], ["Выбрать окно под курсором · 4 с", "pick_window"], ["Полочка — попробовать", "shelf_demo"], ["Пройтись", "walk"], ["Остановиться", "stop"], ["Сесть отдохнуть", "sit"], ["Встать", "stand"], ["Вернуться на пол", "return_floor"]])
 	movement.add_separator()
-	_submenu(movement, "На поверхности окна  ›", "SurfaceMenu", [["Пройтись по краю", 305], ["Подвинуться сидя", 313], ["Опора у левого края", 306], ["Опора у правого края", 307], ["Сесть обратно", 308]])
-	var life := _submenu(menu, "Общение и занятия  ›", "LifeMenu", [["Помахать", 10], ["Погладить", 11], ["Подремать сидя", 12]])
+	_submenu(movement, "На поверхности окна  ›", "SurfaceMenu", [["Пройтись по краю", "surface_walk"], ["Подвинуться сидя", "surface_scoot"], ["Опора у левого края", "surface_lean_left"], ["Опора у правого края", "surface_lean_right"], ["Сесть обратно", "surface_sit_back"]])
+	var life := _submenu(menu, "Общение и занятия  ›", "LifeMenu", [["Помахать", "wave"], ["Погладить", "pet"], ["Подремать сидя", "doze"]])
 	life.add_separator()
-	_submenu(life, "Настроение  ›", "MoodMenu", [["Спокойная", 20], ["Радостная", 21], ["Расслабленная", 22], ["Удивлённая", 23], ["Грустная", 24]])
-	_submenu(life, "Занятие на краю  ›", "EdgeMenu", [["Сама выбирает", 300], ["Спокойно", 301], ["Болтать ножками", 302], ["Откинуться назад", 303], ["Посмотреть вниз", 304], ["Мягко покачиваться", 309], ["Тихонько напевать", 310], ["Кивать в такт", 311]])
-	_submenu(life, "Особые сценки  ›", "SceneMenu", [["Рисовать в блокноте", 312], ["Сложить звёздочку", 314], ["Полюбоваться звёздочкой", 315]])
+	_submenu(life, "Настроение  ›", "MoodMenu", [["Спокойная", "mood_neutral"], ["Радостная", "mood_happy"], ["Расслабленная", "mood_relaxed"], ["Удивлённая", "mood_surprised"], ["Грустная", "mood_sad"]])
+	_submenu(life, "Занятие на краю  ›", "EdgeMenu", [["Сама выбирает", "edge_auto"], ["Спокойно", "edge_calm"], ["Болтать ножками", "edge_swing"], ["Откинуться назад", "edge_lean"], ["Посмотреть вниз", "edge_peek"], ["Мягко покачиваться", "edge_sway"], ["Тихонько напевать", "edge_hum"], ["Кивать в такт", "edge_nod"]])
+	_submenu(life, "Особые сценки  ›", "SceneMenu", [["Рисовать в блокноте", "cozy_sketch"], ["Сложить звёздочку", "cozy_fold_star"], ["Полюбоваться звёздочкой", "cozy_admire_star"]])
 	var autonomy := _submenu(menu, "Ритм и самостоятельность  ›", "AutonomyMenu", [])
-	_add_menu_item(autonomy, "Самостоятельность", 126, true)
-	_add_menu_item(autonomy, "Самостоятельные прогулки", 125, true)
-	_add_menu_item(autonomy, "Самостоятельный отдых", 127, true)
-	_add_menu_item(autonomy, "Внимание к курсору", 120, true)
-	_add_menu_item(autonomy, "Короткие реплики", 123, true)
+	_add_menu_item(autonomy, "Самостоятельность", "toggle_autonomy", true)
+	_add_menu_item(autonomy, "Самостоятельные прогулки", "toggle_auto_walk", true)
+	_add_menu_item(autonomy, "Самостоятельный отдых", "toggle_auto_rest", true)
+	_add_menu_item(autonomy, "Внимание к курсору", "toggle_look", true)
+	_add_menu_item(autonomy, "Короткие реплики", "toggle_bubbles", true)
 	autonomy.add_separator()
-	_submenu(autonomy, "Активность  ›", "ActivityMenu", [["Тихая · без прогулок", 200], ["Обычная", 201], ["Игривая", 202]])
-	_submenu(autonomy, "Где отдыхать  ›", "PlaceMenu", [["Только вручную", 210], ["Свой уголок", 211], ["Окна → уголок", 212]])
+	_submenu(autonomy, "Активность  ›", "ActivityMenu", [["Тихая · без прогулок", "activity_quiet"], ["Обычная", "activity_normal"], ["Игривая", "activity_playful"]])
+	_submenu(autonomy, "Где отдыхать  ›", "PlaceMenu", [["Только вручную", "place_manual"], ["Свой уголок", "place_cozy"], ["Окна → уголок", "place_smart"]])
 	var appearance := _submenu(menu, "Внешний вид  ›", "AppearanceMenu", [])
-	_add_menu_item(appearance, "Настроить свет, тени и обводку…", 150)
-	_add_menu_item(appearance, "Мягкие движения", 121, true)
-	_add_menu_item(appearance, "Движение волос", 122, true)
-	_submenu(appearance, "Размер на рабочем столе  ›", "SizeMenu", [["Небольшая · 280 px", 110], ["Обычная · 360 px", 111], ["Крупная · 440 px", 112]])
-	var tools := _submenu(menu, "Инструменты и окно  ›", "ToolsMenu", [["Открыть примерочную", 100], ["На рабочий стол", 101], ["Вернуть к нижнему краю", 140], ["Вернуть вид спереди", 141]])
+	_add_menu_item(appearance, "Настроить свет, тени и обводку…", "light_editor")
+	_add_menu_item(appearance, "Мягкие движения", "toggle_motion", true)
+	_add_menu_item(appearance, "Движение волос", "toggle_hair", true)
+	_submenu(appearance, "Размер на рабочем столе  ›", "SizeMenu", [["Небольшая · 280 px", "size_small"], ["Обычная · 360 px", "size_normal"], ["Крупная · 440 px", "size_large"]])
+	var tools := _submenu(menu, "Инструменты и окно  ›", "ToolsMenu", [["Открыть примерочную", "open_preview"], ["На рабочий стол", "to_desktop"], ["Вернуть к нижнему краю", "return_bottom"], ["Вернуть вид спереди", "reset_view"]])
 	tools.add_separator()
-	_add_menu_item(tools, "Клики только по Хоши", 124, true)
-	_submenu(tools, "Частота кадров  ›", "FPSMenu", [["30 FPS · экономно", 131], ["60 FPS · плавнее", 130]])
-	_submenu(tools, "Проверка краёв окна  ›", "DiagnosticsMenu", [["Видимые края · 1 кадр · 4 с", 161], ["Структура · без снимка · 4 с", 160]])
+	_add_menu_item(tools, "Клики только по Хоши", "toggle_clickthrough", true)
+	_submenu(tools, "Частота кадров  ›", "FPSMenu", [["30 FPS · экономно", "fps_30"], ["60 FPS · плавнее", "fps_60"]])
+	_submenu(tools, "Проверка краёв окна  ›", "DiagnosticsMenu", [["Видимые края · 1 кадр · 4 с", "scan_window_visual"], ["Структура · без снимка · 4 с", "scan_window_structure"]])
 	menu.add_separator()
-	_add_menu_item(menu, "Закрыть Хоши", 199)
-	menu.id_pressed.connect(_emit_action)
+	_add_menu_item(menu, "Закрыть Хоши", "quit")
+	menu.id_pressed.connect(_on_menu_id)
 
 func _style_popup(target: PopupMenu) -> void:
 	var popup_theme := Theme.new()
@@ -626,8 +634,8 @@ func _build_surface_window() -> void:
 	column.add_child(surface_detail)
 	var buttons := HBoxContainer.new()
 	column.add_child(buttons)
-	buttons.add_child(_button("Другое окно · кадр", 161))
-	buttons.add_child(_button("Другое окно · структура", 160))
+	buttons.add_child(_button("Другое окно · кадр", "scan_window_visual"))
+	buttons.add_child(_button("Другое окно · структура", "scan_window_structure"))
 	var close_button := Button.new()
 	close_button.text = "Готово"
 	close_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL

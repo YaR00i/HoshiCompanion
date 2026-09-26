@@ -34,11 +34,11 @@ func _run() -> void:
 	]:
 		await _capture_vibe(str(sample["activity"]), float(sample["time"]))
 	app.stage.yaw = 0.0
-	app._on_action(10)
+	app._on_action("wave")
 	_advance(28)
 	await _capture("wave")
 	_advance(120)
-	app._on_action(12)
+	app._on_action("doze")
 	_advance(120)
 	await _capture("doze")
 	app._switch_mode(true)

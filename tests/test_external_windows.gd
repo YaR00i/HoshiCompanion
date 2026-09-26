@@ -42,7 +42,7 @@ func _run() -> void:
 	app.state.autonomy_enabled = false
 	app.ui.bubbles_enabled = false
 	check(app.playground.external.process_id == -1, "no geometry process on normal startup")
-	check(app.ui.menu.get_item_index(42) >= 0, "manual window selection is exposed")
+	check(app.ui.action_menu("pick_window") != null, "manual window selection is exposed")
 	await check_selection_controls()
 	app._switch_mode(false)
 	await process_frame
@@ -82,7 +82,7 @@ func _run() -> void:
 	check(await until(func(): return app.playground.phase == "attached" and app.state.posture.mode == "seated"), "automatic chooser docks on isolated fixture")
 	check(await until(func(): return app.playground.last_support_error < 1.0, 1.0), "automatic choice keeps exact support contact")
 	check(app.playground.external_mode, "automatic choice owns only isolated external support")
-	app._on_action(41)
+	app._on_action("return_floor")
 	check(await until(func(): return not app.playground.active()), "automatic support can return to floor")
 	check(app.playground.select_window(handle), "explicit test-window selection starts")
 	var docked: bool = await until(func(): return app.playground.phase == "attached" and app.state.posture.mode == "seated")
@@ -102,7 +102,7 @@ func _run() -> void:
 	check(app.host.window.position.x > before.x + 80, "follows external window move and resize")
 	check(app.playground.last_support_error < 1.0, "contact retained after external resize")
 	check(app.playground.saved_floor_position == remembered, "temporary external anchor does not overwrite saved floor position")
-	app._on_action(305)
+	app._on_action("surface_walk")
 	check(await until(func(): return app.playground.surface.mode == "walk" and app.walker.active(), 6.0), "external support starts local edge walk")
 	check(await until(func(): return app.playground.surface.mode == "sit" and app.state.posture.mode == "seated", 12.0), "external edge walk settles back into seated support")
 	check(app.playground.phase == "attached" and app.playground.external_mode and app.playground.last_support_error < 1.5, "external edge walk preserves selected support")
@@ -121,7 +121,7 @@ func _run() -> void:
 		check(await until(func(): return app.playground.surface.mode == "side_" + auto_side, 8.0), "planner-driven side visit reaches vertical frame")
 		check(await until(func(): return app.playground.surface.mode == "sit" and app.state.posture.mode == "seated" and app.intent_planner.active_intent.is_empty(), 16.0), "planner-driven side visit waits then returns to top and completes")
 	app.state.autonomy_enabled = false
-	app._on_action(306)
+	app._on_action("surface_lean_left")
 	check(await until(func(): return app.playground.surface.mode == "side_left", 8.0), "left side action reaches floor-supported window lean")
 	var left_contact: Vector2 = Vector2(app.host.window.position) + app.stage.side_anchor_pixel("left")
 	var side_rect: Rect2i = app.playground.support_rect()
@@ -132,23 +132,23 @@ func _run() -> void:
 	left_contact = Vector2(app.host.window.position) + app.stage.side_anchor_pixel("left")
 	side_rect = app.playground.support_rect()
 	check(app.host.window.position.x > side_before.x + 35 and absf(left_contact.x - float(side_rect.position.x)) < 1.5, "side lean follows external window movement")
-	app._on_action(308)
+	app._on_action("surface_sit_back")
 	check(await until(func(): return app.playground.surface.mode == "sit" and app.state.posture.mode == "seated", 10.0), "side lean can jump back onto the top edge")
-	app._on_action(307)
+	app._on_action("surface_lean_right")
 	check(await until(func(): return app.playground.surface.mode == "side_right", 8.0), "right side action reaches floor-supported window lean")
 	var right_contact: Vector2 = Vector2(app.host.window.position) + app.stage.side_anchor_pixel("right")
 	side_rect = app.playground.support_rect()
 	check(absf(right_contact.x - float(side_rect.end.x)) < 1.5 and right_contact.y > side_rect.position.y + 25 and right_contact.y < side_rect.end.y - 25, "right shoulder contact aligns to external vertical frame")
-	app._on_action(308)
+	app._on_action("surface_sit_back")
 	check(await until(func(): return app.playground.surface.mode == "sit" and app.state.posture.mode == "seated", 10.0), "right lean returns to seated top edge")
-	app._on_action(11)
+	app._on_action("pet")
 	await create_timer(0.25).timeout
 	check(app.playground.phase == "attached", "pet preserves external support")
-	app._on_action(10)
+	app._on_action("wave")
 	await create_timer(0.25).timeout
 	check(app.playground.phase == "attached", "wave preserves external support")
 	await capture()
-	app._on_action(12)
+	app._on_action("doze")
 	check(app.state.dozing and app.playground.phase == "attached", "dozing stays on selected window")
 	var helper_pid: int = app.playground.external.process_id
 	command({"op": "minimize"})
@@ -162,9 +162,9 @@ func _run() -> void:
 	if not restored_attached:
 		print("RESTORE_ATTACH_FAIL phase=", app.playground.phase, " ext_status=", app.playground.external.status, " ext_reason=", app.playground.external.reason, " rect=", app.playground.external.current_rect(), " area=", app.playground.external.current_area(), " posture=", app.state.posture.mode, "/", app.state.posture.kind, " air=", app.air.mode)
 	check(restored_attached, "restored window can be manually reselected")
-	app._on_action(30)
+	app._on_action("walk")
 	check(await until(func(): return app.walker.active()), "walk waits for external return then starts")
-	app._on_action(31)
+	app._on_action("stop")
 	await until(func(): return not app.walker.active())
 	app.playground.select_window(handle)
 	await until(func(): return app.playground.phase == "attached")
@@ -233,11 +233,11 @@ func finish() -> void:
 	quit(0 if failures == 0 else 1)
 
 func check_selection_controls() -> void:
-	app._on_action(42)
+	app._on_action("pick_window")
 	check(await until(func(): return app.playground.external.status == "selecting", 1.5), "UI selection starts bounded countdown before reading target")
 	check(app.playground.external.snapshot.is_empty(), "no window selected before countdown expires")
 	var pid: int = app.playground.external.process_id
-	app._on_action(41)
+	app._on_action("return_floor")
 	check(await until(func(): return not app.playground.active()), "cancel selection returns without acquiring a target")
 	check(await until(func(): return not OS.is_process_running(pid), 2.0), "canceled picker leaves no helper")
 	var own_handle: int = DisplayServer.window_get_native_handle(DisplayServer.WINDOW_HANDLE)

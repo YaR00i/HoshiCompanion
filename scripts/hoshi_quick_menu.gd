@@ -1,8 +1,9 @@
 extends PopupPanel
 
-signal action_requested(action: int)
+signal action_requested(command: String)
 signal advanced_requested(position: Vector2i)
 
+const Commands = preload("res://scripts/hoshi_commands.gd")
 const HEADER = preload("res://assets/ui/hoshi_menu_header.svg")
 const SWITCH_ON = preload("res://assets/ui/switch_on.svg")
 const SWITCH_OFF = preload("res://assets/ui/switch_off.svg")
@@ -67,10 +68,10 @@ func _ready() -> void:
 	column.add_theme_constant_override("separation", 9)
 	margin.add_child(column)
 
-	voice_button = _button("♪  Поговорить через ChatGPT  ↗", 170, Color("f5e5ec"), 53)
+	voice_button = _button("♪  Поговорить через ChatGPT  ↗", "talk_voice", Color("f5e5ec"), 53)
 	voice_button.tooltip_text = "Открыть ChatGPT в браузере. В ChatGPT нажми Voice, затем включи расширение Хоши на этой вкладке."
 	column.add_child(voice_button)
-	var text_chat := _button("Открыть текстовый чат  ↗", 171, Color("fffdfb"), 36)
+	var text_chat := _button("Открыть текстовый чат  ↗", "talk_text", Color("fffdfb"), 36)
 	text_chat.tooltip_text = "Открыть ChatGPT в браузере без запуска голосовой связи Хоши."
 	column.add_child(text_chat)
 	column.add_child(_label("Голос включается на открытой вкладке ChatGPT", 11, MUTED))
@@ -85,13 +86,13 @@ func _ready() -> void:
 	grid.add_theme_constant_override("h_separation", 7)
 	grid.add_theme_constant_override("v_separation", 7)
 	column.add_child(grid)
-	for item in [["☁  Мой уголок", 43], ["▣  Выбрать окно", 42], ["✦  Пройтись", 30], ["○  Остановиться", 31]]:
-		var button := _button(str(item[0]), int(item[1]), Color("fffdfb"), 48)
+	for item in [["☁  Мой уголок", "cozy_corner"], ["▣  Выбрать окно", "pick_window"], ["✦  Пройтись", "walk"], ["○  Остановиться", "stop"]]:
+		var button := _button(str(item[0]), str(item[1]), Color("fffdfb"), 48)
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		grid.add_child(button)
-		if int(item[1]) == 30:
+		if str(item[1]) == "walk":
 			walk_button = button
-		elif int(item[1]) == 31:
+		elif str(item[1]) == "stop":
 			stop_button = button
 
 	var activity_row := HBoxContainer.new()
@@ -102,16 +103,16 @@ func _ready() -> void:
 	activity_pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	for option in ["Тихая", "Обычная", "Игривая"]:
 		activity_pick.add_item(option)
-	activity_pick.item_selected.connect(func(index: int): action_requested.emit(200 + index))
+	activity_pick.item_selected.connect(func(index: int): action_requested.emit(Commands.ACTIVITY_CHOICES[index]))
 	activity_row.add_child(activity_pick)
 	var divider := HSeparator.new()
 	divider.modulate = GOLD.lightened(0.35)
 	column.add_child(divider)
-	autonomy_check = _toggle("Самостоятельность", 126)
-	rest_check = _toggle("Сама выбирает отдых", 127)
+	autonomy_check = _toggle("Самостоятельность", "toggle_autonomy")
+	rest_check = _toggle("Сама выбирает отдых", "toggle_auto_rest")
 	column.add_child(autonomy_check)
 	column.add_child(rest_check)
-	var more := _button("Все действия и настройки  ›", -1, Color("eee8f3"), 38)
+	var more := _button("Все действия и настройки  ›", "", Color("eee8f3"), 38)
 	more.pressed.connect(_show_advanced)
 	column.add_child(more)
 
@@ -123,7 +124,7 @@ func _label(value: String, font_size: int, color: Color) -> Label:
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return label
 
-func _button(value: String, action: int, fill: Color, height: int) -> Button:
+func _button(value: String, action: String, fill: Color, height: int) -> Button:
 	var button := Button.new()
 	button.text = value
 	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -143,13 +144,13 @@ func _button(value: String, action: int, fill: Color, height: int) -> Button:
 	button.add_theme_color_override("font_hover_color", PLUM)
 	button.add_theme_color_override("font_pressed_color", PLUM)
 	button.add_theme_color_override("font_disabled_color", MUTED)
-	if action >= 0:
+	if not action.is_empty():
 		button.pressed.connect(func():
 			hide()
 			action_requested.emit(action))
 	return button
 
-func _toggle(value: String, action: int) -> CheckButton:
+func _toggle(value: String, action: String) -> CheckButton:
 	var item := CheckButton.new()
 	item.text = value
 	item.custom_minimum_size.y = 27

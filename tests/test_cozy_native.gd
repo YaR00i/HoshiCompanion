@@ -52,14 +52,14 @@ func _run() -> void:
 	app.set_process(true)
 	for i in range(3):
 		app._open_menu()
-		app._on_action(43)
+		app._on_action("cozy_corner")
 		app.ui.menu.hide()
 		await get_tree().process_frame
 		await get_tree().process_frame
 		_check(cozy == app.playground.shelf and cozy.get_window_id() == id and app.playground.phase == "attached" and app.state.posture.mode == "seated" and cozy.visible and _native_visible(cozy), "reselect %d keeps the seated Hoshi and native corner visible" % (i + 1))
 	cozy.mode = Window.MODE_MINIMIZED
 	await get_tree().process_frame
-	app._on_action(43)
+	app._on_action("cozy_corner")
 	await get_tree().process_frame
 	await get_tree().process_frame
 	_check(cozy.mode == Window.MODE_WINDOWED and cozy.visible and _native_visible(cozy), "reselect restores a minimized native corner")

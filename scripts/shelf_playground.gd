@@ -350,38 +350,38 @@ func close_shelf() -> void:
 		shelf.queue_free()
 		shelf = null
 
-func handle_action(action: int) -> bool:
-	if action == 43:
+func handle_action(action: String) -> bool:
+	if action == "cozy_corner":
 		show_demo(true)
 		return true
-	if action == 42:
+	if action == "pick_window":
 		select_window()
 		return true
-	if action == 40:
+	if action == "shelf_demo":
 		show_demo()
 		return true
-	if action == 41:
+	if action == "return_floor":
 		return_home()
 		return true
-	if action == 305:
+	if action == "surface_walk":
 		if surface.request_walk():
 			return true
 		if active():
 			app.ui.say("Здесь маловато места для прогулки")
 			return true
-	if action == 313:
+	if action == "surface_scoot":
 		if surface.request_scoot():
 			return true
 		if active():
 			app.ui.say("Здесь сейчас не подвинуться сидя")
 			return true
-	if action in [306, 307]:
-		if surface.request_side("left" if action == 306 else "right"):
+	if action in ["surface_lean_left", "surface_lean_right"]:
+		if surface.request_side("left" if action == "surface_lean_left" else "right"):
 			return true
 		if active():
 			app.ui.say("К этому боку сейчас не прислониться")
 			return true
-	if action == 308:
+	if action == "surface_sit_back":
 		if surface.request_sit_top():
 			return true
 		if active():
@@ -389,21 +389,21 @@ func handle_action(action: int) -> bool:
 			return true
 	if not active():
 		return false
-	if action in [30, 33, 140]:
-		return_home(action == 30)
+	if action in ["walk", "stand", "return_bottom"]:
+		return_home(action == "walk")
 		return true
-	if action in [32, 101]:
+	if action in ["sit", "to_desktop"]:
 		return true
-	if action == 12:
+	if action == "doze":
 		if phase == "attached":
 			app.state.dozing = not app.state.dozing
 		return true
-	if action == 31:
+	if action == "stop":
 		_walk_after = false
 		if phase in ["selection_start", "selecting", "auto_selection_start", "auto_selecting", "preparing", "boarding"]:
 			return_home()
 		return true
-	if action == 121:
+	if action == "toggle_motion":
 		app.state.motion_enabled = not app.state.motion_enabled
 		app._save_settings()
 		return true

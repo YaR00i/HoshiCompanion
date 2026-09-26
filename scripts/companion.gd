@@ -13,6 +13,7 @@ const Playground = preload("res://scripts/shelf_playground.gd")
 const SurfaceProbe = preload("res://scripts/window_surface_probe.gd")
 const InteractionSession = preload("res://scripts/interaction_session.gd")
 const ChatVoiceBridge = preload("res://scripts/chat_voice_bridge.gd")
+const Commands = preload("res://scripts/hoshi_commands.gd")
 const SETTINGS_PATH: String = "user://companion.cfg"
 const DEFAULT_AVATAR: String = "res://assets/Hoshi_v1.vrm"
 const DEFAULT_LIGHT_POSITION: Vector3 = Vector3(-1.2, 2.2, 2.4)
@@ -666,14 +667,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		match key_event.physical_keycode:
 			KEY_ESCAPE:
 				if walker.active():
-					_on_action(31)
+					_on_action("stop")
 				elif host.preview:
 					_quit()
-			KEY_SPACE: _on_action(10)
-			KEY_W: _on_action(30)
-			KEY_C: _on_action(33 if state.posture.target_seated else 32)
-			KEY_S: _on_action(12)
-			KEY_F: _on_action(141)
+			KEY_SPACE: _on_action("wave")
+			KEY_W: _on_action("walk")
+			KEY_C: _on_action("stand" if state.posture.target_seated else "sit")
+			KEY_S: _on_action("doze")
+			KEY_F: _on_action("reset_view")
 			KEY_P: _switch_mode(not host.preview)
 
 func _update_drag(delta: float) -> void:
@@ -855,35 +856,45 @@ func _apply_shading_settings() -> void:
 		float(_shading_settings["edge_strength"]), _shading_settings["edge_color"], float(_shading_settings["edge_width"]),
 		float(_shading_settings["outline_strength"]), _shading_settings["outline_color"], float(_shading_settings["outline_width"]))
 
-func _on_action(action: int) -> void:
+## Единая точка входа для команд по имени (см. hoshi_commands.gd).
+## Старые числовые номера пока принимаются для совместимости.
+func run_command(command: Variant) -> void:
+	_on_action(command)
+
+func _on_action(command: Variant) -> void:
+	var action: String = Commands.resolve(command)
+	if action.is_empty():
+		push_warning("Unknown Hoshi command: %s" % str(command))
+		return
 	_abort_autonomous_intent("manual_action")
-	if action == 199:
+	if action == "quit":
 		_quit()
 		return
-	if action == 100:
+	if action == "open_preview":
 		_switch_mode(true)
 		return
 	if not _ready_to_run:
 		return
-	if action == 150:
+	if action == "light_editor":
 		ui.show_light_editor(_light_position, _shading_settings)
 		return
-	if action == 170:
+	if action == "talk_voice":
 		chat_voice_bridge.start()
 		OS.shell_open("https://chatgpt.com/")
 		return
-	if action == 171:
+	if action == "talk_text":
 		OS.shell_open("https://chatgpt.com/")
 		return
-	if action == 160 or action == 161:
+	if action in ["scan_window_structure", "scan_window_visual"]:
+		var visual: bool = action == "scan_window_visual"
 		ui.surface_window.hide()
-		if surface_probe.begin("visual" if action == 161 else "structure"):
-			ui.say("Наведи на окно · кадр через 4 с" if action == 161 else "Наведи на окно · структура через 4 с")
+		if surface_probe.begin("visual" if visual else "structure"):
+			ui.say("Наведи на окно · кадр через 4 с" if visual else "Наведи на окно · структура через 4 с")
 			ui._bubble_left = 5.0
 		else:
 			ui.show_surface_scan(surface_probe.result)
 		return
-	if action == 151:
+	if action == "light_reset":
 		_on_light_position_changed(DEFAULT_LIGHT_POSITION)
 		_on_shading_changed({"shadow_strength": 1.0, "shadow_color": Color.WHITE,
 			"edge_strength": 0.16, "edge_color": DEFAULT_EDGE_COLOR, "edge_width": 0.4,
@@ -892,29 +903,28 @@ func _on_action(action: int) -> void:
 		ui.set_shading_settings(_shading_settings)
 		return
 	interaction.manual_activity()
-	if action in [10, 11, 12, 30, 31, 32, 33, 40, 41, 42, 43, 100, 101, 110, 111, 112, 140, 141, 305, 306, 307, 308, 313, 314, 315]:
+	if Commands.has_flag(action, "pauses_places"):
 		places.manual_pause()
-	if action in [210, 211, 212]:
-		state.place_mode = ["off", "cozy", "smart"][action - 210]
+	if action in Commands.PLACE_CHOICES:
+		state.place_mode = ["off", "cozy", "smart"][Commands.PLACE_CHOICES.find(action)]
 		places.change_mode(state.place_mode)
 		ui.refresh(state, playground.label(), walker.active())
 		_save_settings()
 		return
-	if action == 312:
+	if action == "cozy_sketch":
 		if playground.active() and playground.cozy_mode and playground.phase == "attached" and state.posture.mode == "seated" and state.motion_enabled and not state.dozing:
 			stage.edge_life.request_gesture("sketch")
 		return
-	if action in [314, 315]:
+	if action in ["cozy_fold_star", "cozy_admire_star"]:
 		if playground.active() and playground.cozy_mode and playground.phase == "attached" and state.posture.mode == "seated" and state.motion_enabled and not state.dozing:
-			if action == 314:
+			if action == "cozy_fold_star":
 				stage.edge_life.request_gesture("fold")
 			elif playground.cozy_stars_made > 0:
 				stage.edge_life.request_gesture("admire_star")
 		return
-	var edge_actions: Dictionary = {300: "auto", 301: "calm", 302: "swing", 303: "lean", 304: "peek", 309: "sway", 310: "hum", 311: "nod"}
-	if edge_actions.has(action):
+	if not Commands.edge_activity(action).is_empty():
 		stage.edge_life.cancel_forced()
-		state.edge_activity = str(edge_actions[action])
+		state.edge_activity = Commands.edge_activity(action)
 		ui.refresh(state, playground.label(), walker.active())
 		_save_settings()
 		return
@@ -923,24 +933,24 @@ func _on_action(action: int) -> void:
 		ui.refresh(state, playground.label(), walker.active())
 		_save_settings()
 		return
-	if action not in [30, 32, 12]:
+	if not Commands.has_flag(action, "keeps_intent"):
 		_clear_intent()
 		state.posture.keep_rest()
-	if action not in [30, 31]:
+	if not Commands.has_flag(action, "keeps_walk"):
 		_stop_walk()
 	director.user_interaction()
 	match action:
-		10:
+		"wave":
 			if interaction.accept_wave():
 				state.wave()
 				if interaction.allow_bubble():
 					ui.say("Я тут!")
-		11:
+		"pet":
 			if interaction.accept_button_pet():
 				state.pet()
 				if interaction.allow_bubble():
 					ui.say("Спасибо!")
-		12:
+		"doze":
 			if state.dozing or state.sleep_requested:
 				var was_dozing: bool = state.dozing
 				_clear_intent()
@@ -953,55 +963,55 @@ func _on_action(action: int) -> void:
 					ui.say("Проснулась!")
 			else:
 				_request_sit(false, true)
-		20: state.set_mood("neutral")
-		21: state.set_mood("happy")
-		22: state.set_mood("relaxed")
-		23: state.set_mood("surprised")
-		24: state.set_mood("sad")
-		30: _start_walk(false)
-		31: _stop_all_actions()
-		32: _request_sit()
-		33: _request_stand()
-		101: _switch_mode(false)
-		110, 111, 112:
+		"mood_neutral": state.set_mood("neutral")
+		"mood_happy": state.set_mood("happy")
+		"mood_relaxed": state.set_mood("relaxed")
+		"mood_surprised": state.set_mood("surprised")
+		"mood_sad": state.set_mood("sad")
+		"walk": _start_walk(false)
+		"stop": _stop_all_actions()
+		"sit": _request_sit()
+		"stand": _request_stand()
+		"to_desktop": _switch_mode(false)
+		"size_small", "size_normal", "size_large":
 			_hard_stop()
 			stage.travel_offset_px = 0.0
-			host.resize_body({110: 280, 111: 360, 112: 440}[action])
-		120: state.look_enabled = not state.look_enabled
-		121:
+			host.resize_body({"size_small": 280, "size_normal": 360, "size_large": 440}[action])
+		"toggle_look": state.look_enabled = not state.look_enabled
+		"toggle_motion":
 			state.motion_enabled = not state.motion_enabled
 			if not state.motion_enabled:
 				_hard_stop()
 				if state.posture.transitioning():
 					state.posture.request_stand()
-		122: state.hair_enabled = not state.hair_enabled
-		123: ui.bubbles_enabled = not ui.bubbles_enabled
-		124:
+		"toggle_hair": state.hair_enabled = not state.hair_enabled
+		"toggle_bubbles": ui.bubbles_enabled = not ui.bubbles_enabled
+		"toggle_clickthrough":
 			host.mask_enabled = not host.mask_enabled
 			host.apply_mask()
 			ui.clickthrough_enabled = host.mask_enabled
-		125: state.walk_enabled = not state.walk_enabled
-		126: state.autonomy_enabled = not state.autonomy_enabled
-		127: state.rest_enabled = not state.rest_enabled
-		130:
+		"toggle_auto_walk": state.walk_enabled = not state.walk_enabled
+		"toggle_autonomy": state.autonomy_enabled = not state.autonomy_enabled
+		"toggle_auto_rest": state.rest_enabled = not state.rest_enabled
+		"fps_60":
 			frame_rate = 60
 			Engine.max_fps = 60
-		131:
+		"fps_30":
 			frame_rate = 30
 			Engine.max_fps = 30
-		140:
+		"return_bottom":
 			_hard_stop()
 			stage.travel_offset_px = 0.0
 			host.home()
-		141:
+		"reset_view":
 			_hard_stop()
 			stage.yaw = 0.0
 			stage.travel_offset_px = 0.0
 			_preview_zoom = 1.0
 			_gaze = Vector2.ZERO
 			stage.rig.reset()
-		200, 201, 202:
-			state.activity = ["quiet", "normal", "playful"][action - 200]
+		"activity_quiet", "activity_normal", "activity_playful":
+			state.activity = ["quiet", "normal", "playful"][Commands.ACTIVITY_CHOICES.find(action)]
 			director.set_activity(state.activity)
 	_layout()
 	ui.refresh(state, walker.label(), walker.active())

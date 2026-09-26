@@ -39,7 +39,7 @@ func _run() -> void:
 	app.ui.bubbles_enabled = false
 	_advance(30)
 	await _capture("01_standing")
-	app._on_action(32)
+	app._on_action("sit")
 	_advance(36)
 	await _capture("02_sitting_down")
 	_advance(70)
@@ -48,17 +48,17 @@ func _run() -> void:
 	_advance(1)
 	await _capture("04_seated_side")
 	app.stage.yaw = 0.0
-	app._on_action(11)
+	app._on_action("pet")
 	_advance(20)
 	await _capture("05_seated_pet")
-	app._on_action(10)
+	app._on_action("wave")
 	_advance(25)
 	await _capture("06_seated_wave")
 	_advance(130)
-	app._on_action(12)
+	app._on_action("doze")
 	_advance(100)
 	await _capture("07_seated_doze")
-	app._on_action(30)
+	app._on_action("walk")
 	_advance(34)
 	await _capture("08_standing_up")
 	_advance(100)
@@ -70,7 +70,7 @@ func _run() -> void:
 		app.host.home()
 		await process_frame
 		await process_frame
-		app._on_action(32)
+		app._on_action("sit")
 		_advance(120)
 		await _capture("11_desktop_seated")
 		app.stage.yaw = 65.0

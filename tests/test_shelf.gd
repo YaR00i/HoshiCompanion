@@ -39,7 +39,7 @@ func _run() -> void:
 	app.ui.bubbles_enabled = false
 	_advance(5)
 	_check(not app.playground.active() and app.playground.shelf == null, "no shelf is opened on normal startup")
-	_check(app.ui.menu.get_item_index(40) >= 0 and app.ui.menu.get_item_index(41) >= 0, "shelf and return actions are present")
+	_check(app.ui.action_menu("shelf_demo") != null and app.ui.action_menu("return_floor") != null, "shelf and return actions are present")
 	_pose_checks()
 	if DisplayServer.get_name() == "Windows":
 		native_tested = true
@@ -142,7 +142,7 @@ func _native_checks() -> void:
 	_check(absf(float(root.position.x - before.x) - 60.0) < 2.0, "resize keeps relative seat position on shelf")
 	_check(app.playground.last_support_error < 1.1, "resize keeps vertical contact")
 	await _capture("02_moved_resized")
-	app._on_action(305)
+	app._on_action("surface_walk")
 	var surface_walk_seen: bool = false
 	var previous_surface_position: Vector2i = root.position
 	var max_posture_window_step: float = 0.0
@@ -171,30 +171,30 @@ func _native_checks() -> void:
 	app.playground.finish_drag()
 	_advance(3)
 	_check(app.playground.phase == "attached" and not app.walker.active(), "drop at shelf reattaches without old route")
-	app._on_action(112)
+	app._on_action("size_large")
 	await process_frame
 	await process_frame
 	_advance(3)
 	_check(app.playground.phase == "attached" and app.playground.last_support_error < 1.1, "avatar scaling preserves support")
-	app._on_action(111)
+	app._on_action("size_normal")
 	await process_frame
 	await process_frame
 	_advance(3)
-	app._on_action(11)
+	app._on_action("pet")
 	_advance(24)
 	_check(app.playground.phase == "attached" and app.state.posture.mode == "seated", "pet does not detach shelf")
-	app._on_action(10)
+	app._on_action("wave")
 	_advance(28)
 	_check(app.playground.last_support_error < 1.1, "wave does not shift seat anchor")
 	await _capture("03_wave")
 	_advance(140)
-	app._on_action(12)
+	app._on_action("doze")
 	_advance(100)
 	_check(app.state.dozing and app.playground.phase == "attached", "dozing stays attached")
 	await _capture("04_doze")
-	app._on_action(12)
+	app._on_action("doze")
 	_check(not app.state.dozing, "wake does not require standing")
-	app._on_action(30)
+	app._on_action("walk")
 	var walked: bool = false
 	var overlap: bool = false
 	for index in range(420):
@@ -204,8 +204,8 @@ func _native_checks() -> void:
 	_check(walked and not overlap, "walk waits for return and standing")
 	_check(app.host.is_grounded() and app.state.posture.kind == "floor", "return ends at usable bottom in floor mode")
 	_check(await _attach(), "shelf can be reused after walking")
-	app._on_action(30)
-	app._on_action(11)
+	app._on_action("walk")
+	app._on_action("pet")
 	var resumed: bool = false
 	for index in range(200):
 		_advance(1)

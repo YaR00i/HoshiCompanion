@@ -54,7 +54,7 @@ func _run() -> void:
 	await _capture("01_calm")
 	var corner_id: int = cozy.get_window_id()
 	app._open_menu()
-	app._on_action(43)
+	app._on_action("cozy_corner")
 	app.ui.menu.hide()
 	await process_frame
 	await RenderingServer.frame_post_draw
@@ -66,7 +66,7 @@ func _run() -> void:
 	for screen in range(1, DisplayServer.get_screen_count()):
 		all_screen_bounds = all_screen_bounds.merge(app.host.usable_area(screen))
 	cozy.position = all_screen_bounds.end + Vector2i(800, 800)
-	app._on_action(43)
+	app._on_action("cozy_corner")
 	_advance(3)
 	var corner_visible_on_screen: bool = false
 	for screen in range(DisplayServer.get_screen_count()):
@@ -75,7 +75,7 @@ func _run() -> void:
 	cozy.position = original_corner_position
 	_advance(3)
 	cozy.mode = Window.MODE_MINIMIZED
-	app._on_action(43)
+	app._on_action("cozy_corner")
 	await process_frame
 	_advance(3)
 	_check(app.playground.phase == "attached" and app.state.posture.mode == "seated" and cozy.visible and cozy.mode == Window.MODE_WINDOWED, "reselecting a minimized cozy corner restores it without making Hoshi stand")
@@ -136,7 +136,7 @@ func _run() -> void:
 	_check(scoot_stayed_seated and app.playground.surface.mode == "sit", "seated scoot completes without standing")
 	_check(absf(float(root.position.x - scoot_origin.x)) >= 18.0 and scoot_max_step <= 4.0 and app.playground.last_support_error < 1.1, "seated scoot travels smoothly while holding its edge contact")
 	await _capture("01_scoot_settle")
-	app._on_action(313)
+	app._on_action("surface_scoot")
 	var interrupted_scoot: bool = app.playground.surface.mode == "scoot"
 	_advance(25)
 	if interrupted_scoot:
@@ -156,7 +156,7 @@ func _run() -> void:
 	_check(interrupted_scoot and app.playground.surface.mode == "sit" and root.position.distance_to(interrupted_position) <= 1.0, "manual interruption stops the seated route without resuming it")
 	app._abort_autonomous_intent("test_finished")
 	var seat: Vector3 = app.stage.edge_pose.anchor_world()
-	app._on_action(312)
+	app._on_action("cozy_sketch")
 	_advance(120)
 	_check(float(app.stage.edge_life.weights["sketch"]) > 0.9 and app.stage.sketchbook.visible, "notebook button starts drawing in the cozy corner")
 	_check(app.stage.edge_pose.anchor_world().distance_to(seat) < 0.001, "notebook keeps the corner seat steady")
@@ -176,7 +176,7 @@ func _run() -> void:
 		if stroke.visible: complete_strokes += 1
 	_check(complete_strokes == 5 and app.stage.sketchbook.book.global_position.y > drawing_height + app.stage.model_height * 0.1, "finished star rises as Hoshi shows the page")
 	await _capture("01_sketch_show")
-	app._on_action(314)
+	app._on_action("cozy_fold_star")
 	_advance(80)
 	_check(app.stage.paper_star.visible and app.stage.paper_star.paper.visible and app.playground.cozy_stars_made == 0, "paper star begins as a separate sheet without an early decoration")
 	_check(app.stage.edge_pose.anchor_world().distance_to(seat) < 0.001, "folding keeps the corner seat steady")
@@ -213,12 +213,12 @@ func _run() -> void:
 	app.stage.animate(1.0 / 30.0, app.state, Vector2.ZERO)
 	_check(not app.stage.sketchbook.visible, "manual contact hides the notebook immediately")
 	app.stage.edge_suspended = false
-	app._on_action(302)
+	app._on_action("edge_swing")
 	_advance(120)
 	_check(app.state.edge_activity == "swing" and float(app.stage.edge_life.weights["swing"]) > 0.9, "cozy button selects dangling legs")
 	_check(not app.stage.sketchbook.visible, "another activity puts notebook away")
 	await _capture("02_swing")
-	app._on_action(303)
+	app._on_action("edge_lean")
 	_advance(120)
 	_check(app.state.edge_activity == "lean" and float(app.stage.edge_life.weights["lean"]) > 0.9, "cozy button selects lean-back pose")
 	await _capture("03_lean")
@@ -227,7 +227,7 @@ func _run() -> void:
 	await process_frame
 	_advance(3)
 	_check((Vector2(root.position - before) - Vector2(60, 10)).length() < 1.5, "avatar follows cozy corner movement")
-	app._on_action(314)
+	app._on_action("cozy_fold_star")
 	_advance(60)
 	var stars_before_leaving: int = app.playground.cozy_stars_made
 	app.playground.return_home()

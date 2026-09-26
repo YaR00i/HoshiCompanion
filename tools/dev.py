@@ -45,8 +45,8 @@ def run_step(engine: str, log_dir: Path, label: str, args: list[str], timeout: i
     result = {'step': label, 'started': started, 'exit_code': code, 'passed': code == 0 and not errors, 'errors': list(dict.fromkeys(errors)), 'log': str(stdout_path), 'command': command}
     if label == 'posture_capture':
         result['passed'] = result['passed'] and 'POSTURE_CAPTURE_DONE' in text
-    if label in ['runtime', 'chat_voice', 'posture', 'shelf', 'shelf_windows', 'external_windows', 'edge_life', 'edge_views', 'cozy_windows', 'cozy_native', 'clickthrough', 'place', 'context', 'context_views', 'surface', 'hair_collision', 'animation_workshop', 'animation_authoring']:
-        marker = {'runtime': 'HOSHI_TEST_RESULT', 'chat_voice': 'HOSHI_CHAT_VOICE_RESULT', 'posture': 'HOSHI_POSTURE_RESULT', 'shelf': 'HOSHI_SHELF_RESULT', 'shelf_windows': 'HOSHI_SHELF_RESULT', 'external_windows': 'HOSHI_EXTERNAL_RESULT', 'edge_life': 'HOSHI_EDGE_LIFE_RESULT', 'edge_views': 'HOSHI_EDGE_CAPTURE_RESULT', 'cozy_windows': 'HOSHI_COZY_RESULT', 'cozy_native': 'HOSHI_COZY_NATIVE_RESULT', 'clickthrough': 'HOSHI_CLICKTHROUGH_RESULT', 'place': 'HOSHI_PLACE_RESULT', 'context': 'HOSHI_CONTEXT_RESULT', 'context_views': 'HOSHI_CONTEXT_CAPTURE_RESULT', 'surface': 'HOSHI_SURFACE_RESULT', 'hair_collision': 'HOSHI_HAIR_COLLISION_RESULT', 'animation_workshop': 'HOSHI_ANIMATION_WORKSHOP_RESULT', 'animation_authoring': 'HOSHI_ANIMATION_AUTHORING_RESULT'}[label]
+    if label in ['runtime', 'commands', 'chat_voice', 'posture', 'shelf', 'shelf_windows', 'external_windows', 'edge_life', 'edge_views', 'cozy_windows', 'cozy_native', 'clickthrough', 'place', 'context', 'context_views', 'surface', 'hair_collision', 'animation_workshop', 'animation_authoring']:
+        marker = {'runtime': 'HOSHI_TEST_RESULT', 'commands': 'HOSHI_COMMANDS_RESULT', 'chat_voice': 'HOSHI_CHAT_VOICE_RESULT', 'posture': 'HOSHI_POSTURE_RESULT', 'shelf': 'HOSHI_SHELF_RESULT', 'shelf_windows': 'HOSHI_SHELF_RESULT', 'external_windows': 'HOSHI_EXTERNAL_RESULT', 'edge_life': 'HOSHI_EDGE_LIFE_RESULT', 'edge_views': 'HOSHI_EDGE_CAPTURE_RESULT', 'cozy_windows': 'HOSHI_COZY_RESULT', 'cozy_native': 'HOSHI_COZY_NATIVE_RESULT', 'clickthrough': 'HOSHI_CLICKTHROUGH_RESULT', 'place': 'HOSHI_PLACE_RESULT', 'context': 'HOSHI_CONTEXT_RESULT', 'context_views': 'HOSHI_CONTEXT_CAPTURE_RESULT', 'surface': 'HOSHI_SURFACE_RESULT', 'hair_collision': 'HOSHI_HAIR_COLLISION_RESULT', 'animation_workshop': 'HOSHI_ANIMATION_WORKSHOP_RESULT', 'animation_authoring': 'HOSHI_ANIMATION_AUTHORING_RESULT'}[label]
         markers = [line for line in text.splitlines() if marker in line]
         result['markers'] = list(dict.fromkeys(markers))
         result['passed'] = result['passed'] and bool(markers) and any(re.search(r'failures[\s\"\x27:=]+0', line) for line in markers)
@@ -55,7 +55,7 @@ def run_step(engine: str, log_dir: Path, label: str, args: list[str], timeout: i
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=['check', 'import', 'test', 'smoke', 'preview', 'desktop', 'editor', 'walk', 'capture', 'posture', 'poses', 'shelf', 'shelf_windows', 'shelf_demo', 'external_windows', 'edge_life', 'edge_views', 'cozy_windows', 'cozy_native', 'clickthrough', 'place', 'context', 'context_views', 'surface', 'hair_collision', 'animation_workshop', 'animation_authoring', 'workshop', 'workshop_editor'])
+    parser.add_argument('mode', choices=['check', 'import', 'test', 'commands', 'smoke', 'preview', 'desktop', 'editor', 'walk', 'capture', 'posture', 'poses', 'shelf', 'shelf_windows', 'shelf_demo', 'external_windows', 'edge_life', 'edge_views', 'cozy_windows', 'cozy_native', 'clickthrough', 'place', 'context', 'context_views', 'surface', 'hair_collision', 'animation_workshop', 'animation_authoring', 'workshop', 'workshop_editor'])
     opts = parser.parse_args()
     engine = (ROOT / 'godot_path.txt').read_text(encoding='utf-8-sig').strip()
     if not Path(engine).is_file():
@@ -66,10 +66,12 @@ def main() -> int:
     version = subprocess.run([engine, '--version'], capture_output=True, text=True, timeout=15)
     summary = {'engine': version.stdout.strip(), 'mode': opts.mode, 'log_dir': str(log_dir), 'steps': []}
     stages = []
-    if opts.mode in ['check', 'import', 'test', 'preview', 'desktop', 'editor', 'workshop_editor', 'walk', 'capture', 'posture', 'poses', 'shelf', 'shelf_windows', 'shelf_demo', 'external_windows', 'edge_life', 'edge_views', 'cozy_windows', 'cozy_native', 'clickthrough', 'place', 'context', 'context_views', 'surface', 'hair_collision', 'animation_workshop', 'animation_authoring', 'workshop']:
+    if opts.mode in ['check', 'import', 'test', 'commands', 'preview', 'desktop', 'editor', 'workshop_editor', 'walk', 'capture', 'posture', 'poses', 'shelf', 'shelf_windows', 'shelf_demo', 'external_windows', 'edge_life', 'edge_views', 'cozy_windows', 'cozy_native', 'clickthrough', 'place', 'context', 'context_views', 'surface', 'hair_collision', 'animation_workshop', 'animation_authoring', 'workshop']:
         stages.append(('import', ['--headless', '--import']))
     if opts.mode in ['check', 'test']:
         stages.append(('runtime', ['--headless', '--script', 'res://tests/test_runtime.gd']))
+    if opts.mode in ['check', 'commands']:
+        stages.append(('commands', ['--headless', '--script', 'res://tests/test_commands.gd']))
     if opts.mode == 'check':
         stages.append(('chat_voice', ['--headless', '--script', 'res://tests/test_chat_voice_bridge.gd']))
     if opts.mode in ['check', 'posture']:

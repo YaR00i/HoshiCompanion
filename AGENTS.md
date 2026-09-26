@@ -87,3 +87,16 @@
 - Release acceptance: check + shelf_windows + external_windows + cozy_windows +
   context_views + edge_views; external tests must stay fixture-only.
 - Native fixture restore tests must wait for fixture acknowledgement of a non-iconic visible HWND; do not use fixed sleeps as restore readiness.
+
+## Commands (single registry)
+- scripts/hoshi_commands.gd is the only list of manual commands. Menus, hotkeys, cozy/shelf
+  windows and tests refer to commands by NAME ("wave", "cozy_corner"), never by number.
+- menu_id is an internal PopupMenu detail kept equal to the historical numbers; do not use it
+  outside companion_ui.gd. Legacy integers are still accepted by _on_action for compatibility only.
+- Special handling rules live in the registry flags (pauses_places / keeps_intent / keeps_walk),
+  not in hard-coded number lists.
+- A command that plays an authored Godot clip names it in `animation`; tests/test_commands.gd
+  verifies the clip exists and passes seated-motion validation. Authored clips stay in
+  res://animations/ and remain editable in scenes/animation_authoring_3d.tscn.
+- New sources (phone remote, voice, AI) must call companion.run_command(name) and must not
+  invent new command paths.

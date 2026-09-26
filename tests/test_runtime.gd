@@ -10,6 +10,7 @@ const IntentPlanner = preload("res://scripts/intent_planner.gd")
 const InteractionSession = preload("res://scripts/interaction_session.gd")
 const UI = preload("res://scripts/companion_ui.gd")
 const Companion = preload("res://scripts/companion.gd")
+const Commands = preload("res://scripts/hoshi_commands.gd")
 
 var failures: int = 0
 var checks: int = 0
@@ -212,9 +213,9 @@ func _run() -> void:
 	root.add_child(user_interface)
 	await process_frame
 	await process_frame
-	_check(user_interface.action_menu(199) == user_interface.menu, "close command stays easy to find")
-	_check(user_interface.action_menu(150) != null, "light editor is available from the desktop menu")
-	_check(user_interface.action_menu(160) != null and user_interface.action_menu(161) != null, "window diagnostics remain available in tools")
+	_check(user_interface.action_menu("quit") == user_interface.menu, "close command stays easy to find")
+	_check(user_interface.action_menu("light_editor") != null, "light editor is available from the desktop menu")
+	_check(user_interface.action_menu("scan_window_structure") != null and user_interface.action_menu("scan_window_visual") != null, "window diagnostics remain available in tools")
 	var light_changes: Array[Vector3] = []
 	user_interface.light_position_changed.connect(func(value: Vector3): light_changes.append(value))
 	user_interface.set_light_position(Vector3(-1.2, 2.2, 2.4))
@@ -239,8 +240,8 @@ func _run() -> void:
 	_check(not Companion.clickthrough_setting(legacy_input_settings), "explicit full-window capture preference remains available")
 	user_interface.clickthrough_enabled = true
 	user_interface.refresh(state)
-	var click_menu: PopupMenu = user_interface.action_menu(124)
-	var click_item: int = click_menu.get_item_index(124)
+	var click_menu: PopupMenu = user_interface.action_menu("toggle_clickthrough")
+	var click_item: int = click_menu.get_item_index(Commands.menu_id("toggle_clickthrough"))
 	_check(click_item >= 0 and click_menu.is_item_checked(click_item), "menu shows that only Hoshi receives clicks")
 	user_interface.clickthrough_enabled = false
 	user_interface.refresh(state)
