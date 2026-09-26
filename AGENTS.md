@@ -88,15 +88,19 @@
   context_views + edge_views; external tests must stay fixture-only.
 - Native fixture restore tests must wait for fixture acknowledgement of a non-iconic visible HWND; do not use fixed sleeps as restore readiness.
 
-## Commands (single registry)
-- scripts/hoshi_commands.gd is the only list of manual commands. Menus, hotkeys, cozy/shelf
-  windows and tests refer to commands by NAME ("wave", "cozy_corner"), never by number.
-- menu_id is an internal PopupMenu detail kept equal to the historical numbers; do not use it
-  outside companion_ui.gd. Legacy integers are still accepted by _on_action for compatibility only.
-- Special handling rules live in the registry flags (pauses_places / keeps_intent / keeps_walk),
-  not in hard-coded number lists.
-- A command that plays an authored Godot clip names it in `animation`; tests/test_commands.gd
-  verifies the clip exists and passes seated-motion validation. Authored clips stay in
-  res://animations/ and remain editable in scenes/animation_authoring_3d.tscn.
-- New sources (phone remote, voice, AI) must call companion.run_command(name) and must not
-  invent new command paths.
+## Skeleton: commands -> runner -> motions (read docs/SKELETON_RU.md)
+- scripts/hoshi_commands.gd is the only list of commands. Menus, hotkeys, cozy/shelf windows,
+  IntentPlanner steps and tests refer to commands by NAME ("wave", "edge_sway"), never by number.
+- Each command declares `sources`: "user" (menu/keys, later phone/voice) and/or "auto" (Hoshi herself).
+  Every IntentPlanner step must be a registered command with "auto"; test_commands.gd enforces it.
+- scripts/command_runner.gd is the only place that starts a command and decides when a planner
+  step is finished, for both sources. It asks owners (edge_life, idle_life, gait/posture,
+  SurfaceController) and never rotates bones or moves windows itself.
+- scripts/motion_library.gd lists every motion: "clip" (res://animations/, editable in
+  scenes/animation_authoring_3d.tscn) or "code" (procedural for now). Commands link motions by id;
+  the runner takes gesture names from the library instead of hard-coding them.
+- menu_id is an internal PopupMenu detail kept equal to the historical numbers; -1 means no menu item.
+  Legacy integers are still accepted by _on_action for compatibility only.
+- Manual-command rules live in registry flags (pauses_places / keeps_intent / keeps_walk).
+- New sources (phone remote, voice, AI, app adapters) must call companion.run_command(name) and
+  must not invent new command paths or bypass the runner.

@@ -1,9 +1,14 @@
 extends SceneTree
-## Проверка единого списка команд (scripts/hoshi_commands.gd).
-## Не требует VRM: проверяет имена, меню и связь команд с клипами animations/.
+## Проверка скелета «команды → исполнитель → библиотека движений».
+## Не требует VRM. Ловит рассинхрон: команда без движения, клип без записи,
+## шаг автономии, которого нет в списке команд, пункт меню без команды.
 
 const Commands = preload("res://scripts/hoshi_commands.gd")
+const CommandRunner = preload("res://scripts/command_runner.gd")
+const MotionLibrary = preload("res://scripts/motion_library.gd")
 const SeatedMotion = preload("res://scripts/seated_motion.gd")
+const IdleLife = preload("res://scripts/idle_life.gd")
+const EdgeLife = preload("res://scripts/edge_life.gd")
 const UI = preload("res://scripts/companion_ui.gd")
 
 var checks: int = 0
@@ -21,16 +26,30 @@ func _check(ok: bool, label: String) -> void:
 		push_error("FAIL: " + label)
 
 func _run() -> void:
+	_check_registry()
+	_check_library()
+	_check_autonomy_vocabulary()
+	await _check_menus()
+	_finish()
+
+func _check_registry() -> void:
 	var ids: Dictionary = {}
 	var complete: bool = true
 	for command in Commands.names():
 		var id: int = Commands.menu_id(command)
-		complete = complete and id >= 0 and not ids.has(id)
+		if id >= 0:
+			complete = complete and not ids.has(id)
+			ids[id] = command
 		complete = complete and not Commands.title(command).is_empty() and not Commands.group(command).is_empty()
-		ids[id] = command
-	_check(complete, "every command has a title, a group and a unique menu id")
+		var sources: Array = Commands.LIST[command].get("sources", [])
+		complete = complete and not sources.is_empty()
+		for source in sources:
+			complete = complete and source in ["user", "auto"]
+		# Команда без пункта меню должна быть доступна хотя бы самой Хоши.
+		complete = complete and (id >= 0 or Commands.allows(command, "auto"))
+	_check(complete, "every command has a title, a group, valid sources and a unique menu id")
 	_check(Commands.resolve("wave") == "wave" and Commands.resolve(10) == "wave", "names and legacy numbers resolve to the same command")
-	_check(Commands.resolve("no_such_command").is_empty() and Commands.resolve(9999).is_empty(), "unknown commands are rejected")
+	_check(Commands.resolve("no_such_command").is_empty() and Commands.resolve(9999).is_empty() and Commands.from_menu_id(-1).is_empty(), "unknown commands are rejected")
 	var choices_known: bool = true
 	for command in Commands.ACTIVITY_CHOICES + Commands.PLACE_CHOICES + Commands.EDGE_CHOICES:
 		choices_known = choices_known and Commands.has(command)
@@ -38,27 +57,78 @@ func _run() -> void:
 	var edge_values: Array[String] = []
 	for command in Commands.EDGE_CHOICES:
 		edge_values.append(Commands.edge_activity(command))
-	_check(str(edge_values) == str(UI.EDGE_ACTIVITIES), "edge activity commands follow the UI list order")
+	_check(str(edge_values) == str(UI.EDGE_ACTIVITIES), "seated-mode commands follow the UI list order")
+	_check(Commands.allows("wave", "user") and Commands.allows("wave", "auto") and not Commands.allows("quit", "auto"), "sources separate what Hoshi may do on her own")
 
-	# Анимации, которые правят в Godot: каждая ссылка команды ведёт на живой клип.
-	var bound_clips: Dictionary = {}
+func _check_library() -> void:
+	var linked: bool = true
 	for command in Commands.names():
-		var clip_name: String = Commands.animation(command)
-		if clip_name.is_empty():
-			continue
-		bound_clips[clip_name] = true
-		var path: String = Commands.animation_path(command)
+		var motion: String = Commands.animation(command)
+		if not motion.is_empty() and not MotionLibrary.has(motion):
+			linked = false
+			push_error("Command %s points to unknown motion %s" % [command, motion])
+	_check(linked, "every command animation exists in the motion library")
+	for id in MotionLibrary.editable_clips():
+		var path: String = MotionLibrary.path(id)
 		var clip: Animation = load(path) as Animation if ResourceLoader.exists(path) else null
-		_check(clip != null, "%s uses an existing clip %s" % [command, path])
-		if clip != null and SeatedMotion.DURATIONS.has(clip_name):
-			_check(SeatedMotion.validation_error(clip_name, clip).is_empty(), "%s clip passes seated-motion validation" % clip_name)
-	for clip_name in SeatedMotion.kinds():
-		if not bound_clips.has(clip_name):
-			print("INFO: clip %s is used only by Hoshi's own choices, no command plays it" % clip_name)
-	var fold_commands: Array[String] = Commands.commands_for_animation("fold")
-	_check(fold_commands.size() == 1 and fold_commands[0] == "cozy_fold_star", "a clip can be traced back to its command")
+		_check(clip != null, "%s clip file loads: %s" % [id, path])
+		_check(MotionLibrary.loader_path(id) == path, "%s is the same file the runtime loads" % id)
+		var gesture: String = MotionLibrary.gesture(id)
+		if clip != null and SeatedMotion.DURATIONS.has(gesture):
+			_check(SeatedMotion.validation_error(gesture, clip).is_empty(), "%s passes seated-motion validation" % id)
+	var registered: bool = true
+	for kind in SeatedMotion.kinds() + ["sketch"]:
+		if MotionLibrary.find("edge_life", kind).is_empty():
+			registered = false
+			push_error("Seated clip %s is missing from motion_library.gd" % kind)
+	_check(registered, "every seated clip file is listed in the motion library")
+	var players_known: bool = true
+	for gesture in IdleLife.new().weights:
+		players_known = players_known and not MotionLibrary.find("idle_life", str(gesture)).is_empty()
+	for gesture in EdgeLife.new().weights:
+		players_known = players_known and not MotionLibrary.find("edge_life", str(gesture)).is_empty()
+	_check(players_known, "every standing and seated gesture is listed in the motion library")
+	var fold_commands: Array[String] = Commands.commands_for_animation("seated_fold")
+	_check(fold_commands.size() == 1 and fold_commands[0] == "edge_fold", "a clip can be traced back to its command")
+	var shown: Array[String] = []
+	for command in Commands.names():
+		if not Commands.animation_path(command).is_empty():
+			shown.append(command)
+	print("INFO: commands with editable Godot clips: ", ", ".join(shown))
 
-	# Меню: каждый пункт соответствует команде из списка.
+## Все шаги планов IntentPlanner — это команды, которые разрешены самой Хоши.
+func _check_autonomy_vocabulary() -> void:
+	var source: String = FileAccess.get_file_as_string("res://scripts/intent_planner.gd")
+	var steps: Dictionary = {}
+	var block := RegEx.new()
+	block.compile("\"steps\": \\[([^\\]]*)\\]")
+	var word := RegEx.new()
+	word.compile("\"(\\w+)\"")
+	for found in block.search_all(source):
+		var body: String = found.get_string(1)
+		for item in word.search_all(body):
+			var name: String = item.get_string(1)
+			if body.contains("\"%s\" + side" % name):
+				steps[name + "left"] = true
+				steps[name + "right"] = true
+			else:
+				steps[name] = true
+	_check(steps.size() >= 20, "planner vocabulary was read (%d steps)" % steps.size())
+	var known: bool = true
+	for step in steps:
+		var runnable: bool = str(step) in CommandRunner.FLOOR_STEPS or str(step) in CommandRunner.SURFACE_STEPS
+		if not Commands.allows(str(step), "auto") or not runnable:
+			known = false
+			push_error("Planner step %s is not an autonomous command in the runner" % step)
+	_check(known, "every planner step is a registered command Hoshi may run herself")
+	var runner_known: bool = true
+	for step in CommandRunner.FLOOR_STEPS + CommandRunner.SURFACE_STEPS:
+		runner_known = runner_known and Commands.allows(step, "auto")
+	for command in CommandRunner.USER_SUPPORT_COMMANDS:
+		runner_known = runner_known and Commands.allows(command, "user")
+	_check(runner_known, "runner only executes registered commands")
+
+func _check_menus() -> void:
 	var user_interface = UI.new()
 	root.add_child(user_interface)
 	await process_frame
@@ -77,16 +147,16 @@ func _run() -> void:
 			if id == 999:
 				continue
 			seen += 1
-			if Commands.from_menu_id(id).is_empty():
+			var command: String = Commands.from_menu_id(id)
+			if command.is_empty() or not Commands.allows(command, "user"):
 				menu_ok = false
-				push_error("Menu item without command: %s (%d)" % [popup.get_item_text(index), id])
-	_check(menu_ok and seen > 40, "every desktop menu item maps to a named command (%d items)" % seen)
+				push_error("Menu item without user command: %s (%d)" % [popup.get_item_text(index), id])
+	_check(menu_ok and seen > 40, "every desktop menu item maps to a user command (%d items)" % seen)
 	var emitted: Array[String] = []
 	user_interface.action_requested.connect(func(command: String): emitted.append(command))
 	user_interface._on_menu_id(Commands.menu_id("wave"))
 	_check(emitted.size() == 1 and emitted[0] == "wave", "menu click is delivered as the command name")
 	user_interface.queue_free()
-	_finish()
 
 func _finish() -> void:
 	print("HOSHI_COMMANDS_RESULT checks=%d failures=%d" % [checks, failures])

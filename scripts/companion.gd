@@ -14,6 +14,7 @@ const SurfaceProbe = preload("res://scripts/window_surface_probe.gd")
 const InteractionSession = preload("res://scripts/interaction_session.gd")
 const ChatVoiceBridge = preload("res://scripts/chat_voice_bridge.gd")
 const Commands = preload("res://scripts/hoshi_commands.gd")
+const CommandRunner = preload("res://scripts/command_runner.gd")
 const SETTINGS_PATH: String = "user://companion.cfg"
 const DEFAULT_AVATAR: String = "res://assets/Hoshi_v1.vrm"
 const DEFAULT_LIGHT_POSITION: Vector3 = Vector3(-1.2, 2.2, 2.4)
@@ -31,6 +32,7 @@ var places = PlaceDirector.new()
 var playground = Playground.new()
 var interaction = InteractionSession.new()
 var chat_voice_bridge = ChatVoiceBridge.new()
+var runner = CommandRunner.new()
 var stage
 var ui
 var background: ColorRect
@@ -62,7 +64,6 @@ var _rest_after_walk: bool = false
 var _floor_intent_step_started: bool = false
 var _floor_intent_wait: float = 4.0
 var _surface_intent_step_started: bool = false
-var _surface_step_wait: float = 0.0
 var _surface_intent_wait: float = 5.0
 var _test_mode: bool = false
 var _settings: ConfigFile = ConfigFile.new()
@@ -99,6 +100,7 @@ func _ready() -> void:
 	add_child(ui)
 	ui.clickthrough_enabled = host.mask_enabled
 	playground.setup(self)
+	runner.setup(self)
 	ui.action_requested.connect(_on_action)
 	ui.light_position_changed.connect(_on_light_position_changed)
 	ui.shading_changed.connect(_on_shading_changed)
@@ -351,7 +353,7 @@ func _abort_autonomous_intent(reason: String) -> void:
 		playground.surface.cancel_scoot()
 	_floor_intent_step_started = false
 	_surface_intent_step_started = false
-	_surface_step_wait = 0.0
+	runner.reset_pause()
 	_floor_intent_wait = maxf(_floor_intent_wait, 2.0)
 	_surface_intent_wait = maxf(_surface_intent_wait, 2.0)
 
@@ -372,58 +374,19 @@ func _tick_floor_intent(delta: float, context: Dictionary, cursor_gaze: Vector2,
 	if step.is_empty():
 		_abort_autonomous_intent("empty_step")
 		return
+	# Шаг плана — это обычная команда из hoshi_commands.gd; как её запустить
+	# и когда она закончена, знает command_runner.gd (тот же, что и для кнопок).
 	if not _floor_intent_step_started:
-		match step:
-			"walk":
-				if not bool(context.get("can_walk", false)):
-					_abort_autonomous_intent("walk_unavailable")
-					return
-				_start_walk(true, true)
-				if not walker.active():
-					_abort_autonomous_intent("walk_failed")
-					return
-				_floor_intent_step_started = true
-			"look":
-				if not bool(context.get("can_observe", false)):
-					_abort_autonomous_intent("observe_unavailable")
-					return
-				director.request_observe(cursor_gaze, cursor_near)
-				_floor_intent_step_started = true
-			"sit":
-				if not bool(context.get("can_rest", false)):
-					_abort_autonomous_intent("rest_unavailable")
-					return
-				_request_sit(true)
-				_floor_intent_step_started = true
-			"wave":
-				if not bool(context.get("can_social", false)):
-					_abort_autonomous_intent("social_unavailable")
-					return
-				state.wave()
-				_floor_intent_step_started = true
-				_finish_floor_intent_step()
-			"floor_peek_left", "floor_peek_right", "floor_weight_left", "floor_weight_right", "floor_hands", "floor_shoulders":
-				var gesture_name: String = step.trim_prefix("floor_")
-				if not stage.idle_life.request_gesture(gesture_name):
-					_abort_autonomous_intent("floor_gesture_unavailable")
-					return
-				_floor_intent_step_started = true
-			_:
-				_abort_autonomous_intent("unsupported_floor_step")
+		var reason: String = runner.start(step, "auto", {"where": "floor", "context": context, "cursor_gaze": cursor_gaze, "cursor_near": cursor_near})
+		if not reason.is_empty():
+			_abort_autonomous_intent(reason)
+			return
+		_floor_intent_step_started = true
+		if runner.is_instant(step):
+			_finish_floor_intent_step()
 		return
-	match step:
-		"walk":
-			if not walker.active():
-				_finish_floor_intent_step()
-		"look":
-			if not director.look_active():
-				_finish_floor_intent_step()
-		"sit":
-			if state.posture.mode == "seated":
-				_finish_floor_intent_step()
-		"floor_peek_left", "floor_peek_right", "floor_weight_left", "floor_weight_right", "floor_hands", "floor_shoulders":
-			if not stage.idle_life.forced_active():
-				_finish_floor_intent_step()
+	if runner.is_done(step, delta):
+		_finish_floor_intent_step()
 
 func _surface_intent_delay() -> float:
 	match state.activity:
@@ -433,7 +396,7 @@ func _surface_intent_delay() -> float:
 
 func _finish_surface_intent_step() -> void:
 	_surface_intent_step_started = false
-	_surface_step_wait = 0.0
+	runner.reset_pause()
 	var finished: String = intent_planner.complete_step()
 	if not finished.is_empty() and intent_planner.active_intent.is_empty():
 		_surface_intent_wait = _surface_intent_delay()
@@ -446,7 +409,7 @@ func _tick_surface_intent(delta: float, context: Dictionary, cursor_gaze: Vector
 		return
 	if intent_planner.active_intent.is_empty():
 		_surface_intent_step_started = false
-		_surface_step_wait = 0.0
+		runner.reset_pause()
 		_surface_intent_wait = maxf(0.0, _surface_intent_wait - delta)
 		if _surface_intent_wait > 0.0 or not state.autonomy_enabled or not state.edge_activity in ["auto", "sway"] or stage.edge_life.forced_active() or bool(context.get("blocked", false)):
 			return
@@ -459,91 +422,19 @@ func _tick_surface_intent(delta: float, context: Dictionary, cursor_gaze: Vector
 		_abort_autonomous_intent("empty_surface_step")
 		return
 	if not _surface_intent_step_started:
-		match step:
-			"surface_scoot":
-				if not playground.active() or not playground.surface.request_scoot():
-					_abort_autonomous_intent("surface_scoot_unavailable")
-					return
-				_surface_intent_step_started = true
-			"surface_walk":
-				if not playground.active() or not playground.surface.request_walk():
-					_abort_autonomous_intent("surface_walk_unavailable")
-					return
-				_surface_intent_step_started = true
-			"surface_settle":
-				_surface_step_wait = 1.4 if state.activity == "playful" else (3.2 if state.activity == "quiet" else 2.2)
-				_surface_intent_step_started = true
-			"side_left", "side_right":
-				var side_name: String = step.trim_prefix("side_")
-				if not playground.active() or not playground.surface.request_side(side_name, false):
-					_abort_autonomous_intent("side_unavailable")
-					return
-				_surface_intent_step_started = true
-			"side_wait":
-				_surface_step_wait = 4.0 if state.activity == "playful" else 5.5
-				_surface_intent_step_started = true
-			"side_return":
-				if not playground.active() or not playground.surface.request_sit_top():
-					_abort_autonomous_intent("side_return_failed")
-					return
-				_surface_intent_step_started = true
-			"return_floor":
-				if not playground.active():
-					_finish_surface_intent_step()
-					return
-				playground.return_home()
-				_surface_intent_step_started = true
-			"look":
-				if not bool(context.get("can_observe", true)):
-					_abort_autonomous_intent("surface_observe_unavailable")
-					return
-				director.request_observe(cursor_gaze, cursor_near)
-				_surface_intent_step_started = true
-			"wave":
-				state.wave()
-				_surface_intent_step_started = true
-				_finish_surface_intent_step()
-			"edge_peek", "edge_balance", "edge_swing", "edge_lean", "edge_sway", "edge_hum", "edge_nod", "edge_sketch", "edge_fold":
-				var edge_gesture: String = step.trim_prefix("edge_")
-				if not playground.active() or state.posture.mode != "seated" or (edge_gesture in ["sketch", "fold"] and not playground.cozy_mode) or not stage.edge_life.request_gesture(edge_gesture):
-					_abort_autonomous_intent("edge_gesture_unavailable")
-					return
-				_surface_intent_step_started = true
-			"floor_peek_left", "floor_peek_right", "floor_weight_left", "floor_weight_right", "floor_hands", "floor_shoulders":
-				var floor_gesture: String = step.trim_prefix("floor_")
-				if playground.active() or state.posture.mode != "standing" or not stage.idle_life.request_gesture(floor_gesture):
-					_abort_autonomous_intent("return_gesture_unavailable")
-					return
-				_surface_intent_step_started = true
-			_:
-				_abort_autonomous_intent("unsupported_surface_step")
+		var reason: String = runner.start(step, "auto", {"where": "surface", "context": context, "cursor_gaze": cursor_gaze, "cursor_near": cursor_near})
+		if reason == CommandRunner.ALREADY_DONE:
+			_finish_surface_intent_step()
+			return
+		if not reason.is_empty():
+			_abort_autonomous_intent(reason)
+			return
+		_surface_intent_step_started = true
+		if runner.is_instant(step):
+			_finish_surface_intent_step()
 		return
-	match step:
-		"surface_walk", "surface_scoot":
-			if playground.active() and playground.surface.mode == "sit" and state.posture.mode == "seated":
-				_finish_surface_intent_step()
-		"surface_settle", "side_wait":
-			_surface_step_wait = maxf(0.0, _surface_step_wait - delta)
-			if _surface_step_wait <= 0.0:
-				_finish_surface_intent_step()
-		"side_left", "side_right":
-			if playground.active() and playground.surface.mode == step:
-				_finish_surface_intent_step()
-		"side_return":
-			if playground.active() and playground.surface.mode == "sit" and state.posture.mode == "seated":
-				_finish_surface_intent_step()
-		"return_floor":
-			if not playground.active() and state.posture.mode == "standing":
-				_finish_surface_intent_step()
-		"look":
-			if not director.look_active():
-				_finish_surface_intent_step()
-		"edge_peek", "edge_balance", "edge_swing", "edge_lean", "edge_sway", "edge_hum", "edge_nod", "edge_sketch", "edge_fold":
-			if not stage.edge_life.forced_active():
-				_finish_surface_intent_step()
-		"floor_peek_left", "floor_peek_right", "floor_weight_left", "floor_weight_right", "floor_hands", "floor_shoulders":
-			if not stage.idle_life.forced_active():
-				_finish_surface_intent_step()
+	if runner.is_done(step, delta):
+		_finish_surface_intent_step()
 
 func _start_walk(automatic: bool, planner_owned: bool = false) -> void:
 	if playground.active():
@@ -866,6 +757,9 @@ func _on_action(command: Variant) -> void:
 	if action.is_empty():
 		push_warning("Unknown Hoshi command: %s" % str(command))
 		return
+	if not Commands.allows(action, "user"):
+		push_warning("Hoshi command %s is not available from the menu or remote" % action)
+		return
 	_abort_autonomous_intent("manual_action")
 	if action == "quit":
 		_quit()
@@ -911,16 +805,8 @@ func _on_action(command: Variant) -> void:
 		ui.refresh(state, playground.label(), walker.active())
 		_save_settings()
 		return
-	if action == "cozy_sketch":
-		if playground.active() and playground.cozy_mode and playground.phase == "attached" and state.posture.mode == "seated" and state.motion_enabled and not state.dozing:
-			stage.edge_life.request_gesture("sketch")
-		return
-	if action in ["cozy_fold_star", "cozy_admire_star"]:
-		if playground.active() and playground.cozy_mode and playground.phase == "attached" and state.posture.mode == "seated" and state.motion_enabled and not state.dozing:
-			if action == "cozy_fold_star":
-				stage.edge_life.request_gesture("fold")
-			elif playground.cozy_stars_made > 0:
-				stage.edge_life.request_gesture("admire_star")
+	if action in ["edge_sketch", "edge_fold", "edge_admire_star"]:
+		runner.start(action, "user")
 		return
 	if not Commands.edge_activity(action).is_empty():
 		stage.edge_life.cancel_forced()
@@ -928,6 +814,13 @@ func _on_action(command: Variant) -> void:
 		ui.refresh(state, playground.label(), walker.active())
 		_save_settings()
 		return
+	if action in CommandRunner.USER_SUPPORT_COMMANDS:
+		var support_reason: String = runner.start(action, "user")
+		if support_reason.is_empty() or playground.active() or action == "return_floor":
+			ui.shelf_active = playground.active()
+			ui.refresh(state, playground.label(), walker.active())
+			_save_settings()
+			return
 	if playground.handle_action(action):
 		ui.shelf_active = playground.active()
 		ui.refresh(state, playground.label(), walker.active())
@@ -940,11 +833,7 @@ func _on_action(command: Variant) -> void:
 		_stop_walk()
 	director.user_interaction()
 	match action:
-		"wave":
-			if interaction.accept_wave():
-				state.wave()
-				if interaction.allow_bubble():
-					ui.say("Я тут!")
+		"wave": runner.start("wave", "user")
 		"pet":
 			if interaction.accept_button_pet():
 				state.pet()
@@ -968,9 +857,9 @@ func _on_action(command: Variant) -> void:
 		"mood_relaxed": state.set_mood("relaxed")
 		"mood_surprised": state.set_mood("surprised")
 		"mood_sad": state.set_mood("sad")
-		"walk": _start_walk(false)
+		"walk": runner.start("walk", "user")
 		"stop": _stop_all_actions()
-		"sit": _request_sit()
+		"sit": runner.start("sit", "user")
 		"stand": _request_stand()
 		"to_desktop": _switch_mode(false)
 		"size_small", "size_normal", "size_large":

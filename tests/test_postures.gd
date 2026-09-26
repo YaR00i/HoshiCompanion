@@ -137,6 +137,7 @@ func _run() -> void:
 	_check(app.ui.panel.get_combined_minimum_size().y <= 580.0, "expanded controls still fit the preview")
 	_check_timers()
 	_check_autonomous_sequence()
+	_check_commands_through_runner()
 	metrics = {"max_foot_drift_m": max_foot_drift, "max_pelvis_frame_motion_m": max_joint_step}
 	var report: Dictionary = {"checks": checks, "failures": failures, "metrics": metrics, "engine": Engine.get_version_info()}
 	var file: FileAccess = FileAccess.open("user://posture_checks.json", FileAccess.WRITE)
@@ -226,3 +227,42 @@ func _check_seated_arms(label: String) -> void:
 			"%s arm %d: elbow is tucked with a small outward clearance" % [label, side])
 		_check(wrist.distance_to(expected) < 0.003,
 			"%s arm %d: wrist still rests on its knee target within 3 mm" % [label, side])
+
+## Шаг плана автономии и кнопка меню проходят через один исполнитель команд.
+func _check_commands_through_runner() -> void:
+	app._on_action("stand")
+	_frames(150)
+	app.state.autonomy_enabled = true
+	app.director.enabled = true
+	var planner = app.intent_planner
+	planner.interrupt("test")
+	app._floor_intent_step_started = false
+	var context: Dictionary = {"can_observe": true, "can_social": true}
+	_check(planner.activate({"name": "observe", "variant": "test_look_weight", "steps": ["look", "floor_weight_left"]}), "test plan activates")
+	app._tick_floor_intent(1.0 / 30.0, context, Vector2(0.3, 0.0), true)
+	_check(app._floor_intent_step_started and app.director.look_active(), "planner step 'look' starts through the command runner")
+	var reached_gesture: bool = false
+	for index in range(30 * 20):
+		app._tick_floor_intent(1.0 / 30.0, context, Vector2(0.3, 0.0), true)
+		app.director.decisions_enabled = false
+		app.director.tick(1.0 / 30.0, {"blocked": false, "cursor_gaze": Vector2(0.3, 0.0), "cursor_near": true})
+		app.stage.idle_life.tick(1.0 / 30.0, app.state, false)
+		if planner.current_step() == "floor_weight_left" and app.stage.idle_life.forced_active():
+			reached_gesture = true
+		if planner.active_intent.is_empty():
+			break
+	_check(reached_gesture, "planner step 'floor_weight_left' plays the library gesture stand_weight_left")
+	_check(planner.active_intent.is_empty(), "plan completes when the runner reports both steps done")
+	planner.interrupt("test")
+	app._floor_intent_step_started = false
+	planner.activate({"name": "observe", "variant": "test_forbidden", "steps": ["quit"]})
+	app._tick_floor_intent(1.0 / 30.0, context, Vector2.ZERO, false)
+	_check(planner.active_intent.is_empty() and planner.last_interrupt_reason == "unsupported_floor_step", "autonomy cannot run a user-only command such as quit")
+	app.state.autonomy_enabled = false
+	for index in range(10):
+		app.interaction.tick(0.5, false)
+	app.run_command("wave")
+	_check(app.state._wave_left > 0.0, "run_command('wave') waves like the menu button")
+	app.run_command("edge_sway")
+	_check(not app.stage.edge_life.forced_active(), "an autonomy-only command is refused from the menu path")
+

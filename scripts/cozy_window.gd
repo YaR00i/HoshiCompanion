@@ -51,15 +51,15 @@ func _ready() -> void:
 	row.position = Vector2(18, 112)
 	row.add_theme_constant_override("separation", 5)
 	panel.add_child(row)
-	_add_button(row, "Блокнот", func(): activity_requested.emit("cozy_sketch"))
+	_add_button(row, "Блокнот", func(): activity_requested.emit("edge_sketch"))
 	var fold_button := Button.new()
 	fold_button.text = "✦"
 	fold_button.custom_minimum_size = Vector2(32, 32)
 	fold_button.tooltip_text = "Сложить бумажную звёздочку"
-	fold_button.pressed.connect(func(): activity_requested.emit("cozy_fold_star"))
+	fold_button.pressed.connect(func(): activity_requested.emit("edge_fold"))
 	row.add_child(fold_button)
-	_add_button(row, "Ножками", func(): activity_requested.emit("edge_swing"))
-	_add_button(row, "Откинуться", func(): activity_requested.emit("edge_lean"))
+	_add_button(row, "Ножками", func(): activity_requested.emit("edge_mode_swing"))
+	_add_button(row, "Откинуться", func(): activity_requested.emit("edge_mode_lean"))
 	_add_button(row, "На пол", func(): leave_requested.emit())
 	star_card = Button.new()
 	star_card.name = "StarCard"
@@ -68,7 +68,7 @@ func _ready() -> void:
 	star_card.position = Vector2(350, 39)
 	star_card.size = Vector2(65, 62)
 	star_card.tooltip_text = "Сложить первую звёздочку"
-	star_card.pressed.connect(func(): activity_requested.emit("cozy_admire_star" if star_count > 0 else "cozy_fold_star"))
+	star_card.pressed.connect(func(): activity_requested.emit("edge_admire_star" if star_count > 0 else "edge_fold"))
 	panel.add_child(star_card)
 	var close := Button.new()
 	close.text = "×"

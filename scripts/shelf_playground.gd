@@ -360,33 +360,6 @@ func handle_action(action: String) -> bool:
 	if action == "shelf_demo":
 		show_demo()
 		return true
-	if action == "return_floor":
-		return_home()
-		return true
-	if action == "surface_walk":
-		if surface.request_walk():
-			return true
-		if active():
-			app.ui.say("Здесь маловато места для прогулки")
-			return true
-	if action == "surface_scoot":
-		if surface.request_scoot():
-			return true
-		if active():
-			app.ui.say("Здесь сейчас не подвинуться сидя")
-			return true
-	if action in ["surface_lean_left", "surface_lean_right"]:
-		if surface.request_side("left" if action == "surface_lean_left" else "right"):
-			return true
-		if active():
-			app.ui.say("К этому боку сейчас не прислониться")
-			return true
-	if action == "surface_sit_back":
-		if surface.request_sit_top():
-			return true
-		if active():
-			app.ui.say("Я уже на краю")
-			return true
 	if not active():
 		return false
 	if action in ["walk", "stand", "return_bottom"]:
