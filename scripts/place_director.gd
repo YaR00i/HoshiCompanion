@@ -6,7 +6,8 @@ extends RefCounted
 ## окно; если он надолго ушёл в другое — возвращается в уголок. Все пороги и
 ## решения здесь, а смотреть на окна и двигаться будут другие (FocusTracker,
 ## shelf_playground). Развёрнутые на весь экран и полноэкранные окна пока не
-## подходят: сверху у них нет места (см. docs/SUPPORTS_RU.md).
+## подходят: сверху у них нет места — к развёрнутому окну Хоши подлетает на
+## своём уголке; к полноэкранному (видео, игра) не лезет (см. docs/SUPPORTS_RU.md).
 
 ## Сколько секунд подряд нужно пробыть в окне, чтобы Хоши пришла туда.
 const FOCUS_DWELL := {"quiet": 300.0, "normal": 180.0, "playful": 120.0}
@@ -54,9 +55,23 @@ static func focus_ready(focus: Dictionary, dwell: float, activity: String) -> bo
 		return false
 	return dwell >= float(FOCUS_DWELL.get(activity, FOCUS_DWELL["normal"]))
 
-## Куда идти, когда пора отдыхать: "window" — на активное окно, иначе "cozy".
+## Человек долго работает в РАЗВЁРНУТОМ окне: сесть на него некуда, поэтому
+## Хоши подлетает к нему на своём уголке («хочу к тебе поближе»).
+static func focus_near_ready(focus: Dictionary, dwell: float, activity: String) -> bool:
+	if focus.is_empty() or str(focus.get("state", "")) != "maximized" or str(focus.get("hwnd", "0")) in ["", "0"]:
+		return false
+	return dwell >= float(FOCUS_DWELL.get(activity, FOCUS_DWELL["normal"]))
+
+## Куда идти, когда пора отдыхать: "window" — на активное окно; иначе "cozy"
+## (если окно развёрнуто — уголок потом подлетит ближе, см. focus_should_approach).
 static func focus_destination(focus: Dictionary, dwell: float, activity: String) -> String:
 	return "window" if focus_ready(focus, dwell, activity) else "cozy"
+
+## Пора ли уголку подлететь к человеку. already_near — уже прилетели к этому окну.
+func focus_should_approach(where: String, focus: Dictionary, dwell: float, activity: String, already_near: bool) -> bool:
+	if _mode != "focus" or move_cooldown > 0.0 or pause_left > 0.0 or where != "cozy" or already_near:
+		return false
+	return focus_near_ready(focus, dwell, activity)
 
 ## Пора ли уйти с текущего места. where: "cozy" / "focus_window" / "other".
 ## away — сколько секунд окно, на котором сидит Хоши, не активно.

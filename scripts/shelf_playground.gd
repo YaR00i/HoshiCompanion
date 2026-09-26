@@ -23,6 +23,13 @@ var _pick_cursor: Vector2 = Vector2(-1, -1)
 var chosen_by_focus: bool = false
 ## Если окно не подошло при подготовке прыжка — не на пол, а в свой уголок.
 var _fallback_on_reject: bool = false
+## «Хочу к тебе поближе»: уютный уголок плавно перелетает, Хоши едет на нём.
+const GLIDE_TIME: float = 1.6
+var _glide_from: Vector2i = Vector2i.ZERO
+var _glide_to: Vector2i = Vector2i.ZERO
+var _glide_age: float = -1.0
+## Окно человека, к которому уголок уже прилетел (чтобы не летать повторно).
+var cozy_near_hwnd: String = ""
 var _countdown_number: int = -1
 var _start_handle: int = 0
 var _start_wait: float = 0.0
@@ -129,6 +136,7 @@ func add_cozy_star() -> void:
 	shelf.set_star_count(mini(3, cozy_stars_made), cozy_stars_made)
 
 func before_tick(delta: float) -> void:
+	_tick_glide(delta)
 	if phase in ["selection_start", "auto_selection_start"]:
 		_start_wait -= delta
 		if _start_wait <= 0.0:
@@ -347,6 +355,7 @@ func _shelf_usable() -> bool:
 	return is_instance_valid(shelf) and not shelf.is_queued_for_deletion() and shelf.visible and shelf.mode == Window.MODE_WINDOWED
 
 func return_home(walk_after: bool = false) -> void:
+	_glide_age = -1.0
 	surface.reset()
 	_choice_request = {}
 	_auto_choice = false
@@ -366,6 +375,7 @@ func return_home(walk_after: bool = false) -> void:
 	port.note_user_interaction()
 
 func begin_drag() -> void:
+	_glide_age = -1.0
 	surface.reset()
 	if phase in ["selection_start", "selecting", "auto_selection_start", "auto_selecting", "ledge_scan"]:
 		release_for_mode_change()
@@ -403,6 +413,7 @@ func cancel_queued_walk() -> void:
 	_walk_after = false
 
 func release_for_mode_change() -> void:
+	_glide_age = -1.0
 	surface.reset()
 	_choice_request = {}
 	_auto_choice = false
@@ -491,6 +502,65 @@ func label() -> String:
 		"settling": return "Снова встаёт на пол"
 	return "Полочка свободна — нажми «Посадить»"
 
+func gliding() -> bool:
+	return _glide_age >= 0.0
+
+## Куда перелететь уголку, чтобы быть рядом с человеком (указатель мыши), но
+## не закрывать место, где он работает. (-1, -1) — лететь незачем или некуда.
+func cozy_near_target(cursor: Vector2i) -> Vector2i:
+	if not cozy_mode or not is_instance_valid(shelf):
+		return Vector2i(-1, -1)
+	var area: Rect2i = app.host.usable_area(shelf.current_screen)
+	if not area.has_point(cursor):
+		return Vector2i(-1, -1) # человек на другом мониторе: туда пока не летаем
+	var target: Vector2i = cozy_near_position(area, shelf.size, cursor, app.host.body_pixels)
+	if target.x < 0 or Vector2(target - shelf.position).length() < 160.0:
+		return Vector2i(-1, -1)
+	return target
+
+## Чистая геометрия: уголок у нижней части экрана, сбоку от указателя.
+## Вместе с сидящей над ним Хоши он не должен накрывать указатель.
+static func cozy_near_position(area: Rect2i, size: Vector2i, cursor: Vector2i, body_pixels: int) -> Vector2i:
+	var y: int = area.end.y - maxi(250, int(float(body_pixels) * 0.55 + 76.0))
+	var keep_away: int = 220
+	var min_x: int = area.position.x + 12
+	var max_x: int = maxi(min_x, area.end.x - size.x - 48)
+	var best := Vector2i(-1, -1)
+	var best_score: float = INF
+	for wanted in [cursor.x + keep_away, cursor.x - keep_away - size.x]:
+		var x: int = clampi(wanted, min_x, max_x)
+		var zone := Rect2i(x, y - body_pixels, size.x, size.y + body_pixels).grow(24)
+		if zone.has_point(cursor):
+			continue
+		var score: float = absf(float(x) + float(size.x) * 0.5 - float(cursor.x))
+		if score < best_score:
+			best_score = score
+			best = Vector2i(x, y)
+	return best
+
+## Начать перелёт уголка; Хоши сидит на нём и едет вместе с ним.
+func glide_cozy_to(target: Vector2i) -> bool:
+	if not cozy_mode or phase != "attached" or not is_instance_valid(shelf) or target.x < 0 or surface.busy():
+		return false
+	_glide_from = shelf.position
+	_glide_to = target
+	_glide_age = 0.0
+	return true
+
+func _tick_glide(delta: float) -> void:
+	if _glide_age < 0.0:
+		return
+	if not cozy_mode or phase != "attached" or not is_instance_valid(shelf):
+		_glide_age = -1.0
+		return
+	_glide_age += clampf(delta, 0.0, 0.1)
+	var t: float = smoothstep(0.0, 1.0, clampf(_glide_age / GLIDE_TIME, 0.0, 1.0))
+	shelf.position = Vector2i(Vector2(_glide_from).lerp(Vector2(_glide_to), t).round())
+	if _glide_age >= GLIDE_TIME:
+		_glide_age = -1.0
+		app.state.notice()
+		port.say("Вот, теперь я рядом")
+
 ## Номер окна, на котором сидит Хоши ("" — не на чужом окне).
 func support_hwnd() -> String:
 	return str(external.snapshot.get("hwnd", "")) if external_mode else ""
@@ -563,7 +633,7 @@ func surface_walking() -> bool:
 	return active() and surface.walking()
 
 func surface_busy() -> bool:
-	return active() and surface.busy()
+	return active() and (surface.busy() or gliding())
 
 func surface_context() -> String:
 	return surface.context_action() if active() else "idle"

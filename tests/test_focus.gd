@@ -4,6 +4,7 @@ extends SceneTree
 const FocusTracker = preload("res://scripts/focus_tracker.gd")
 const Place = preload("res://scripts/place_director.gd")
 const Commands = preload("res://scripts/hoshi_commands.gd")
+const Playground = preload("res://scripts/shelf_playground.gd")
 
 var checks: int = 0
 var failures: int = 0
@@ -55,6 +56,24 @@ func _run() -> void:
 	place.change_mode("cozy")
 	_check(not place.focus_should_leave("cozy", normal, 999.0, 0.0, "normal"), "other rest modes never move her by focus")
 
+	# Развёрнутое окно: сесть сверху некуда — уголок подлетает поближе.
+	var maximized := {"hwnd": "303", "app": "blender.exe", "state": "maximized"}
+	_check(Place.focus_destination(maximized, 999.0, "normal") == "cozy" and Place.focus_near_ready(maximized, 200.0, "normal"), "a long session in a maximized window: go home first, then fly closer")
+	_check(not Place.focus_near_ready(maximized, 60.0, "normal") and not Place.focus_near_ready({"hwnd": "404", "state": "fullscreen"}, 999.0, "normal"), "short visits and fullscreen video never pull the corner")
+	place.move_cooldown = 0.0
+	place.change_mode("focus")
+	_check(place.focus_should_approach("cozy", maximized, 200.0, "normal", false), "the corner flies to a user who works long in a maximized window")
+	_check(not place.focus_should_approach("cozy", maximized, 200.0, "normal", true), "once near that window it does not fly again")
+	_check(not place.focus_should_approach("focus_window", maximized, 200.0, "normal", false), "only the corner flies, not a borrowed window")
+	var area := Rect2i(0, 0, 1920, 1040)
+	var size := Vector2i(460, 170)
+	var cursor := Vector2i(900, 900)
+	var spot: Vector2i = Playground.cozy_near_position(area, size, cursor, 360)
+	var zone := Rect2i(spot.x, spot.y - 360, size.x, size.y + 360)
+	_check(spot.x >= 0 and Rect2i(area).encloses(Rect2i(spot, size)), "the corner lands inside the screen")
+	_check(not zone.has_point(cursor) and absf(spot.x + size.x * 0.5 - cursor.x) < 800.0, "Hoshi lands beside the pointer, not on top of it")
+	var edge_spot: Vector2i = Playground.cozy_near_position(area, size, Vector2i(1900, 1000), 360)
+	_check(edge_spot.x >= 0 and edge_spot.x + size.x < 1900, "near the screen edge the corner picks the free side")
 	_check(Commands.has("place_focus") and Commands.PLACE_CHOICES.size() == Commands.PLACE_MODES.size() and Commands.PLACE_MODES[Commands.PLACE_CHOICES.find("place_focus")] == "focus", "the rest-mode menu knows «Моё окно → уголок»")
 	var helper: String = FileAccess.get_file_as_string("res://tools/window_focus.py")
 	_check(not helper.contains("GetWindowText") and not helper.contains("SetWindowsHook"), "focus helper reads no titles and installs no hooks")

@@ -677,6 +677,13 @@ func _check_focus_move(control_blocked: bool) -> void:
 		return
 	var where: String = "cozy" if playground.cozy_mode else ("focus_window" if playground.chosen_by_focus else "other")
 	var away: float = focus.seconds_since_active(playground.support_hwnd()) if where == "focus_window" else 0.0
+	var hwnd: String = str(focus.focus.get("hwnd", ""))
+	if places.focus_should_approach(where, focus.focus, focus.dwell_seconds(), state.activity, playground.cozy_near_hwnd == hwnd):
+		if playground.glide_cozy_to(playground.cozy_near_target(host.cursor_global())):
+			playground.cozy_near_hwnd = hwnd
+			places.note_focus_move()
+			ui.say("Хочу к тебе поближе")
+		return
 	if places.focus_should_leave(where, focus.focus, focus.dwell_seconds(), away, state.activity):
 		places.note_focus_move()
 		if where == "cozy" and interaction.allow_bubble():
