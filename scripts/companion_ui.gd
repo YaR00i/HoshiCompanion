@@ -201,8 +201,8 @@ func _build_panel() -> void:
 	place_row.add_child(_label("Где отдыхать", 12, MUTED))
 	place_pick = OptionButton.new()
 	place_pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	for title_value in ["Только вручную", "Свой уголок", "Окна → уголок"]:
-		place_pick.add_item(title_value)
+	for command in Commands.PLACE_CHOICES:
+		place_pick.add_item(Commands.title(command))
 	place_pick.item_selected.connect(func(index: int): action_requested.emit(Commands.PLACE_CHOICES[index]))
 	place_row.add_child(place_pick)
 	box.add_child(place_row)
@@ -320,7 +320,7 @@ func refresh(state, status_override: String = "", walking: bool = false) -> void
 	autonomy_check.set_pressed_no_signal(state.autonomy_enabled)
 	walk_check.set_pressed_no_signal(state.walk_enabled)
 	activity_pick.select(["quiet", "normal", "playful"].find(state.activity))
-	place_pick.select(["off", "cozy", "smart"].find(state.place_mode))
+	place_pick.select(Commands.PLACE_MODES.find(state.place_mode))
 	edge_pick.select(EDGE_ACTIVITIES.find(state.edge_activity))
 	look_check.set_pressed_no_signal(state.look_enabled)
 	motion_check.set_pressed_no_signal(state.motion_enabled)
@@ -558,7 +558,7 @@ func _build_menu() -> void:
 	_add_menu_item(autonomy, "Короткие реплики", "toggle_bubbles", true)
 	autonomy.add_separator()
 	_submenu(autonomy, "Активность  ›", "ActivityMenu", [["Тихая · без прогулок", "activity_quiet"], ["Обычная", "activity_normal"], ["Игривая", "activity_playful"]])
-	_submenu(autonomy, "Где отдыхать  ›", "PlaceMenu", [["Только вручную", "place_manual"], ["Свой уголок", "place_cozy"], ["Окна → уголок", "place_smart"]])
+	_submenu(autonomy, "Где отдыхать  ›", "PlaceMenu", [["Только вручную", "place_manual"], ["Свой уголок", "place_cozy"], ["Окна → уголок", "place_smart"], ["Моё окно → уголок", "place_focus"]])
 	var appearance := _submenu(menu, "Внешний вид  ›", "AppearanceMenu", [])
 	_add_menu_item(appearance, "Настроить свет, тени и обводку…", "light_editor")
 	_add_menu_item(appearance, "Мягкие движения", "toggle_motion", true)

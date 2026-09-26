@@ -19,6 +19,7 @@ const DesktopInput = preload("res://scripts/desktop_input.gd")
 const CompanionSettings = preload("res://scripts/companion_settings.gd")
 const SessionLifecycle = preload("res://scripts/session_lifecycle.gd")
 const SupportPort = preload("res://scripts/support_port.gd")
+const FocusTracker = preload("res://scripts/focus_tracker.gd")
 const DEFAULT_AVATAR: String = "res://assets/Hoshi_v1.vrm"
 
 var host = Host.new()
@@ -38,6 +39,7 @@ var desk_input = DesktopInput.new()        # мышь и клавиатура
 var settings = CompanionSettings.new()     # сохранение настроек, свет
 var lifecycle = SessionLifecycle.new()     # вход и уход через звёздную дверь
 var support_port = SupportPort.new()       # что опорам можно попросить у Хоши
+var focus = FocusTracker.new()             # какое окно активно (только в режиме «Моё окно»)
 var stage
 var ui
 var background: ColorRect
@@ -222,11 +224,20 @@ func _process(delta: float) -> void:
 	director.rest_enabled = state.rest_enabled and state.motion_enabled and state.place_mode == "off"
 	var control_blocked: bool = air.active() or stage.cinematic_active() or not lifecycle.phase.is_empty() or desk_input.press_active or ui.menu_open() or state.dozing or walker.active() or state.posture.transitioning() or not _pending_action.is_empty() or state.notice_weight > 0.1 or state.welcome_weight > 0.1 or state.pet_weight > 0.1 or state.wave_weight > 0.1 or state.release_reaction_active()
 	var blocked: bool = playground.active() or control_blocked
+	focus.ensure(_ready_to_run and state.place_mode == "focus" and not host.preview and not host.headless)
+	focus.tick(dt)
 	var place_request: String = places.tick(dt, state, {"blocked": blocked or host.preview, "can_place": not host.preview and host.is_grounded() and state.posture.mode == "standing"})
 	if place_request == "cozy":
 		blocked = playground.show_demo(true) or blocked
 	elif place_request == "smart":
 		blocked = playground.auto_choose_window() or blocked
+	elif place_request == "focus":
+		# Дом — уголок; к окну, где человек долго работает, — в гости.
+		if PlaceDirector.focus_destination(focus.focus, focus.dwell_seconds(), state.activity) == "window":
+			blocked = playground.auto_bind_window(int(str(focus.focus.get("hwnd", "0")))) or blocked
+		else:
+			blocked = playground.show_demo(true) or blocked
+	_check_focus_move(control_blocked)
 	var preferred_side: String = playground.surface.available_side() if playground.active() else ""
 	var surface_ready: bool = playground.active() and playground.phase == "attached" and not playground.surface_busy()
 	var behavior_context: Dictionary = {"blocked": control_blocked or (playground.active() and not surface_ready), "cursor_gaze": cursor_gaze,
@@ -535,7 +546,7 @@ func _on_action(command: Variant) -> void:
 	if Commands.has_flag(action, "pauses_places"):
 		places.manual_pause()
 	if action in Commands.PLACE_CHOICES:
-		state.place_mode = ["off", "cozy", "smart"][Commands.PLACE_CHOICES.find(action)]
+		state.place_mode = Commands.PLACE_MODES[Commands.PLACE_CHOICES.find(action)]
 		places.change_mode(state.place_mode)
 		ui.refresh(state, playground.label(), walker.active())
 		_save_settings()
@@ -658,6 +669,20 @@ func _capture_after_settling() -> void:
 	var result: Error = image.save_png(path)
 	print("HOSHI_CAPTURE ", ProjectSettings.globalize_path(path), " result=", result)
 
+## Режим «Моё окно → уголок»: пора ли перейти между уголком и окном человека.
+func _check_focus_move(control_blocked: bool) -> void:
+	if state.place_mode != "focus" or not playground.active() or playground.phase != "attached":
+		return
+	if control_blocked or state.dozing or not intent_planner.active_intent.is_empty() or playground.surface_busy():
+		return
+	var where: String = "cozy" if playground.cozy_mode else ("focus_window" if playground.chosen_by_focus else "other")
+	var away: float = focus.seconds_since_active(playground.support_hwnd()) if where == "focus_window" else 0.0
+	if places.focus_should_leave(where, focus.focus, focus.dwell_seconds(), away, state.activity):
+		places.note_focus_move()
+		if where == "cozy" and interaction.allow_bubble():
+			ui.say("Пойду к тебе поближе")
+		playground.return_home()
+
 func _clear_intent() -> void:
 	_pending_action = ""
 	_pending_auto = false
@@ -721,6 +746,7 @@ func _exit_tree() -> void:
 	host.shutdown()
 	playground.external.close()
 	playground.ledge_probe.close()
+	focus.stop()
 	surface_probe.close()
 
 # --- Тонкие переходники: старые имена, которыми пользуются опоры и тесты ---

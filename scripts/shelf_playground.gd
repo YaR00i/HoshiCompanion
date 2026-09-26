@@ -19,6 +19,10 @@ var ledge: Dictionary = {}
 var support_app: String = ""
 var ledge_probe = SurfaceProbe.new()
 var _pick_cursor: Vector2 = Vector2(-1, -1)
+## Хоши пришла на это окно сама, потому что человек долго в нём работал.
+var chosen_by_focus: bool = false
+## Если окно не подошло при подготовке прыжка — не на пол, а в свой уголок.
+var _fallback_on_reject: bool = false
 var _countdown_number: int = -1
 var _start_handle: int = 0
 var _start_wait: float = 0.0
@@ -178,7 +182,10 @@ func before_tick(delta: float) -> void:
 			if not bool(planned.get("ok", false)):
 				if port.test_mode():
 					print("PREPARE_REJECT rect=", support_rect(), " area=", support_area(), " seat=", planned_seat, " viewport=", app.host.window.size, " anchor_u=", anchor_u, " phase=", phase)
-				return_home()
+				if _fallback_on_reject:
+					_fallback_cozy()
+				else:
+					return_home()
 			else:
 				app.state.posture.kind = "edge"
 				app.stage.yaw = 0.0
@@ -243,6 +250,8 @@ func _choose_ledge(result: Dictionary) -> void:
 	anchor_u = Judge.seat_fraction(ledge, _pick_cursor.x)
 
 func _clear_ledge() -> void:
+	chosen_by_focus = false
+	_fallback_on_reject = false
 	ledge_probe.close()
 	ledge = {}
 	support_app = ""
@@ -273,8 +282,10 @@ func _fallback_cozy() -> void:
 	external_mode = false
 	_choice_request = {}
 	_auto_choice = false
+	_fallback_on_reject = false
 	phase = "off"
-	port.say("Не нашла свободный край — посижу здесь")
+	port.say("В твоё окно не помещаюсь — посижу в уголке" if chosen_by_focus else "Не нашла свободный край — посижу здесь")
+	chosen_by_focus = false
 	show_demo(true)
 
 func _finish_return() -> void:
@@ -479,6 +490,21 @@ func label() -> String:
 		"returning": return "Возвращается к нижнему краю"
 		"settling": return "Снова встаёт на пол"
 	return "Полочка свободна — нажми «Посадить»"
+
+## Номер окна, на котором сидит Хоши ("" — не на чужом окне).
+func support_hwnd() -> String:
+	return str(external.snapshot.get("hwnd", "")) if external_mode else ""
+
+## Сама пойти на окно, где человек долго работает (режим «Моё окно → уголок»).
+## Если окно не подойдёт — Хоши уйдёт в свой уголок, а не останется на полу.
+func auto_bind_window(hwnd: int) -> bool:
+	if hwnd <= 0 or not select_window(hwnd):
+		return false
+	_auto_choice = true
+	_fallback_on_reject = true
+	chosen_by_focus = true
+	port.say("Иду к тебе в окно", 3.0)
+	return true
 
 func select_window(explicit_handle: int = 0) -> bool:
 	# explicit_handle is for isolated test fixtures; UI always uses the cursor.

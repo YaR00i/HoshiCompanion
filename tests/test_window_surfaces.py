@@ -56,6 +56,18 @@ def test_process_name_is_file_name_only() -> None:
     assert len(clean_name('x' * 300)) == 64
 
 
+def test_focus_classify() -> None:
+    from window_focus import classify
+    assert classify({'own': True}) == {'own': True}
+    assert classify({})['state'] == 'none'
+    base = {'hwnd': 5, 'app': 'blender.exe', 'class': 'GHOST_WindowClass'}
+    assert classify(base) == {'hwnd': '5', 'app': 'blender.exe', 'state': 'normal'}
+    assert classify({**base, 'zoomed': True})['state'] == 'maximized'
+    assert classify({**base, 'fullscreen': True, 'zoomed': True})['state'] == 'fullscreen'
+    assert classify({**base, 'class': 'Shell_TrayWnd'})['state'] == 'system'
+    assert 'title' not in classify(base)
+
+
 def test_native_fixture() -> None:
     if sys.platform != 'win32':
         return
@@ -94,5 +106,6 @@ if __name__ == '__main__':
     test_display_covers_full_list()
     test_ledge_mode_frame_and_bars()
     test_process_name_is_file_name_only()
+    test_focus_classify()
     test_native_fixture()
-    print('HOSHI_WINDOW_SURFACES_RESULT checks=5 failures=0')
+    print('HOSHI_WINDOW_SURFACES_RESULT checks=6 failures=0')

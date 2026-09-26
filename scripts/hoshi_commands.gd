@@ -130,11 +130,14 @@ const LIST := {
 	"place_manual": {"title": "Только вручную", "group": "autonomy", "menu_id": 210, "sources": ["user"]},
 	"place_cozy": {"title": "Свой уголок", "group": "autonomy", "menu_id": 211, "sources": ["user"]},
 	"place_smart": {"title": "Окна → уголок", "group": "autonomy", "menu_id": 212, "sources": ["user"]},
+	"place_focus": {"title": "Моё окно → уголок", "group": "autonomy", "menu_id": 213, "sources": ["user"]},
 }
 
 ## Группы вариантов для выпадающих списков: порядок = порядок пунктов.
 const ACTIVITY_CHOICES: Array[String] = ["activity_quiet", "activity_normal", "activity_playful"]
-const PLACE_CHOICES: Array[String] = ["place_manual", "place_cozy", "place_smart"]
+const PLACE_CHOICES: Array[String] = ["place_manual", "place_cozy", "place_smart", "place_focus"]
+## Значение state.place_mode для каждого пункта PLACE_CHOICES (тот же порядок).
+const PLACE_MODES: Array[String] = ["off", "cozy", "smart", "focus"]
 const EDGE_CHOICES: Array[String] = ["edge_mode_auto", "edge_mode_calm", "edge_mode_swing", "edge_mode_lean", "edge_mode_peek", "edge_mode_sway", "edge_mode_hum", "edge_mode_nod"]
 
 static func has(command: String) -> bool:

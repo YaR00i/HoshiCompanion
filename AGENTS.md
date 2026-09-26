@@ -126,4 +126,8 @@
 - Structure (UIA) ledges are "manual" level: used only when the user pointed at them. Do not let
   autonomy choose inner ledges before adapters and occlusion checks exist.
 - test_supports.gd covers the judge, ledge geometry and the no-titles/no-text rule for window helpers.
+- Rest mode "focus" (Моё окно → уголок): home is the cozy corner; FocusTracker + tools/window_focus.py
+  report only the foreground HWND, executable file name and normal/maximized/fullscreen state, once a
+  second, and only while this mode is on (user-approved 2026-09-27). All thresholds and go/stay
+  decisions live in place_director.gd; companion.gd only executes them. Never add titles or hooks.
 

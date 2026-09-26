@@ -76,7 +76,7 @@ func read() -> void:
 	app.state.walk_enabled = bool(config.get_value("behavior", "walk", true))
 	app.state.autonomy_enabled = bool(config.get_value("behavior", "autonomy", true))
 	var place_mode: String = str(config.get_value("behavior", "place_mode", "off"))
-	app.state.place_mode = place_mode if place_mode in ["off", "cozy", "smart"] else "off"
+	app.state.place_mode = place_mode if place_mode in ["off", "cozy", "smart", "focus"] else "off"
 	var edge_activity: String = str(config.get_value("behavior", "edge_activity", "auto"))
 	app.state.edge_activity = edge_activity if edge_activity in ["auto", "calm", "swing", "lean", "peek", "sway", "hum", "nod"] else "auto"
 	var activity: String = str(config.get_value("behavior", "activity", "normal"))
