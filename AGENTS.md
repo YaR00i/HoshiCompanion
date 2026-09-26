@@ -143,4 +143,9 @@
   presses player controls; worker.js keeps the single 127.0.0.1 adapter connection while a YouTube tab
   exists. Never add other sites, history, comments or account data without a new user decision.
   tests/extension/test_youtube_content.py checks youtube.js on a fake page (optional, needs Playwright).
+- scripts/pc_actions.gd ("Мои действия", phone tab «Компьютер»): the list is edited only on the PC
+  (menu → Пульт с телефона → Мои действия) and stored in user://pc_actions.json. Phones send only
+  "pc:<id>" of saved actions and can never supply a path, program or arguments. Shutdown/restart need
+  {"confirm": true} and use a 60 s delay with pc:cancel; system buttons are off by default.
+  test_pc_actions.gd runs everything in dry_run.
 

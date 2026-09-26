@@ -31,6 +31,13 @@ var place_pick: OptionButton
 ## Пульт с телефона включён (для галочки в меню).
 var remote_enabled: bool = false
 var remote_window: Window
+var pc_window: Window
+var _pc_list: VBoxContainer
+var _pc_system_box: HFlowContainer
+var _pc_url: LineEdit
+var _pc_source
+var _pc_changed: Callable
+var _pc_dialog: FileDialog
 var _remote_text: Label
 var edge_pick: OptionButton
 var _walk_available: bool = false
@@ -393,6 +400,168 @@ func _set_action_text(action: String, title_value: String) -> void:
 	if owner != null:
 		owner.set_item_text(owner.get_item_index(Commands.menu_id(action)), title_value)
 
+## Окно «Мои действия»: кнопки для вкладки «Компьютер» на пульте.
+## pc — pc_actions.gd; on_changed — сообщить пультам, что список изменился.
+func show_pc_actions(pc, on_changed: Callable) -> void:
+	_pc_source = pc
+	_pc_changed = on_changed
+	if pc_window == null:
+		_build_pc_window()
+	_refresh_pc_actions()
+	pc_window.popup_centered()
+
+func _build_pc_window() -> void:
+	pc_window = Window.new()
+	pc_window.title = "Мои действия для пульта"
+	pc_window.size = Vector2i(520, 560)
+	pc_window.min_size = Vector2i(460, 420)
+	pc_window.always_on_top = true
+	pc_window.theme = theme
+	add_child(pc_window)
+	pc_window.close_requested.connect(pc_window.hide)
+	var panel_bg := PanelContainer.new()
+	panel_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("fffdfb")
+	style.set_content_margin_all(16)
+	panel_bg.add_theme_stylebox_override("panel", style)
+	pc_window.add_child(panel_bg)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 8)
+	panel_bg.add_child(column)
+	column.add_child(_label("Эти кнопки будут на пульте во вкладке «Компьютер».", 13, MUTED))
+	var add_row := HBoxContainer.new()
+	add_row.add_theme_constant_override("separation", 6)
+	column.add_child(add_row)
+	var add_file := Button.new()
+	add_file.text = "＋ Программа или файл"
+	add_file.pressed.connect(_pick_pc_path.bind(false))
+	add_row.add_child(add_file)
+	var add_folder := Button.new()
+	add_folder.text = "＋ Папка"
+	add_folder.pressed.connect(_pick_pc_path.bind(true))
+	add_row.add_child(add_folder)
+	var url_row := HBoxContainer.new()
+	column.add_child(url_row)
+	_pc_url = LineEdit.new()
+	_pc_url.placeholder_text = "https://… — ссылка"
+	_pc_url.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_style_line_edit(_pc_url)
+	url_row.add_child(_pc_url)
+	var add_url := Button.new()
+	add_url.text = "＋ Ссылка"
+	add_url.pressed.connect(_add_pc_url)
+	url_row.add_child(add_url)
+	column.add_child(_label("Системные кнопки на пульте", 12, MUTED))
+	_pc_system_box = HFlowContainer.new()
+	_pc_system_box.add_theme_constant_override("h_separation", 8)
+	_pc_system_box.add_theme_constant_override("v_separation", 6)
+	column.add_child(_pc_system_box)
+	column.add_child(_label("Выключение и перезагрузка — с подтверждением и отсрочкой в минуту.", 11, MUTED))
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	column.add_child(scroll)
+	_pc_list = VBoxContainer.new()
+	_pc_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_pc_list.add_theme_constant_override("separation", 4)
+	scroll.add_child(_pc_list)
+	_pc_dialog = FileDialog.new()
+	_pc_dialog.use_native_dialog = true
+	_pc_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_pc_dialog.file_selected.connect(_on_pc_path_chosen)
+	_pc_dialog.dir_selected.connect(_on_pc_path_chosen)
+	pc_window.add_child(_pc_dialog)
+
+func _style_line_edit(edit: LineEdit) -> void:
+	for kind in ["normal", "focus", "read_only"]:
+		var box := StyleBoxFlat.new()
+		box.bg_color = Color("fffaf6") if kind != "focus" else Color("ffffff")
+		box.border_color = Color("dfd0d5") if kind != "focus" else PLUM
+		box.set_border_width_all(1)
+		box.set_corner_radius_all(9)
+		box.content_margin_left = 9
+		box.content_margin_right = 9
+		box.content_margin_top = 5
+		box.content_margin_bottom = 5
+		edit.add_theme_stylebox_override(kind, box)
+	edit.add_theme_color_override("font_color", INK)
+	edit.add_theme_color_override("font_placeholder_color", MUTED)
+	edit.add_theme_color_override("caret_color", PLUM)
+
+func _pick_pc_path(folder: bool) -> void:
+	_pc_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR if folder else FileDialog.FILE_MODE_OPEN_FILE
+	_pc_dialog.title = "Выбери папку" if folder else "Выбери программу или файл"
+	_pc_dialog.popup_centered_ratio(0.6)
+
+func _on_pc_path_chosen(chosen: String) -> void:
+	var kind: String = "folder" if DirAccess.dir_exists_absolute(chosen) else ("open" if chosen.get_extension().to_lower() in ["exe", "lnk", "bat", "cmd", "url"] else "file")
+	_pc_source.add(kind, "", chosen)
+	_after_pc_change()
+
+func _add_pc_url() -> void:
+	var url: String = _pc_url.text.strip_edges()
+	if not url.is_empty() and not url.contains("://"):
+		url = "https://" + url
+	if _pc_source.add("url", "", url) != "":
+		_pc_url.text = ""
+	_after_pc_change()
+
+func _after_pc_change() -> void:
+	_refresh_pc_actions()
+	if _pc_changed.is_valid():
+		_pc_changed.call()
+
+func _refresh_pc_actions() -> void:
+	for child in _pc_system_box.get_children():
+		child.queue_free()
+	for id in _pc_source.SYSTEM:
+		var check := CheckBox.new()
+		check.text = "%s %s" % [_pc_source.SYSTEM[id]["icon"], _pc_source.SYSTEM[id]["title"]]
+		check.button_pressed = bool(_pc_source.system_enabled.get(id, false))
+		check.toggled.connect(func(on: bool):
+			_pc_source.set_system(id, on)
+			if _pc_changed.is_valid():
+				_pc_changed.call())
+		_pc_system_box.add_child(check)
+	for child in _pc_list.get_children():
+		child.queue_free()
+	if _pc_source.actions.is_empty():
+		_pc_list.add_child(_label("Пока пусто. Добавь программу, папку или ссылку.", 12, MUTED))
+	for item in _pc_source.actions:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		row.add_child(_label(str(item["icon"]), 18, INK))
+		var name_edit := LineEdit.new()
+		name_edit.text = str(item["title"])
+		name_edit.tooltip_text = str(item["target"])
+		name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name_edit.custom_minimum_size.x = 120
+		_style_line_edit(name_edit)
+		name_edit.text_submitted.connect(func(value: String):
+			_pc_source.rename(item["id"], value)
+			_after_pc_change())
+		name_edit.focus_exited.connect(func():
+			if name_edit.text != str(item["title"]):
+				_pc_source.rename(item["id"], name_edit.text)
+				_after_pc_change())
+		row.add_child(name_edit)
+		for pair in [["▲", -1], ["▼", 1]]:
+			var move := Button.new()
+			move.text = pair[0]
+			move.pressed.connect(func():
+				_pc_source.move(item["id"], pair[1])
+				_after_pc_change())
+			row.add_child(move)
+		var remove := Button.new()
+		remove.text = "✕"
+		remove.tooltip_text = "Убрать с пульта"
+		remove.pressed.connect(func():
+			_pc_source.remove(item["id"])
+			_after_pc_change())
+		row.add_child(remove)
+		_pc_list.add_child(row)
+
 ## Окно «Пульт с телефона»: адрес страницы и код привязки крупно.
 func show_remote_info(enabled: bool, addresses: PackedStringArray, code: String, phones: int, error: String = "") -> void:
 	if remote_window == null:
@@ -605,6 +774,7 @@ func _build_menu() -> void:
 	var remote_menu := _submenu(menu, "Пульт с телефона  ›", "RemoteMenu", [])
 	_add_menu_item(remote_menu, "Пульт включён", "toggle_remote", true)
 	_add_menu_item(remote_menu, "Адрес и код для телефона…", "remote_info")
+	_add_menu_item(remote_menu, "Мои действия для пульта…", "pc_actions_editor")
 	_add_menu_item(remote_menu, "Забыть все телефоны", "remote_forget")
 	var appearance := _submenu(menu, "Внешний вид  ›", "AppearanceMenu", [])
 	_add_menu_item(appearance, "Настроить свет, тени и обводку…", "light_editor")

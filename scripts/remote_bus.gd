@@ -21,6 +21,7 @@ extends RefCounted
 
 const Commands = preload("res://scripts/hoshi_commands.gd")
 const Adapters = preload("res://scripts/app_adapters.gd")
+const PcActions = preload("res://scripts/pc_actions.gd")
 
 const HTTP_PORT: int = 18770
 const WS_PORT: int = 18771
@@ -38,6 +39,8 @@ var pairing_code: String = ""
 ## Ключи привязанных телефонов (хранятся в настройках Хоши).
 var tokens: PackedStringArray = []
 var adapters = Adapters.new()
+## «Мои действия» для вкладки «Компьютер» (задаются только на ПК).
+var pc = PcActions.new()
 var last_error: String = ""
 ## Для тестов: слушать только 127.0.0.1 и на других портах.
 var loopback_only: bool = false
@@ -336,6 +339,13 @@ func _handle_adapter(key: int, op: String, message: Dictionary) -> void:
 
 ## Выполнить команду с телефона. Пусто — выполнено, иначе причина отказа.
 func run(command: String, args: Variant = {}) -> String:
+	if command.begins_with("pc:"):
+		var out: Dictionary = {}
+		var reason: String = pc.run(command, args if args is Dictionary else {}, out)
+		var app_for_say = _app()
+		if out.has("say") and app_for_say != null and app_for_say.has_method("remote_say"):
+			app_for_say.remote_say(str(out["say"]))
+		return reason
 	if command.begins_with("app:"):
 		var target: Dictionary = adapters.resolve(command)
 		if target.is_empty():
@@ -382,7 +392,13 @@ func remote_catalog() -> Dictionary:
 				items.append(_item(command))
 		if not items.is_empty():
 			groups.append({"id": group[0], "title": group[1], "tab": group[2], "commands": items})
-	return {"quick": quick, "groups": groups}
+	return {"quick": quick, "groups": groups, "pc": pc.catalog()}
+
+## Список «Моих действий» изменили на ПК — обновить пульты.
+func refresh_catalog() -> void:
+	for key in _peers:
+		if _peers[key]["role"] == "phone" and _peers[key]["authed"]:
+			_send(key, {"op": "catalog", "catalog": remote_catalog()})
 
 func _item(command: String) -> Dictionary:
 	return {"command": command, "title": Commands.short_title(command), "icon": Commands.icon(command)}
@@ -390,7 +406,7 @@ func _item(command: String) -> Dictionary:
 func _state_message() -> Dictionary:
 	var app = _app()
 	var hoshi: Dictionary = app.remote_snapshot() if app != null and app.has_method("remote_snapshot") else {}
-	return {"op": "state", "hoshi": hoshi, "apps": adapters.catalog()}
+	return {"op": "state", "hoshi": hoshi, "apps": adapters.catalog(), "pc_pending": pc.pending_state()}
 
 func _broadcast_state(force: bool) -> void:
 	var message: Dictionary = _state_message()

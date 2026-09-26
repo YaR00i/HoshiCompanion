@@ -70,6 +70,7 @@ func _ready() -> void:
 	lifecycle.setup(self)
 	support_port.setup(self)
 	remote.setup(self)
+	remote.pc.load_actions()
 	host.setup(get_window())
 	var seed_value: int = 70420 if OS.get_cmdline_user_args().has("--test-mode") else int(Time.get_ticks_usec())
 	state.seed_random(seed_value)
@@ -523,6 +524,12 @@ func remote_snapshot() -> Dictionary:
 	return {"name": "Хоши", "status": ui.status.text if ui != null and ui.status != null else "",
 		"where": where, "dozing": state.dozing, "mood": state.mood, "selected": selected}
 
+## Реплика Хоши на действие с пульта («Открываю: Blender»).
+func remote_say(text: String) -> void:
+	if _ready_to_run:
+		ui.say(text)
+		ui._bubble_left = 3.5
+
 ## Событие от аддона приложения (например, YouTube: лайк, видео закончилось).
 ## Пока — маленькая реакция; сценки под события появятся позже.
 func on_app_event(app_id: String, event: String) -> void:
@@ -584,6 +591,9 @@ func _on_action(command: Variant) -> void:
 		return
 	if action == "remote_info":
 		ui.show_remote_info(remote.enabled, remote.addresses(), remote.pairing_code, remote.phone_count(), remote.last_error)
+		return
+	if action == "pc_actions_editor":
+		ui.show_pc_actions(remote.pc, remote.refresh_catalog)
 		return
 	if action == "remote_forget":
 		remote.forget_phones()

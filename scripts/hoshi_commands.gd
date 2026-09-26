@@ -113,6 +113,7 @@ const LIST := {
 	"toggle_remote": {"title": "Пульт с телефона", "group": "remote", "menu_id": 180, "sources": ["user"]},
 	"remote_info": {"title": "Адрес и код для телефона…", "group": "remote", "menu_id": 181, "sources": ["user"]},
 	"remote_forget": {"title": "Забыть все телефоны", "group": "remote", "menu_id": 182, "sources": ["user"]},
+	"pc_actions_editor": {"title": "Мои действия для пульта…", "group": "remote", "menu_id": 183, "sources": ["user"]},
 	# Переключатели
 	"toggle_look": {"title": "Внимание к курсору", "group": "look", "menu_id": 120, "sources": ["user"]},
 	"toggle_motion": {"title": "Мягкие движения", "group": "look", "menu_id": 121, "sources": ["user"]},

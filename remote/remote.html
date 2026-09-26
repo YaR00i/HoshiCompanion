@@ -94,7 +94,19 @@
   nav { position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-around;
     padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); background: rgba(255, 253, 251, .96);
     border-top: 1px solid var(--line); backdrop-filter: blur(8px); }
-  nav button { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--muted); padding: 2px 16px; border-radius: 12px; }
+  .pending { display: flex; align-items: center; gap: 10px; background: #fbe9ec; border: 1px solid #f0cdd5; color: #8c3c52;
+    border-radius: 16px; padding: 10px 12px; margin-bottom: 12px; font-size: 13px; }
+  .pending b { font-size: 15px; }
+  .pending button { margin-left: auto; background: #8c3c52; color: #fff; border-radius: 999px; padding: 8px 14px; }
+  .sheet { position: fixed; inset: 0; background: rgba(40, 30, 55, .35); display: grid; place-items: end center; z-index: 5; }
+  .sheet-box { width: min(520px, 100%); background: var(--card); border-radius: 22px 22px 0 0; padding: 20px 18px calc(18px + env(safe-area-inset-bottom)); text-align: center; }
+  .sheet-icon { font-size: 34px; }
+  .sheet-text { margin: 6px 0 16px; font-size: 16px; }
+  .sheet-buttons { display: flex; gap: 10px; }
+  .sheet-buttons button { flex: 1; padding: 13px; border-radius: 14px; background: var(--soft); }
+  .sheet-buttons .danger { background: #8c3c52; color: #fff; }
+  .tile.system .icon { filter: saturate(.6); }
+  nav button { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--muted); padding: 2px 10px; border-radius: 12px; }
   nav button .icon { font-size: 19px; }
   nav button.active { color: var(--plum); background: var(--soft); }
 
@@ -134,6 +146,7 @@
       <div id="apps"></div>
     </section>
     <section class="tab" data-tab="play" id="playTab"></section>
+    <section class="tab" data-tab="pc" id="pcTab"></section>
     <section class="tab" data-tab="modes" id="modesTab"></section>
   </div>
 </main>
@@ -141,9 +154,15 @@
 <nav id="nav" class="hidden">
   <button data-tab="main" class="active"><span class="icon">✦</span>Главное</button>
   <button data-tab="play"><span class="icon">☁️</span>Хоши</button>
+  <button data-tab="pc"><span class="icon">💻</span>Компьютер</button>
   <button data-tab="modes"><span class="icon">⚙️</span>Режимы</button>
 </nav>
 <div class="toast" id="toast"></div>
+<div class="sheet hidden" id="sheet"><div class="sheet-box">
+  <div class="sheet-icon" id="sheetIcon"></div>
+  <div class="sheet-text" id="sheetText"></div>
+  <div class="sheet-buttons"><button id="sheetNo">Нет</button><button id="sheetYes" class="danger">Да</button></div>
+</div></div>
 
 <script>
 "use strict";
@@ -181,9 +200,10 @@ function connect() {
   socket.onmessage = (event) => {
     let m; try { m = JSON.parse(event.data); } catch (e) { return; }
     if (m.op === "paired") { token = m.token; try { localStorage.setItem("hoshi-token", token); } catch (e) {} }
-    else if (m.op === "welcome") { catalog = m.catalog || catalog; showRemote(); renderHoshi(); }
-    else if (m.op === "state") { state = m; online(true, (m.hoshi && m.hoshi.status) || "На связи"); renderHoshi(); renderApps(); }
-    else if (m.op === "ran" && !m.ok) toast(m.reason === "not_allowed" ? "С телефона так нельзя" : "Сейчас не получилось");
+    else if (m.op === "welcome" || m.op === "catalog") { catalog = m.catalog || catalog; showRemote(); renderHoshi(); renderPc(); }
+    else if (m.op === "state") { state = m; online(true, (m.hoshi && m.hoshi.status) || "На связи"); renderHoshi(); renderApps(); renderPending(); }
+    else if (m.op === "ran" && !m.ok) toast({not_allowed: "С телефона так нельзя", missing: "Не нашла этот файл на компьютере",
+      nothing_to_cancel: "Нечего отменять", need_confirm: "Нужно подтвердить"}[m.reason] || "Сейчас не получилось");
     else if (m.op === "error") {
       if (m.reason === "need_pairing") { token = null; try { localStorage.removeItem("hoshi-token"); } catch (e) {} showPair(); }
       else if (m.reason === "bad_code") showPair("Код не подошёл — посмотри на экран компьютера");
@@ -217,6 +237,47 @@ function renderHoshi() {
       root.append(box);
     }
   }
+}
+
+// Вкладка «Компьютер»: мои действия (задаются на ПК) и системные кнопки.
+function renderPc() {
+  const root = $("pcTab"); root.textContent = "";
+  root.append(el("div", "", "")); root.lastChild.id = "pendingBox";
+  const items = catalog.pc || [];
+  const mine = items.filter((i) => !i.system), system = items.filter((i) => i.system);
+  root.append(el("h2", "", "Мои действия"));
+  if (!mine.length) root.append(el("div", "empty", "Добавь программы, папки и ссылки на компьютере: меню Хоши → Пульт с телефона → Мои действия"));
+  else root.append(tiles(mine));
+  if (system.length) { root.append(el("h2", "", "Компьютер")); root.append(tiles(system)); }
+  renderPending();
+}
+function tiles(items) {
+  const box = el("div", "tiles");
+  for (const item of items) {
+    const b = el("button", "tile" + (item.system ? " system" : ""));
+    b.append(el("span", "icon", item.icon || "🚀"), el("span", "", item.title));
+    b.onclick = () => item.confirm ? confirmThen(item) : run(item.command);
+    box.append(b);
+  }
+  return box;
+}
+function confirmThen(item) {
+  $("sheetIcon").textContent = item.icon || "⚠️";
+  $("sheetText").textContent = item.title + "?";
+  $("sheet").classList.remove("hidden");
+  $("sheetYes").onclick = () => { $("sheet").classList.add("hidden"); run(item.command, {confirm: true}); };
+}
+$("sheetNo").onclick = () => $("sheet").classList.add("hidden");
+$("sheet").onclick = (e) => { if (e.target === $("sheet")) $("sheet").classList.add("hidden"); };
+function renderPending() {
+  const box = $("pendingBox"); if (!box) return;
+  const p = state.pc_pending || {};
+  box.textContent = "";
+  if (!p.seconds) { box.className = ""; return; }
+  box.className = "pending";
+  const text = el("span", ""); text.append((p.kind === "restart" ? "Перезагрузка" : "Выключение") + " через ", el("b", "", clock(p.seconds)));
+  const cancel = el("button", "", "Отменить"); cancel.onclick = () => run(p.cancel);
+  box.append(text, cancel);
 }
 
 function clock(s) {
