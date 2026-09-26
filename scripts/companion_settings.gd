@@ -15,6 +15,8 @@ var light_position: Vector3 = DEFAULT_LIGHT_POSITION
 var shading: Dictionary = {"shadow_strength": 1.0, "shadow_color": Color.WHITE,
 	"edge_strength": 0.16, "edge_color": DEFAULT_EDGE_COLOR, "edge_width": 0.4,
 	"outline_strength": 0.45, "outline_color": DEFAULT_OUTLINE_COLOR, "outline_width": 0.35}
+## Пульт с телефона был включён в прошлый раз — включить при запуске.
+var remote_wanted: bool = false
 ## Свет сохраняется с небольшой задержкой, пока ползунок ещё двигают.
 var save_delay: float = -1.0
 
@@ -75,6 +77,8 @@ func read() -> void:
 	app.state.rest_enabled = bool(config.get_value("behavior", "rest", true))
 	app.state.walk_enabled = bool(config.get_value("behavior", "walk", true))
 	app.state.autonomy_enabled = bool(config.get_value("behavior", "autonomy", true))
+	app.remote.tokens = PackedStringArray(config.get_value("remote", "tokens", PackedStringArray()))
+	remote_wanted = bool(config.get_value("remote", "enabled", false))
 	var place_mode: String = str(config.get_value("behavior", "place_mode", "off"))
 	app.state.place_mode = place_mode if place_mode in ["off", "cozy", "smart", "focus"] else "off"
 	var edge_activity: String = str(config.get_value("behavior", "edge_activity", "auto"))
@@ -124,6 +128,8 @@ func save() -> void:
 	config.set_value("behavior", "activity", app.state.activity)
 	config.set_value("behavior", "bubbles", app.ui.bubbles_enabled)
 	config.set_value("render", "fps", app.frame_rate)
+	config.set_value("remote", "enabled", app.remote.enabled)
+	config.set_value("remote", "tokens", app.remote.tokens)
 	config.set_value("render", "light_position", light_position)
 	for key in ["shadow_strength", "shadow_color", "edge_strength", "edge_color", "edge_width",
 		"outline_strength", "outline_color", "outline_width"]:

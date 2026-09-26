@@ -20,6 +20,7 @@ const CompanionSettings = preload("res://scripts/companion_settings.gd")
 const SessionLifecycle = preload("res://scripts/session_lifecycle.gd")
 const SupportPort = preload("res://scripts/support_port.gd")
 const FocusTracker = preload("res://scripts/focus_tracker.gd")
+const RemoteBus = preload("res://scripts/remote_bus.gd")
 const DEFAULT_AVATAR: String = "res://assets/Hoshi_v1.vrm"
 
 var host = Host.new()
@@ -40,6 +41,7 @@ var settings = CompanionSettings.new()     # сохранение настрое
 var lifecycle = SessionLifecycle.new()     # вход и уход через звёздную дверь
 var support_port = SupportPort.new()       # что опорам можно попросить у Хоши
 var focus = FocusTracker.new()             # какое окно активно (только в режиме «Моё окно»)
+var remote = RemoteBus.new()               # пульт с телефона и аддоны приложений
 var stage
 var ui
 var background: ColorRect
@@ -67,6 +69,7 @@ func _ready() -> void:
 	settings.setup(self)
 	lifecycle.setup(self)
 	support_port.setup(self)
+	remote.setup(self)
 	host.setup(get_window())
 	var seed_value: int = 70420 if OS.get_cmdline_user_args().has("--test-mode") else int(Time.get_ticks_usec())
 	state.seed_random(seed_value)
@@ -121,6 +124,9 @@ func _ready() -> void:
 	stage.edge_life.paper_star_completed.connect(_on_paper_star_completed)
 	print("HOSHI_MODEL_READY status=", result.get("status", "ready"), " bones=", result.get("rig", {}).get("bones", 0), " meshes=", result.get("mesh_count", 0))
 	_ready_to_run = true
+	if settings.remote_wanted and not _test_mode and not host.headless:
+		remote.start()
+		ui.remote_enabled = remote.enabled
 	if args.has("--chat-voice-bridge"):
 		chat_voice_bridge.start()
 	ui.model_ready(stage.model_name(), result)
@@ -226,6 +232,7 @@ func _process(delta: float) -> void:
 	var blocked: bool = playground.active() or control_blocked
 	focus.ensure(_ready_to_run and state.place_mode == "focus" and not host.preview and not host.headless)
 	focus.tick(dt)
+	remote.tick(dt)
 	var place_request: String = places.tick(dt, state, {"blocked": blocked or host.preview, "can_place": not host.preview and host.is_grounded() and state.posture.mode == "standing"})
 	if place_request == "cozy":
 		blocked = playground.show_demo(true) or blocked
@@ -503,6 +510,31 @@ func _on_paper_star_completed() -> void:
 func run_command(command: Variant) -> void:
 	_on_action(command)
 
+## Что показать на пульте телефона: как дела у Хоши и какие варианты выбраны.
+func remote_snapshot() -> Dictionary:
+	var selected: Array = ["activity_" + state.activity, "edge_mode_" + state.edge_activity]
+	selected.append(Commands.PLACE_CHOICES[maxi(0, Commands.PLACE_MODES.find(state.place_mode))])
+	for pair in [["toggle_autonomy", state.autonomy_enabled], ["toggle_auto_rest", state.rest_enabled], ["toggle_auto_walk", state.walk_enabled]]:
+		if pair[1]:
+			selected.append(pair[0])
+	var where: String = "floor"
+	if playground.active():
+		where = "cozy" if playground.cozy_mode else ("window" if playground.external_mode else "shelf")
+	return {"name": "Хоши", "status": ui.status.text if ui != null and ui.status != null else "",
+		"where": where, "dozing": state.dozing, "mood": state.mood, "selected": selected}
+
+## Событие от аддона приложения (например, YouTube: лайк, видео закончилось).
+## Пока — маленькая реакция; сценки под события появятся позже.
+func on_app_event(app_id: String, event: String) -> void:
+	if not _ready_to_run or state.dozing:
+		return
+	if event in ["liked", "subscribed"]:
+		state.notice()
+		if interaction.allow_bubble():
+			ui.say("Мне тоже понравилось!")
+	elif event == "ended" and interaction.allow_bubble():
+		ui.say("Досмотрели!")
+
 func _on_action(command: Variant) -> void:
 	var action: String = Commands.resolve(command)
 	if action.is_empty():
@@ -538,6 +570,25 @@ func _on_action(command: Variant) -> void:
 			ui._bubble_left = 5.0
 		else:
 			ui.show_surface_scan(surface_probe.result)
+		return
+	if action == "toggle_remote":
+		if remote.enabled:
+			remote.stop()
+		elif remote.start():
+			ui.show_remote_info(true, remote.addresses(), remote.pairing_code, remote.phone_count())
+		else:
+			ui.show_remote_info(false, PackedStringArray(), "", 0, remote.last_error)
+		ui.remote_enabled = remote.enabled
+		ui.refresh(state, walker.label(), walker.active())
+		_save_settings()
+		return
+	if action == "remote_info":
+		ui.show_remote_info(remote.enabled, remote.addresses(), remote.pairing_code, remote.phone_count(), remote.last_error)
+		return
+	if action == "remote_forget":
+		remote.forget_phones()
+		_save_settings()
+		ui.say("Забыла все телефоны")
 		return
 	if action == "light_reset":
 		settings.reset_light()
@@ -754,6 +805,7 @@ func _exit_tree() -> void:
 	playground.external.close()
 	playground.ledge_probe.close()
 	focus.stop()
+	remote.stop()
 	surface_probe.close()
 
 # --- Тонкие переходники: старые имена, которыми пользуются опоры и тесты ---

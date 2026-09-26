@@ -45,7 +45,9 @@ func _check_registry() -> void:
 		var sources: Array = Commands.LIST[command].get("sources", [])
 		complete = complete and not sources.is_empty()
 		for source in sources:
-			complete = complete and source in ["user", "auto"]
+			complete = complete and source in ["user", "auto", "remote"]
+		# Пульт с телефона — только то, что можно и из меню.
+		complete = complete and (not "remote" in sources or "user" in sources)
 		# Команда без пункта меню должна быть доступна хотя бы самой Хоши.
 		complete = complete and (id >= 0 or Commands.allows(command, "auto"))
 	_check(complete, "every command has a title, a group, valid sources and a unique menu id")

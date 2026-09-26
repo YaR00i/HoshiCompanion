@@ -131,3 +131,12 @@
   second, and only while this mode is on (user-approved 2026-09-27). All thresholds and go/stay
   decisions live in place_director.gd; companion.gd only executes them. Never add titles or hooks.
 
+## Phone remote and app add-ons (read docs/REMOTE_RU.md)
+- scripts/remote_bus.gd serves remote/remote.html (port 18770) and WebSocket (18771). Off by default;
+  home-network peers only; phones must pair with a one-time 6-digit code; tokens live in companion.cfg.
+- Phones may run only commands whose sources include "remote" (always a subset of "user") plus commands
+  of connected add-ons ("app:<id>:<name>"). Hoshi commands go through app.run_command(), never around it.
+- Add-ons connect only from 127.0.0.1 at /hoshi-adapter-v1 and declare commands/state (app_adapters.gd).
+  Add-on commands run only on an explicit human press; autonomy must never trigger them.
+- test_remote.gd covers pairing, refusals, routing to a stub add-on and cleanup.
+

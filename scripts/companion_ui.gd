@@ -28,6 +28,10 @@ var autonomy_check: CheckButton
 var walk_check: CheckButton
 var activity_pick: OptionButton
 var place_pick: OptionButton
+## Пульт с телефона включён (для галочки в меню).
+var remote_enabled: bool = false
+var remote_window: Window
+var _remote_text: Label
 var edge_pick: OptionButton
 var _walk_available: bool = false
 var menu: PopupMenu
@@ -328,7 +332,7 @@ func refresh(state, status_override: String = "", walking: bool = false) -> void
 	_set_action_disabled("walk", not _walk_available or walking or not state.motion_enabled)
 	_set_action_disabled("stop", stop_button.disabled)
 	sleep_button.text = "Разбудить" if state.dozing or state.sleep_requested else "Дремать"
-	for pair in [["toggle_auto_rest", state.rest_enabled], ["toggle_auto_walk", state.walk_enabled], ["toggle_autonomy", state.autonomy_enabled], ["toggle_look", state.look_enabled], ["toggle_motion", state.motion_enabled], ["toggle_hair", state.hair_enabled], ["toggle_bubbles", bubbles_enabled], ["toggle_clickthrough", clickthrough_enabled]]:
+	for pair in [["toggle_auto_rest", state.rest_enabled], ["toggle_auto_walk", state.walk_enabled], ["toggle_autonomy", state.autonomy_enabled], ["toggle_look", state.look_enabled], ["toggle_motion", state.motion_enabled], ["toggle_hair", state.hair_enabled], ["toggle_bubbles", bubbles_enabled], ["toggle_clickthrough", clickthrough_enabled], ["toggle_remote", remote_enabled]]:
 		_set_action_checked(str(pair[0]), bool(pair[1]))
 	_set_action_text("doze", "Разбудить" if state.dozing or state.sleep_requested else "Подремать сидя")
 	quick_menu.set_snapshot(state, status.text, not walk_button.disabled, not stop_button.disabled)
@@ -388,6 +392,45 @@ func _set_action_text(action: String, title_value: String) -> void:
 	var owner: PopupMenu = action_menu(action)
 	if owner != null:
 		owner.set_item_text(owner.get_item_index(Commands.menu_id(action)), title_value)
+
+## Окно «Пульт с телефона»: адрес страницы и код привязки крупно.
+func show_remote_info(enabled: bool, addresses: PackedStringArray, code: String, phones: int, error: String = "") -> void:
+	if remote_window == null:
+		remote_window = Window.new()
+		remote_window.title = "Пульт Хоши с телефона"
+		remote_window.size = Vector2i(420, 300)
+		remote_window.unresizable = true
+		remote_window.always_on_top = true
+		remote_window.theme = theme
+		add_child(remote_window)
+		remote_window.close_requested.connect(remote_window.hide)
+		var panel_bg := PanelContainer.new()
+		panel_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color("fffdfb")
+		style.set_content_margin_all(18)
+		panel_bg.add_theme_stylebox_override("panel", style)
+		remote_window.add_child(panel_bg)
+		_remote_text = _label("", 15, INK)
+		_remote_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		panel_bg.add_child(_remote_text)
+	var lines: PackedStringArray = []
+	if not enabled:
+		lines.append("Пульт выключен." if error.is_empty() else "Не получилось включить пульт: порт занят другой программой.")
+		lines.append("Меню → Пульт с телефона → Пульт включён.")
+	else:
+		lines.append("1. Телефон в той же домашней Wi-Fi сети.")
+		lines.append("2. Открой в браузере телефона:")
+		for address in addresses:
+			lines.append("      " + address)
+		if addresses.is_empty():
+			lines.append("      (не нашла адрес в домашней сети — проверь Wi-Fi)")
+		lines.append("3. Введи код:  " + code.substr(0, 3) + " " + code.substr(3))
+		lines.append("")
+		lines.append("Привязано телефонов сейчас на связи: %d" % phones)
+		lines.append("Если Windows спросит про доступ к сети — разреши для частной сети.")
+	_remote_text.text = "\n".join(lines)
+	remote_window.popup_centered()
 
 func _build_light_window() -> void:
 	light_window = Window.new()
@@ -559,6 +602,10 @@ func _build_menu() -> void:
 	autonomy.add_separator()
 	_submenu(autonomy, "Активность  ›", "ActivityMenu", [["Тихая · без прогулок", "activity_quiet"], ["Обычная", "activity_normal"], ["Игривая", "activity_playful"]])
 	_submenu(autonomy, "Где отдыхать  ›", "PlaceMenu", [["Только вручную", "place_manual"], ["Свой уголок", "place_cozy"], ["Окна → уголок", "place_smart"], ["Моё окно → уголок", "place_focus"]])
+	var remote_menu := _submenu(menu, "Пульт с телефона  ›", "RemoteMenu", [])
+	_add_menu_item(remote_menu, "Пульт включён", "toggle_remote", true)
+	_add_menu_item(remote_menu, "Адрес и код для телефона…", "remote_info")
+	_add_menu_item(remote_menu, "Забыть все телефоны", "remote_forget")
 	var appearance := _submenu(menu, "Внешний вид  ›", "AppearanceMenu", [])
 	_add_menu_item(appearance, "Настроить свет, тени и обводку…", "light_editor")
 	_add_menu_item(appearance, "Мягкие движения", "toggle_motion", true)

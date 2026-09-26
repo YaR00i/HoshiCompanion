@@ -14,8 +14,9 @@ extends RefCounted
 ##   title     — подпись по-русски (для меню, пульта, подсказок);
 ##   group     — раздел (life, move, gesture, place, surface, seated, scene,
 ##               pause, seated_mode, tools, look, autonomy, talk, ...);
-##   sources   — кто может отдать команду: "user" (человек: меню, клавиши,
-##               позже телефон/голос) и/или "auto" (сама Хоши);
+##   sources   — кто может отдать команду: "user" (человек: меню, клавиши),
+##               "remote" (пульт с телефона, только вместе с "user") и/или
+##               "auto" (сама Хоши);
 ##   menu_id   — внутренний номер пункта PopupMenu (-1 — в меню нет). Нужен
 ##               только самому меню; номера совпадают со старыми;
 ##   flags     — особые правила ручных команд:
@@ -39,21 +40,21 @@ const MotionLibrary = preload("res://scripts/motion_library.gd")
 
 const LIST := {
 	# Общение
-	"wave": {"title": "Помахать", "group": "life", "menu_id": 10, "flags": ["pauses_places"], "sources": ["user", "auto"], "animation": "wave"},
-	"pet": {"title": "Погладить", "group": "life", "menu_id": 11, "flags": ["pauses_places"], "sources": ["user"], "animation": "pet_react"},
-	"doze": {"title": "Подремать / разбудить", "group": "life", "menu_id": 12, "flags": ["pauses_places", "keeps_intent"], "sources": ["user"], "animation": "doze"},
+	"wave": {"title": "Помахать", "group": "life", "menu_id": 10, "flags": ["pauses_places"], "sources": ["user", "auto", "remote"], "animation": "wave"},
+	"pet": {"title": "Погладить", "group": "life", "menu_id": 11, "flags": ["pauses_places"], "sources": ["user", "remote"], "animation": "pet_react"},
+	"doze": {"title": "Подремать / разбудить", "group": "life", "menu_id": 12, "flags": ["pauses_places", "keeps_intent"], "sources": ["user", "remote"], "animation": "doze"},
 	"look": {"title": "Осмотреться", "group": "life", "menu_id": -1, "sources": ["auto"]},
 	# Настроение
-	"mood_neutral": {"title": "Спокойная", "group": "mood", "menu_id": 20, "sources": ["user"]},
-	"mood_happy": {"title": "Радостная", "group": "mood", "menu_id": 21, "sources": ["user"]},
-	"mood_relaxed": {"title": "Расслабленная", "group": "mood", "menu_id": 22, "sources": ["user"]},
-	"mood_surprised": {"title": "Удивлённая", "group": "mood", "menu_id": 23, "sources": ["user"]},
-	"mood_sad": {"title": "Грустная", "group": "mood", "menu_id": 24, "sources": ["user"]},
+	"mood_neutral": {"title": "Спокойная", "group": "mood", "menu_id": 20, "sources": ["user", "remote"]},
+	"mood_happy": {"title": "Радостная", "group": "mood", "menu_id": 21, "sources": ["user", "remote"]},
+	"mood_relaxed": {"title": "Расслабленная", "group": "mood", "menu_id": 22, "sources": ["user", "remote"]},
+	"mood_surprised": {"title": "Удивлённая", "group": "mood", "menu_id": 23, "sources": ["user", "remote"]},
+	"mood_sad": {"title": "Грустная", "group": "mood", "menu_id": 24, "sources": ["user", "remote"]},
 	# Движение по полу
-	"walk": {"title": "Пройтись", "group": "move", "menu_id": 30, "flags": ["pauses_places", "keeps_intent", "keeps_walk"], "sources": ["user", "auto"], "animation": "walk_cycle"},
-	"stop": {"title": "Остановиться", "group": "move", "menu_id": 31, "flags": ["pauses_places", "keeps_walk"], "sources": ["user"]},
-	"sit": {"title": "Сесть отдохнуть", "group": "move", "menu_id": 32, "flags": ["pauses_places", "keeps_intent"], "sources": ["user", "auto"], "animation": "sit_down"},
-	"stand": {"title": "Встать", "group": "move", "menu_id": 33, "flags": ["pauses_places"], "sources": ["user"], "animation": "sit_down"},
+	"walk": {"title": "Пройтись", "group": "move", "menu_id": 30, "flags": ["pauses_places", "keeps_intent", "keeps_walk"], "sources": ["user", "auto", "remote"], "animation": "walk_cycle"},
+	"stop": {"title": "Остановиться", "group": "move", "menu_id": 31, "flags": ["pauses_places", "keeps_walk"], "sources": ["user", "remote"]},
+	"sit": {"title": "Сесть отдохнуть", "group": "move", "menu_id": 32, "flags": ["pauses_places", "keeps_intent"], "sources": ["user", "auto", "remote"], "animation": "sit_down"},
+	"stand": {"title": "Встать", "group": "move", "menu_id": 33, "flags": ["pauses_places"], "sources": ["user", "remote"], "animation": "sit_down"},
 	# Короткие жесты стоя (пока только сама)
 	"floor_peek_left": {"title": "Заглянуть влево", "group": "gesture", "menu_id": -1, "sources": ["auto"], "animation": "stand_peek_left"},
 	"floor_peek_right": {"title": "Заглянуть вправо", "group": "gesture", "menu_id": -1, "sources": ["auto"], "animation": "stand_peek_right"},
@@ -63,15 +64,15 @@ const LIST := {
 	"floor_shoulders": {"title": "Размять плечи", "group": "gesture", "menu_id": -1, "sources": ["auto"], "animation": "stand_shoulders"},
 	# Места: полочка, окна, уголок
 	"shelf_demo": {"title": "Полочка — попробовать", "group": "place", "menu_id": 40, "flags": ["pauses_places"], "sources": ["user"]},
-	"return_floor": {"title": "Вернуться на пол", "group": "place", "menu_id": 41, "flags": ["pauses_places"], "sources": ["user", "auto"], "animation": "jump"},
+	"return_floor": {"title": "Вернуться на пол", "group": "place", "menu_id": 41, "flags": ["pauses_places"], "sources": ["user", "auto", "remote"], "animation": "jump"},
 	"pick_window": {"title": "Выбрать окно под курсором · 4 с", "group": "place", "menu_id": 42, "flags": ["pauses_places"], "sources": ["user"]},
-	"cozy_corner": {"title": "Мой уютный уголок", "group": "place", "menu_id": 43, "flags": ["pauses_places"], "sources": ["user"]},
+	"cozy_corner": {"title": "Мой уютный уголок", "group": "place", "menu_id": 43, "flags": ["pauses_places"], "sources": ["user", "remote"]},
 	# На поверхности окна
-	"surface_walk": {"title": "Пройтись по краю", "group": "surface", "menu_id": 305, "flags": ["pauses_places"], "sources": ["user", "auto"], "animation": "walk_cycle"},
-	"surface_scoot": {"title": "Подвинуться сидя", "group": "surface", "menu_id": 313, "flags": ["pauses_places"], "sources": ["user", "auto"], "animation": "edge_seat"},
-	"side_left": {"title": "Опора у левого края", "group": "surface", "menu_id": 306, "flags": ["pauses_places"], "sources": ["user", "auto"], "animation": "side_lean"},
-	"side_right": {"title": "Опора у правого края", "group": "surface", "menu_id": 307, "flags": ["pauses_places"], "sources": ["user", "auto"], "animation": "side_lean"},
-	"side_return": {"title": "Сесть обратно", "group": "surface", "menu_id": 308, "flags": ["pauses_places"], "sources": ["user", "auto"], "animation": "jump"},
+	"surface_walk": {"title": "Пройтись по краю", "group": "surface", "menu_id": 305, "flags": ["pauses_places"], "sources": ["user", "auto", "remote"], "animation": "walk_cycle"},
+	"surface_scoot": {"title": "Подвинуться сидя", "group": "surface", "menu_id": 313, "flags": ["pauses_places"], "sources": ["user", "auto", "remote"], "animation": "edge_seat"},
+	"side_left": {"title": "Опора у левого края", "group": "surface", "menu_id": 306, "flags": ["pauses_places"], "sources": ["user", "auto", "remote"], "animation": "side_lean"},
+	"side_right": {"title": "Опора у правого края", "group": "surface", "menu_id": 307, "flags": ["pauses_places"], "sources": ["user", "auto", "remote"], "animation": "side_lean"},
+	"side_return": {"title": "Сесть обратно", "group": "surface", "menu_id": 308, "flags": ["pauses_places"], "sources": ["user", "auto", "remote"], "animation": "jump"},
 	# Сценки сидя: играют ключевые клипы Godot один раз
 	"edge_swing": {"title": "Поболтать ножками", "group": "seated", "menu_id": -1, "sources": ["auto"], "animation": "seated_swing"},
 	"edge_lean": {"title": "Откинуться назад", "group": "seated", "menu_id": -1, "sources": ["auto"], "animation": "seated_lean"},
@@ -80,43 +81,47 @@ const LIST := {
 	"edge_sway": {"title": "Покачаться", "group": "seated", "menu_id": -1, "sources": ["auto"], "animation": "seated_sway"},
 	"edge_hum": {"title": "Помурлыкать мелодию", "group": "seated", "menu_id": -1, "sources": ["auto"], "animation": "seated_hum"},
 	"edge_nod": {"title": "Покивать в такт", "group": "seated", "menu_id": -1, "sources": ["auto"], "animation": "seated_nod"},
-	"edge_sketch": {"title": "Рисовать в блокноте", "group": "scene", "menu_id": 312, "sources": ["user", "auto"], "animation": "seated_sketch"},
-	"edge_fold": {"title": "Сложить звёздочку", "group": "scene", "menu_id": 314, "flags": ["pauses_places"], "sources": ["user", "auto"], "animation": "seated_fold"},
-	"edge_admire_star": {"title": "Полюбоваться звёздочкой", "group": "scene", "menu_id": 315, "flags": ["pauses_places"], "sources": ["user"], "animation": "seated_admire_star"},
+	"edge_sketch": {"title": "Рисовать в блокноте", "group": "scene", "menu_id": 312, "sources": ["user", "auto", "remote"], "animation": "seated_sketch"},
+	"edge_fold": {"title": "Сложить звёздочку", "group": "scene", "menu_id": 314, "flags": ["pauses_places"], "sources": ["user", "auto", "remote"], "animation": "seated_fold"},
+	"edge_admire_star": {"title": "Полюбоваться звёздочкой", "group": "scene", "menu_id": 315, "flags": ["pauses_places"], "sources": ["user", "remote"], "animation": "seated_admire_star"},
 	# Паузы внутри плана: не движения, а ритм (только сама)
 	"surface_settle": {"title": "Устроиться поудобнее", "group": "pause", "menu_id": -1, "sources": ["auto"]},
 	"side_wait": {"title": "Постоять у края", "group": "pause", "menu_id": -1, "sources": ["auto"]},
 	# Какое занятие она предпочитает сидя (это настройка, а не разовое действие)
-	"edge_mode_auto": {"title": "Сама выбирает", "group": "seated_mode", "menu_id": 300, "sources": ["user"], "edge_activity": "auto"},
-	"edge_mode_calm": {"title": "Спокойно", "group": "seated_mode", "menu_id": 301, "sources": ["user"], "edge_activity": "calm"},
-	"edge_mode_swing": {"title": "Болтать ножками", "group": "seated_mode", "menu_id": 302, "sources": ["user"], "edge_activity": "swing", "animation": "seated_swing"},
-	"edge_mode_lean": {"title": "Откинуться назад", "group": "seated_mode", "menu_id": 303, "sources": ["user"], "edge_activity": "lean", "animation": "seated_lean"},
-	"edge_mode_peek": {"title": "Посмотреть вниз", "group": "seated_mode", "menu_id": 304, "sources": ["user"], "edge_activity": "peek", "animation": "seated_peek"},
-	"edge_mode_sway": {"title": "Мягко покачиваться", "group": "seated_mode", "menu_id": 309, "sources": ["user"], "edge_activity": "sway", "animation": "seated_sway"},
-	"edge_mode_hum": {"title": "Тихонько напевать", "group": "seated_mode", "menu_id": 310, "sources": ["user"], "edge_activity": "hum", "animation": "seated_hum"},
-	"edge_mode_nod": {"title": "Кивать в такт", "group": "seated_mode", "menu_id": 311, "sources": ["user"], "edge_activity": "nod", "animation": "seated_nod"},
+	"edge_mode_auto": {"title": "Сама выбирает", "group": "seated_mode", "menu_id": 300, "sources": ["user", "remote"], "edge_activity": "auto"},
+	"edge_mode_calm": {"title": "Спокойно", "group": "seated_mode", "menu_id": 301, "sources": ["user", "remote"], "edge_activity": "calm"},
+	"edge_mode_swing": {"title": "Болтать ножками", "group": "seated_mode", "menu_id": 302, "sources": ["user", "remote"], "edge_activity": "swing", "animation": "seated_swing"},
+	"edge_mode_lean": {"title": "Откинуться назад", "group": "seated_mode", "menu_id": 303, "sources": ["user", "remote"], "edge_activity": "lean", "animation": "seated_lean"},
+	"edge_mode_peek": {"title": "Посмотреть вниз", "group": "seated_mode", "menu_id": 304, "sources": ["user", "remote"], "edge_activity": "peek", "animation": "seated_peek"},
+	"edge_mode_sway": {"title": "Мягко покачиваться", "group": "seated_mode", "menu_id": 309, "sources": ["user", "remote"], "edge_activity": "sway", "animation": "seated_sway"},
+	"edge_mode_hum": {"title": "Тихонько напевать", "group": "seated_mode", "menu_id": 310, "sources": ["user", "remote"], "edge_activity": "hum", "animation": "seated_hum"},
+	"edge_mode_nod": {"title": "Кивать в такт", "group": "seated_mode", "menu_id": 311, "sources": ["user", "remote"], "edge_activity": "nod", "animation": "seated_nod"},
 	# Окно Хоши и вид
 	"open_preview": {"title": "Открыть примерочную", "group": "tools", "menu_id": 100, "flags": ["pauses_places"], "sources": ["user"]},
 	"to_desktop": {"title": "На рабочий стол", "group": "tools", "menu_id": 101, "flags": ["pauses_places"], "sources": ["user"]},
 	"size_small": {"title": "Небольшая · 280 px", "group": "tools", "menu_id": 110, "flags": ["pauses_places"], "sources": ["user"]},
 	"size_normal": {"title": "Обычная · 360 px", "group": "tools", "menu_id": 111, "flags": ["pauses_places"], "sources": ["user"]},
 	"size_large": {"title": "Крупная · 440 px", "group": "tools", "menu_id": 112, "flags": ["pauses_places"], "sources": ["user"]},
-	"return_bottom": {"title": "Вернуть к нижнему краю", "group": "tools", "menu_id": 140, "flags": ["pauses_places"], "sources": ["user"]},
+	"return_bottom": {"title": "Вернуть к нижнему краю", "group": "tools", "menu_id": 140, "flags": ["pauses_places"], "sources": ["user", "remote"]},
 	"reset_view": {"title": "Вернуть вид спереди", "group": "tools", "menu_id": 141, "flags": ["pauses_places"], "sources": ["user"]},
 	"fps_60": {"title": "60 FPS · плавнее", "group": "tools", "menu_id": 130, "sources": ["user"]},
 	"fps_30": {"title": "30 FPS · экономно", "group": "tools", "menu_id": 131, "sources": ["user"]},
 	"light_editor": {"title": "Настроить свет, тени и обводку…", "group": "tools", "menu_id": 150, "sources": ["user"]},
 	"light_reset": {"title": "Сбросить настройки света", "group": "tools", "menu_id": 151, "sources": ["user"]},
 	"quit": {"title": "Закрыть Хоши", "group": "app", "menu_id": 199, "sources": ["user"]},
+	# Пульт с телефона (домашняя сеть)
+	"toggle_remote": {"title": "Пульт с телефона", "group": "remote", "menu_id": 180, "sources": ["user"]},
+	"remote_info": {"title": "Адрес и код для телефона…", "group": "remote", "menu_id": 181, "sources": ["user"]},
+	"remote_forget": {"title": "Забыть все телефоны", "group": "remote", "menu_id": 182, "sources": ["user"]},
 	# Переключатели
 	"toggle_look": {"title": "Внимание к курсору", "group": "look", "menu_id": 120, "sources": ["user"]},
 	"toggle_motion": {"title": "Мягкие движения", "group": "look", "menu_id": 121, "sources": ["user"]},
 	"toggle_hair": {"title": "Движение волос", "group": "look", "menu_id": 122, "sources": ["user"]},
 	"toggle_bubbles": {"title": "Короткие реплики", "group": "look", "menu_id": 123, "sources": ["user"]},
 	"toggle_clickthrough": {"title": "Клики только по Хоши", "group": "tools", "menu_id": 124, "sources": ["user"]},
-	"toggle_auto_walk": {"title": "Самостоятельные прогулки", "group": "autonomy", "menu_id": 125, "sources": ["user"]},
-	"toggle_autonomy": {"title": "Самостоятельность", "group": "autonomy", "menu_id": 126, "sources": ["user"]},
-	"toggle_auto_rest": {"title": "Самостоятельный отдых", "group": "autonomy", "menu_id": 127, "sources": ["user"]},
+	"toggle_auto_walk": {"title": "Самостоятельные прогулки", "group": "autonomy", "menu_id": 125, "sources": ["user", "remote"]},
+	"toggle_autonomy": {"title": "Самостоятельность", "group": "autonomy", "menu_id": 126, "sources": ["user", "remote"]},
+	"toggle_auto_rest": {"title": "Самостоятельный отдых", "group": "autonomy", "menu_id": 127, "sources": ["user", "remote"]},
 	# Проверка краёв окна
 	"scan_window_structure": {"title": "Структура окна · без снимка", "group": "diagnostics", "menu_id": 160, "sources": ["user"]},
 	"scan_window_visual": {"title": "Видимые края окна · 1 кадр", "group": "diagnostics", "menu_id": 161, "sources": ["user"]},
@@ -124,13 +129,27 @@ const LIST := {
 	"talk_voice": {"title": "Поговорить через ChatGPT", "group": "talk", "menu_id": 170, "sources": ["user"]},
 	"talk_text": {"title": "Открыть текстовый чат", "group": "talk", "menu_id": 171, "sources": ["user"]},
 	# Ритм и места отдыха
-	"activity_quiet": {"title": "Тихая · без прогулок", "group": "autonomy", "menu_id": 200, "sources": ["user"]},
-	"activity_normal": {"title": "Обычная", "group": "autonomy", "menu_id": 201, "sources": ["user"]},
-	"activity_playful": {"title": "Игривая", "group": "autonomy", "menu_id": 202, "sources": ["user"]},
-	"place_manual": {"title": "Только вручную", "group": "autonomy", "menu_id": 210, "sources": ["user"]},
-	"place_cozy": {"title": "Свой уголок", "group": "autonomy", "menu_id": 211, "sources": ["user"]},
-	"place_smart": {"title": "Окна → уголок", "group": "autonomy", "menu_id": 212, "sources": ["user"]},
-	"place_focus": {"title": "Моё окно → уголок", "group": "autonomy", "menu_id": 213, "sources": ["user"]},
+	"activity_quiet": {"title": "Тихая · без прогулок", "group": "rhythm", "menu_id": 200, "sources": ["user", "remote"]},
+	"activity_normal": {"title": "Обычная", "group": "rhythm", "menu_id": 201, "sources": ["user", "remote"]},
+	"activity_playful": {"title": "Игривая", "group": "rhythm", "menu_id": 202, "sources": ["user", "remote"]},
+	"place_manual": {"title": "Только вручную", "group": "rest_place", "menu_id": 210, "sources": ["user", "remote"]},
+	"place_cozy": {"title": "Свой уголок", "group": "rest_place", "menu_id": 211, "sources": ["user", "remote"]},
+	"place_smart": {"title": "Окна → уголок", "group": "rest_place", "menu_id": 212, "sources": ["user", "remote"]},
+	"place_focus": {"title": "Моё окно → уголок", "group": "rest_place", "menu_id": 213, "sources": ["user", "remote"]},
+}
+
+## Разделы пульта с телефона (команды с источником "remote"), по порядку.
+const REMOTE_GROUPS: Array = [
+	["life", "Общение"], ["move", "Движение"], ["place", "Места"], ["surface", "На окне"],
+	["scene", "Сценки"], ["mood", "Настроение"], ["seated_mode", "Занятие сидя"], ["rhythm", "Ритм дня"], ["rest_place", "Где отдыхать"],
+	["autonomy", "Самостоятельность"],
+]
+## Значки для пульта (необязательно).
+const ICONS := {
+	"wave": "👋", "pet": "🤍", "doze": "🌙", "walk": "✦", "stop": "○", "sit": "⌒", "stand": "↑",
+	"cozy_corner": "☁", "return_floor": "↓", "surface_walk": "↔", "surface_scoot": "⇆",
+	"side_left": "◧", "side_right": "◨", "side_return": "⌂", "edge_sketch": "✎", "edge_fold": "★", "edge_admire_star": "✧",
+	"mood_neutral": "·", "mood_happy": "♪", "mood_relaxed": "~", "mood_surprised": "!", "mood_sad": "…",
 }
 
 ## Группы вариантов для выпадающих списков: порядок = порядок пунктов.
@@ -166,14 +185,17 @@ static func from_menu_id(id: int) -> String:
 			return str(command)
 	return ""
 
+static func icon(command: String) -> String:
+	return str(ICONS.get(command, ""))
+
 static func has_flag(command: String, flag: String) -> bool:
 	return flag in LIST.get(command, {}).get("flags", [])
 
 static func edge_activity(command: String) -> String:
 	return str(LIST.get(command, {}).get("edge_activity", ""))
 
-## Кто может отдать команду: "user" (меню, клавиши, позже телефон/голос)
-## и/или "auto" (сама Хоши через IntentPlanner).
+## Кто может отдать команду: "user" (меню, клавиши), "remote" (пульт с
+## телефона — только вместе с "user") и/или "auto" (сама Хоши через IntentPlanner).
 static func allows(command: String, source: String) -> bool:
 	return source in LIST.get(command, {}).get("sources", [])
 

@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#665479">
+<link rel="manifest" href="/manifest.webmanifest">
+<title>Хоши</title>
+<style>
+  :root {
+    --ink: #3b3449; --muted: #82798f; --plum: #665479; --plum-soft: #efe7f3;
+    --gold: #c4a36e; --paper: #fff8f1; --card: #fffdfb; --line: #e5d7dc; --rose: #f5e5ec;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; background: var(--paper); color: var(--ink);
+    font: 16px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; padding: 18px 18px 16px;
+    background: linear-gradient(160deg, #6f5b86, #544567); color: #fff; overflow: hidden; }
+  header h1 { margin: 0; font-size: 26px; font-weight: 650; letter-spacing: .5px; }
+  header .status { margin-top: 4px; font-size: 14px; opacity: .88; min-height: 19px; }
+  header .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: #b9e3b0; vertical-align: 1px; }
+  header .dot.off { background: #e7a4a4; }
+  .stars { position: absolute; right: 16px; top: 10px; font-size: 20px; color: #f3dca8; letter-spacing: 6px; pointer-events: none; }
+  main { padding: 14px 14px 40px; max-width: 560px; margin: 0 auto; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 14px; margin-bottom: 12px; }
+  section h2 { margin: 0 0 10px; font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: 1.2px; text-transform: uppercase; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+  button { font: inherit; color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 14px;
+    padding: 12px 12px; min-height: 48px; text-align: left; display: flex; gap: 8px; align-items: center; }
+  button:active { transform: scale(.98); background: var(--plum-soft); }
+  button.on { background: var(--plum); color: #fff; border-color: var(--plum); }
+  button .icon { width: 22px; text-align: center; opacity: .9; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chips button { min-height: 40px; padding: 8px 14px; border-radius: 999px; }
+  .now { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+  .now .title { font-weight: 650; font-size: 17px; }
+  .now .sub { color: var(--muted); font-size: 14px; }
+  .bar { height: 6px; background: var(--plum-soft); border-radius: 3px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--gold); width: 0; transition: width .4s; }
+  .times { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; }
+  .app { border-color: #dccbe3; background: linear-gradient(180deg, #fffdfb, #fbf5fb); }
+  #pair { text-align: center; padding-top: 30px; }
+  #pair p { color: var(--muted); }
+  #code { font-size: 32px; letter-spacing: 10px; text-align: center; width: 100%; max-width: 280px; padding: 12px;
+    border: 2px solid var(--line); border-radius: 16px; background: #fff; color: var(--ink); }
+  #pair button { margin: 14px auto 0; justify-content: center; background: var(--plum); color: #fff; border-color: var(--plum); min-width: 200px; }
+  .error { color: #b25b6d; min-height: 22px; margin-top: 10px; }
+  .toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); background: var(--ink); color: #fff;
+    padding: 10px 16px; border-radius: 999px; font-size: 14px; opacity: 0; transition: opacity .25s; pointer-events: none; }
+  .toast.show { opacity: .92; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <div class="stars">✦ ☾ ✧</div>
+  <h1>Хоши</h1>
+  <div class="status"><span class="dot off" id="dot"></span><span id="status">Подключаюсь…</span></div>
+</header>
+<main>
+  <div id="pair" class="hidden">
+    <h2 style="color:var(--plum);text-transform:none;font-size:20px;letter-spacing:0">Привет!</h2>
+    <p>Введи код, который Хоши показывает на компьютере<br>(меню → Пульт с телефона → Адрес и код).</p>
+    <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••">
+    <br><button id="pairButton">Подружиться</button>
+    <div class="error" id="pairError"></div>
+  </div>
+  <div id="remote" class="hidden">
+    <div id="apps"></div>
+    <div id="groups"></div>
+  </div>
+</main>
+<div class="toast" id="toast"></div>
+<script>
+"use strict";
+const WS_URL = `ws://${location.hostname}:18771/hoshi-remote-v1`;
+const CHOICE_GROUPS = new Set(["mood", "seated_mode", "rhythm", "rest_place", "autonomy"]);
+let socket = null, token = null, catalog = [], lastState = {}, retry = 800;
+
+try { token = localStorage.getItem("hoshi-token"); } catch (e) { token = null; }
+const $ = (id) => document.getElementById(id);
+
+function toast(text) {
+  const box = $("toast"); box.textContent = text; box.classList.add("show");
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => box.classList.remove("show"), 1600);
+}
+function setOnline(online, text) {
+  $("dot").classList.toggle("off", !online);
+  if (text !== undefined) $("status").textContent = text;
+}
+function send(message) {
+  if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+}
+function run(command, args) {
+  send({op: "run", command, args: args || {}});
+  if (navigator.vibrate) navigator.vibrate(12);
+}
+function showPair(error) {
+  $("remote").classList.add("hidden"); $("pair").classList.remove("hidden");
+  $("pairError").textContent = error || "";
+}
+function showRemote() { $("pair").classList.add("hidden"); $("remote").classList.remove("hidden"); }
+
+function connect() {
+  setOnline(false, "Подключаюсь…");
+  socket = new WebSocket(WS_URL);
+  socket.onopen = () => {
+    retry = 800;
+    if (token) send({op: "hello", token}); else showPair();
+  };
+  socket.onmessage = (event) => {
+    let message; try { message = JSON.parse(event.data); } catch (e) { return; }
+    switch (message.op) {
+      case "paired":
+        token = message.token;
+        try { localStorage.setItem("hoshi-token", token); } catch (e) {}
+        break;
+      case "welcome":
+        catalog = message.catalog || []; showRemote(); renderGroups(); break;
+      case "state":
+        lastState = message; renderState(); break;
+      case "ran":
+        if (!message.ok) toast(message.reason === "not_allowed" ? "С телефона так нельзя" : "Не получилось");
+        break;
+      case "error":
+        if (message.reason === "need_pairing") { token = null; try { localStorage.removeItem("hoshi-token"); } catch (e) {} showPair(); }
+        else if (message.reason === "bad_code") showPair("Код не подошёл. Посмотри на экран компьютера ещё раз.");
+        else if (message.reason === "too_fast") toast("Помедленнее :)");
+        break;
+    }
+  };
+  socket.onclose = () => {
+    setOnline(false, "Хоши не на связи — жду…");
+    setTimeout(connect, retry); retry = Math.min(retry * 1.6, 8000);
+  };
+}
+
+function button(item, isOn) {
+  const node = document.createElement("button");
+  if (isOn) node.classList.add("on");
+  if (item.icon) { const icon = document.createElement("span"); icon.className = "icon"; icon.textContent = item.icon; node.append(icon); }
+  node.append(document.createTextNode(item.title));
+  node.addEventListener("click", () => run(item.command, item.args));
+  return node;
+}
+
+function renderGroups() {
+  const root = $("groups"); root.textContent = "";
+  const selected = new Set((lastState.hoshi && lastState.hoshi.selected) || []);
+  for (const group of catalog) {
+    const section = document.createElement("section");
+    const title = document.createElement("h2"); title.textContent = group.title; section.append(title);
+    const box = document.createElement("div"); box.className = CHOICE_GROUPS.has(group.id) ? "chips" : "grid";
+    for (const item of group.commands) box.append(button(item, selected.has(item.command)));
+    section.append(box); root.append(section);
+  }
+}
+
+function clock(seconds) {
+  if (!isFinite(seconds) || seconds < 0) return "";
+  seconds = Math.floor(seconds);
+  const h = Math.floor(seconds / 3600), m = Math.floor(seconds % 3600 / 60), s = seconds % 60;
+  return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(s).padStart(2, "0");
+}
+
+function renderApps() {
+  const root = $("apps"); root.textContent = "";
+  for (const app of lastState.apps || []) {
+    const state = app.state || {};
+    const section = document.createElement("section"); section.className = "app";
+    const title = document.createElement("h2"); title.textContent = app.title; section.append(title);
+    if (state.title || state.subtitle) {
+      const now = document.createElement("div"); now.className = "now";
+      const t = document.createElement("div"); t.className = "title"; t.textContent = state.title || ""; now.append(t);
+      if (state.subtitle) { const sub = document.createElement("div"); sub.className = "sub"; sub.textContent = state.subtitle; now.append(sub); }
+      if (state.duration > 0) {
+        const bar = document.createElement("div"); bar.className = "bar";
+        const fill = document.createElement("i"); fill.style.width = Math.min(100, 100 * state.time / state.duration) + "%";
+        bar.append(fill); now.append(bar);
+        const times = document.createElement("div"); times.className = "times";
+        times.innerHTML = "<span></span><span></span>";
+        times.children[0].textContent = clock(state.time); times.children[1].textContent = clock(state.duration);
+        now.append(times);
+      }
+      section.append(now);
+    }
+    const box = document.createElement("div"); box.className = "grid";
+    const active = new Set(state.active || []);
+    for (const item of app.commands) box.append(button(item, active.has(item.command.split(":")[2])));
+    section.append(box); root.append(section);
+  }
+}
+
+function renderState() {
+  const hoshi = lastState.hoshi || {};
+  setOnline(true, hoshi.status || "На связи");
+  renderApps(); renderGroups();
+}
+
+$("pairButton").addEventListener("click", () => {
+  const code = $("code").value.replace(/\D/g, "");
+  if (code.length !== 6) { $("pairError").textContent = "Нужно 6 цифр"; return; }
+  send({op: "pair", code});
+});
+$("code").addEventListener("keydown", (event) => { if (event.key === "Enter") $("pairButton").click(); });
+connect();
+</script>
+</body>
+</html>
