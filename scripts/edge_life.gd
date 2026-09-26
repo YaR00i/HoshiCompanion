@@ -1,6 +1,9 @@
 extends RefCounted
 ## Small seated activities, not a second locomotion controller.
 ## Pose weights fade to zero for pickup/stand/doze; pelvis support stays fixed.
+const SeatedMotion = preload("res://scripts/seated_motion.gd")
+const SketchMotion = preload("res://scripts/sketch_motion.gd")
+signal paper_star_completed
 var kind: String = "calm"
 var autonomous_enabled: bool = true
 var weights: Dictionary = {
@@ -12,15 +15,25 @@ var weights: Dictionary = {
 	"hum": 0.0,
 	"nod": 0.0,
 	"sketch": 0.0,
+	"fold": 0.0,
+	"admire_star": 0.0,
 }
 var sketch_progress: float = 0.0
+var gesture_progress: Dictionary = {}
+var _gesture_age: Dictionary = {}
 var _sketch_age: float = 0.0
+var fold_progress: float = 0.0
+var admire_progress: float = 0.0
+var _fold_age: float = 0.0
+var _admire_age: float = 0.0
+var _fold_result_emitted: bool = false
 var _wait: float = 9.0
 var _left: float = 0.0
 var _last: String = "peek"
 var _forced_kind: String = ""
 var _forced_left: float = 0.0
 var _forced_release: float = 0.0
+var _previous_goal: String = "calm"
 var _rng := RandomNumberGenerator.new()
 
 func seed_random(value: int) -> void:
@@ -32,7 +45,7 @@ func tick(delta: float, state, suspended: bool = false, cozy: bool = false) -> D
 	var goal: String = "calm"
 	if (state.notice_weight > 0.1 or state.welcome_weight > 0.1 or state.pet_weight > 0.1 or state.wave_weight > 0.1) and forced_active():
 		cancel_forced()
-	if allowed and not cozy and _forced_kind == "sketch":
+	if allowed and not cozy and _forced_kind in ["sketch", "fold", "admire_star"]:
 		cancel_forced()
 	if allowed and not _forced_kind.is_empty():
 		_forced_left = maxf(0.0, _forced_left - dt)
@@ -67,11 +80,39 @@ func tick(delta: float, state, suspended: bool = false, cozy: bool = false) -> D
 		_wait = maxf(_wait, 8.0)
 	if state.notice_weight > 0.1 or state.welcome_weight > 0.1 or state.pet_weight > 0.1 or state.wave_weight > 0.1:
 		goal = "calm"
+	if goal != _previous_goal:
+		if weights.has(goal) and goal != "sketch":
+			_gesture_age[goal] = 0.0
+		_previous_goal = goal
 	if goal == "sketch":
-		_sketch_age = minf(_sketch_age + dt, 10.0)
-		sketch_progress = _sketch_age / 10.0
+		_sketch_age = minf(_sketch_age + dt, SketchMotion.clip.length)
+		sketch_progress = _sketch_age / SketchMotion.clip.length
 	else:
 		_sketch_age = 0.0
+	if goal == "fold":
+		_fold_age = minf(_fold_age + dt, float(SeatedMotion.DURATIONS["fold"]))
+		fold_progress = _fold_age / float(SeatedMotion.DURATIONS["fold"])
+		if fold_progress >= 0.95 and not _fold_result_emitted:
+			_fold_result_emitted = true
+			paper_star_completed.emit()
+	else:
+		_fold_age = 0.0
+		fold_progress = 0.0
+		_fold_result_emitted = false
+	if goal == "admire_star":
+		_admire_age = minf(_admire_age + dt, float(SeatedMotion.DURATIONS["admire_star"]))
+		admire_progress = _admire_age / float(SeatedMotion.DURATIONS["admire_star"])
+	else:
+		_admire_age = 0.0
+		admire_progress = 0.0
+	for gesture in weights:
+		if gesture == "sketch":
+			continue
+		if gesture == goal:
+			_gesture_age[gesture] = minf(float(_gesture_age.get(gesture, 0.0)) + dt, _duration(gesture))
+		elif float(weights[gesture]) < 0.01:
+			_gesture_age[gesture] = 0.0
+		gesture_progress[gesture] = clampf(float(_gesture_age.get(gesture, 0.0)) / _duration(gesture), 0.0, 1.0)
 	for key in weights:
 		weights[key] = lerpf(float(weights[key]), 1.0 if key == goal else 0.0, 1.0 - exp(-dt * 2.6))
 	return weights.duplicate()
@@ -80,11 +121,19 @@ func request_gesture(value: String) -> bool:
 	if not weights.has(value):
 		return false
 	_forced_kind = value
+	_gesture_age[value] = 0.0
 	_forced_left = _forced_duration(value)
 	_forced_release = 0.0
 	if value == "sketch":
 		_sketch_age = 0.0
 		sketch_progress = 0.0
+	if value == "fold":
+		_fold_age = 0.0
+		fold_progress = 0.0
+		_fold_result_emitted = false
+	if value == "admire_star":
+		_admire_age = 0.0
+		admire_progress = 0.0
 	_left = 0.0
 	kind = value
 	_wait = maxf(_wait, _forced_left + 6.0)
@@ -99,6 +148,8 @@ func cancel_forced() -> void:
 	_forced_release = 0.0
 
 func label() -> String:
+	if float(weights["fold"]) > 0.55: return "Складывает бумажную звезду"
+	if float(weights["admire_star"]) > 0.55: return "Показывает свою звёздочку"
 	if float(weights["sketch"]) > 0.55: return "Рисует звёздочку"
 	if float(weights["sway"]) > 0.55: return "Мягко покачивается в ритме"
 	if float(weights["hum"]) > 0.55: return "Тихонько напевает себе под нос"
@@ -111,9 +162,9 @@ func label() -> String:
 func _choices(activity: String, cozy: bool = false) -> Array[String]:
 	if cozy:
 		match activity:
-			"quiet": return ["sway", "sway", "sketch"]
-			"playful": return ["sway", "swing", "lean", "peek", "balance", "sketch"]
-		return ["sway", "swing", "lean", "peek", "balance", "sketch"]
+			"quiet": return ["sway", "sway", "sketch", "fold"]
+			"playful": return ["sway", "swing", "lean", "peek", "balance", "sketch", "fold"]
+		return ["sway", "swing", "lean", "peek", "balance", "sketch", "fold"]
 	match activity:
 		"quiet":
 			return ["sway"]
@@ -123,15 +174,10 @@ func _choices(activity: String, cozy: bool = false) -> Array[String]:
 	return ["sway", "swing", "lean", "peek", "balance"]
 
 func _duration(value: String) -> float:
-	match value:
-		"swing": return 8.0
-		"lean": return 14.0
-		"peek": return 4.0
-		"balance": return 3.5
-		"sway": return 6.5
-		"hum": return 5.5
-		"nod": return 3.8
-		"sketch": return 10.0
+	if value == "sketch":
+		return SketchMotion.clip.length
+	if SeatedMotion.DURATIONS.has(value):
+		return float(SeatedMotion.DURATIONS[value])
 	return 3.0
 
 func _pause(activity: String) -> float:
@@ -150,5 +196,5 @@ func _forced_duration(value: String) -> float:
 		"sway": return 5.5
 		"hum": return 4.8
 		"nod": return 3.6
-		"sketch": return 10.0
+		"sketch", "fold", "admire_star": return _duration(value)
 	return 3.0

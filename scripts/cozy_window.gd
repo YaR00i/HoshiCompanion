@@ -1,6 +1,9 @@
 extends "res://scripts/shelf_window.gd"
 ## Compact app-owned resting place. It never reads external application pixels.
 signal activity_requested(action: int)
+var decor: Control
+var star_card: Button
+var star_count: int = 0
 
 func _ready() -> void:
 	title = "Уютный уголок Хоши"
@@ -27,7 +30,7 @@ func _ready() -> void:
 	style.set_corner_radius_all(16)
 	panel.add_theme_stylebox_override("panel", style)
 	add_child(panel)
-	var decor: Control = load("res://scripts/cozy_decor.gd").new()
+	decor = load("res://scripts/cozy_decor.gd").new()
 	decor.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	panel.add_child(decor)
 	panel.mouse_default_cursor_shape = Control.CURSOR_MOVE
@@ -44,19 +47,46 @@ func _ready() -> void:
 	support_label.clip_text = true
 	panel.add_child(support_label)
 	var row := HBoxContainer.new()
+	row.name = "Actions"
 	row.position = Vector2(18, 112)
 	row.add_theme_constant_override("separation", 5)
 	panel.add_child(row)
-	_add_button(row, "Блокнот ✦", func(): activity_requested.emit(312))
+	_add_button(row, "Блокнот", func(): activity_requested.emit(312))
+	var fold_button := Button.new()
+	fold_button.text = "✦"
+	fold_button.custom_minimum_size = Vector2(32, 32)
+	fold_button.tooltip_text = "Сложить бумажную звёздочку"
+	fold_button.pressed.connect(func(): activity_requested.emit(314))
+	row.add_child(fold_button)
 	_add_button(row, "Ножками", func(): activity_requested.emit(302))
 	_add_button(row, "Откинуться", func(): activity_requested.emit(303))
 	_add_button(row, "На пол", func(): leave_requested.emit())
+	star_card = Button.new()
+	star_card.name = "StarCard"
+	star_card.flat = true
+	star_card.focus_mode = Control.FOCUS_NONE
+	star_card.position = Vector2(350, 39)
+	star_card.size = Vector2(65, 62)
+	star_card.tooltip_text = "Сложить первую звёздочку"
+	star_card.pressed.connect(func(): activity_requested.emit(315 if star_count > 0 else 314))
+	panel.add_child(star_card)
 	var close := Button.new()
 	close.text = "×"
 	close.position = Vector2(410, 14)
 	close.size = Vector2(25, 26)
 	close.pressed.connect(func(): close_requested.emit())
 	panel.add_child(close)
+
+func set_star_count(count: int, revision: int) -> void:
+	star_count = clampi(count, 0, 3)
+	if is_instance_valid(decor):
+		decor.set_stars(star_count, revision)
+	if is_instance_valid(star_card):
+		star_card.tooltip_text = "Показать сложенную звёздочку" if star_count > 0 else "Сложить первую звёздочку"
+
+func set_star_presenting(active: bool) -> void:
+	if is_instance_valid(decor):
+		decor.set_presenting(active)
 
 func outer_rect() -> Rect2i:
 	return Rect2i(position + Vector2i(8, 8), size - Vector2i(16, 16))

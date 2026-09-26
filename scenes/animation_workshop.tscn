@@ -1,0 +1,98 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/animation_workshop.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/sketch_motion_channels.gd" id="2"]
+[ext_resource type="Animation" path="res://animations/sketch.tres" id="3"]
+[ext_resource type="Script" path="res://scripts/workshop_editor_hint.gd" id="4"]
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_sketch"]
+_data = {
+"sketch": ExtResource("3")
+}
+
+[node name="AnimationWorkshop" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1")
+
+[node name="Channels" type="Node" parent="."]
+script = ExtResource("2")
+
+[node name="Targets" type="Node3D" parent="."]
+
+[node name="left_hand" type="Node3D" parent="Targets"]
+
+[node name="right_hand" type="Node3D" parent="Targets"]
+
+[node name="Props" type="Node3D" parent="."]
+
+[node name="open_book" type="Node3D" parent="Props"]
+
+[node name="Target" type="Node3D" parent="Props/open_book"]
+
+[node name="pencil" type="Node3D" parent="Props"]
+
+[node name="Target" type="Node3D" parent="Props/pencil"]
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+root_node = NodePath("..")
+libraries = {
+"": SubResource("AnimationLibrary_sketch")
+}
+
+[node name="EditorGuide" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("4")
+
+[node name="Margin" type="MarginContainer" parent="EditorGuide"]
+layout_mode = 2
+theme_override_constants/margin_left = 32
+theme_override_constants/margin_top = 28
+theme_override_constants/margin_right = 32
+theme_override_constants/margin_bottom = 28
+
+[node name="Steps" type="VBoxContainer" parent="EditorGuide/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="Title" type="Label" parent="EditorGuide/Margin/Steps"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 30
+text = "Мастерская анимаций Хоши"
+
+[node name="Intro" type="Label" parent="EditorGuide/Margin/Steps"]
+layout_mode = 2
+autowrap_mode = 3
+text = "Это сцена редактирования анимации sketch. Внизу — дорожки позы, блокнота и мелка. Хоши и все предметы появятся в отдельном окне после F6."
+
+[node name="Step1" type="Label" parent="EditorGuide/Margin/Steps"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+autowrap_mode = 3
+text = "1   Нажми F6 — откроется Хоши с предметами и панелью редактирования. Выбери 3 с для мелка или 8.2 с для блокнота."
+
+[node name="Step2" type="Label" parent="EditorGuide/Margin/Steps"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+autowrap_mode = 3
+text = "2   Справа выбери любой предмет сценки либо часть позы. Измени положение, поворот или масштаб; результат сразу виден на модели."
+
+[node name="Step3" type="Label" parent="EditorGuide/Margin/Steps"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+autowrap_mode = 3
+text = "3   Нажми «Сохранить анимацию». Для времени ключей и кривых можно использовать обычную панель AnimationPlayer внизу Godot; после Ctrl+S перечитай файл в мастерской."
+
+[node name="Footnote" type="Label" parent="EditorGuide/Margin/Steps"]
+layout_mode = 2
+autowrap_mode = 3
+text = "Новые зарегистрированные предметы появляются в мастерской автоматически. Таз и ноги Хоши остаются на опоре."

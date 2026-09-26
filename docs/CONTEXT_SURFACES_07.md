@@ -11,12 +11,16 @@
 - `surface_controller.gd` maps walking/leaning to the active support's local geometry.
 - `shelf_playground.gd` still owns support lifecycle and external HWND tracking.
 - `desktop_host.gd` remains the only owner of native companion-window placement and input pass-through.
-- On Windows, `tools/window_input_passthrough.py` may change only `WS_EX_TRANSPARENT` on Hoshi's own HWND;
-  Godot keeps ownership of layered/composition styles. The helper must not force `WS_EX_LAYERED` or
-  `SWP_FRAMECHANGED` during hover transitions, because rebuilding transparent composition can flash the HWND.
+- On Windows, `tools/window_input_passthrough.py` prepares `WS_EX_LAYERED` on Hoshi's own HWND once
+  after creation or an explicit Godot window-style change. Windows needs the layered and transparent
+  styles together for top-level click-through. Hover transitions change only `WS_EX_TRANSPARENT`;
+  never rebuild layered composition or send `SWP_FRAMECHANGED` on pointer movement, which can flash the HWND.
   It verifies the HWND belongs to its parent Godot process, installs no hooks and enumerates no windows.
 - Precise desktop hit testing samples alpha only from Hoshi's own 3D SubViewport. It never reads
   desktop/application pixels. Transparent window space passes input through; visible Hoshi captures it.
+- The menu exposes this as a checked "Клики только по Хоши" option. The old ambiguous
+  `mask_enabled=false` preference no longer disables click-through on startup; only the
+  explicit `clickthrough_enabled=false` preference opts into full-window capture.
 
 ## Surface rules
 
@@ -51,6 +55,7 @@ Run:
 - `python tools/dev.py cozy_windows`
 - `python tools/dev.py context_views`
 - `python tools/dev.py edge_views`
+- `python tools/dev.py clickthrough`
 
 External-window tests operate only on the dedicated Tk fixture process and never capture
 pixels from pre-existing user applications.

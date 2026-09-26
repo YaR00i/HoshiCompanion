@@ -1,15 +1,23 @@
+@tool
 extends Node3D
 ## App-owned little book for the cozy-corner seated scene. No avatar assets are changed.
 
-var book: Node3D
-var pencil: MeshInstance3D
+const AnimatedProp = preload("res://scripts/animated_prop.gd")
+
+var book
+var pencil
 var star_strokes: Array[MeshInstance3D] = []
 var height_m: float = 1.0
 
 func setup(body_height: float) -> void:
 	height_m = body_height
-	book = Node3D.new()
+	book = AnimatedProp.new()
 	book.name = "OpenBook"
+	book.prop_id = "open_book"
+	book.display_name = "Блокнот"
+	book.anchor_bone = "hips"
+	book.default_position = Vector3(0.0, -0.065, 0.27)
+	book.default_rotation_degrees = Vector3(-13.0, 0.0, 0.0)
 	add_child(book)
 	_add_box(book, "Cover", Vector3(0.275, 0.205, 0.012) * height_m, Vector3(0.0, 0.0, -0.012) * height_m, Color("8e77a6"))
 	_add_box(book, "Page", Vector3(0.255, 0.185, 0.012) * height_m, Vector3(0.0, 0.0, 0.0), Color("fff6dd"))
@@ -27,25 +35,28 @@ func setup(body_height: float) -> void:
 		var stroke: MeshInstance3D = _add_box(book, "StarStroke", Vector3(height_m * 0.005, a.distance_to(b), height_m * 0.003), Vector3((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, height_m * 0.009), Color("d7a74d"))
 		stroke.rotation.z = -atan2(b.x - a.x, b.y - a.y)
 		star_strokes.append(stroke)
-	pencil = _add_box(self, "Pencil", Vector3(0.010, 0.110, 0.010) * height_m, Vector3.ZERO, Color("9871a5"))
-	pencil.rotation.z = -0.42
+	pencil = AnimatedProp.new()
+	pencil.name = "Pencil"
+	pencil.prop_id = "pencil"
+	pencil.display_name = "Мелок"
+	pencil.anchor_bone = "rightHand"
+	pencil.default_position = Vector3(-0.006, 0.035, 0.012)
+	pencil.default_rotation_degrees = Vector3(0.0, 0.0, -24.064)
+	add_child(pencil)
+	_add_box(pencil, "PencilBody", Vector3(0.010, 0.110, 0.010) * height_m, Vector3.ZERO, Color("9871a5"))
 	visible = false
 
-func update_pose(pivot: Node3D, rig, weight: float, progress: float) -> void:
+func update_pose(_pivot: Node3D, _rig, weight: float, progress: float) -> void:
 	var w: float = clampf(weight, 0.0, 1.0)
 	visible = w > 0.015
 	if not visible:
 		return
 	var show: float = smoothstep(0.70, 0.86, progress) * (1.0 - smoothstep(0.94, 1.0, progress))
-	var hip: Vector3 = pivot.to_local(rig.world_point("hips"))
-	position = hip + Vector3(0.0, height_m * (-0.065 + show * 0.18), height_m * (0.27 - show * 0.07))
-	book.rotation = Vector3(deg_to_rad(-13.0 + show * 10.0), 0.0, sin(progress * 8.0) * 0.018)
-	book.scale = Vector3.ONE * smoothstep(0.0, 0.28, w)
+	book.display_weight = smoothstep(0.0, 0.28, w)
 	var drawn: float = clampf((progress - 0.13) / 0.52, 0.0, 1.0)
 	for i in range(star_strokes.size()):
 		star_strokes[i].visible = drawn > float(i) / float(star_strokes.size())
-	pencil.position = to_local(rig.world_point("rightHand")) + Vector3(-0.006, 0.035, 0.012) * height_m
-	pencil.scale = Vector3.ONE * smoothstep(0.0, 0.28, w) * (1.0 - show * 0.65)
+	pencil.display_weight = smoothstep(0.0, 0.28, w) * (1.0 - show * 0.65)
 
 func _add_box(parent: Node3D, title: String, dimensions: Vector3, offset: Vector3, tint: Color) -> MeshInstance3D:
 	var mesh := BoxMesh.new()

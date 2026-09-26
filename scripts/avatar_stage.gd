@@ -12,6 +12,12 @@ const MagicDoor = preload("res://scripts/magic_door.gd")
 const Expressions = preload("res://scripts/expression_driver.gd")
 const PetEffect = preload("res://scripts/pet_effect.gd")
 const SketchbookProp = preload("res://scripts/sketchbook_prop.gd")
+const SketchMotion = preload("res://scripts/sketch_motion.gd")
+const SeatedMotion = preload("res://scripts/seated_motion.gd")
+const AnimatedProp = preload("res://scripts/animated_prop.gd")
+const PaperStarProp = preload("res://scripts/paper_star_prop.gd")
+const SoftToonShader = preload("res://scripts/soft_toon.gdshader")
+const TopEdgeLightShader = preload("res://scripts/top_edge_light.gdshader")
 
 var view: SubViewport
 var pivot: Node3D
@@ -29,6 +35,8 @@ var door
 var edge_suspended: bool = false
 var cozy_corner_active: bool = false
 var edge_scoot: Dictionary = {}
+var animation_workshop_progress: float = -1.0
+var last_sketch_channels: Dictionary = {}
 var context_action: String = "idle"
 var context_velocity: Vector2 = Vector2.ZERO
 var context_progress: float = -1.0
@@ -44,10 +52,28 @@ var foot_margin: float = 38.0
 var yaw: float = 0.0
 var travel_offset_px: float = 0.0
 var is_loaded: bool = false
+var voice_level: float = 0.0
+var _voice_mouth: float = 0.0
 var _mesh_count: int = 0
 var _interaction_image: Image
 var pet_effect
 var sketchbook
+var paper_star
+var _soft_toon_culled: Shader
+var light_position: Vector3 = Vector3(-1.2, 2.2, 2.4)
+var shadow_strength: float = 1.0
+var shadow_tint: Color = Color.WHITE
+var edge_strength: float = 0.16
+var edge_color: Color = Color(1.0, 0.92, 0.98)
+var edge_width: float = 0.4
+var outline_strength: float = 0.45
+var outline_color: Color = Color(0.20, 0.16, 0.27)
+var outline_width: float = 0.35
+var _soft_toon_materials: Array[ShaderMaterial] = []
+var _last_toon_light_position: Vector3 = Vector3.ZERO
+var _toon_light_dirty: bool = true
+var edge_overlay: TextureRect
+var _edge_overlay_material: ShaderMaterial
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -57,7 +83,7 @@ func _ready() -> void:
 	view.size = Vector2i(560, 620)
 	view.transparent_bg = true
 	view.own_world_3d = true
-	view.msaa_3d = Viewport.MSAA_2X
+	view.msaa_3d = Viewport.MSAA_4X
 	view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	add_child(view)
 	door = MagicDoor.new()
@@ -75,24 +101,43 @@ func _ready() -> void:
 	camera.position = Vector3(0.0, 0.8, 4.0)
 	camera.current = true
 	view.add_child(camera)
-	# Fallback light for a model with standard shaded materials. Hoshi's authored
-	# KHR_materials_unlit fallbacks do not depend on this light.
-	var light: DirectionalLight3D = DirectionalLight3D.new()
+	# Keep a fallback light for other shaded VRMs. Hoshi's toon materials use
+	# their own simple light bands and preserve the authored texture colors.
+	var light := DirectionalLight3D.new()
 	light.rotation_degrees = Vector3(-22.0, -18.0, 0.0)
 	light.light_energy = 1.0
 	light.shadow_enabled = false
 	view.add_child(light)
+	_soft_toon_culled = Shader.new()
+	_soft_toon_culled.code = SoftToonShader.code.replace("cull_disabled", "cull_back")
+	edge_overlay = TextureRect.new()
+	edge_overlay.name = "TopEdgeLight"
+	edge_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	edge_overlay.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	edge_overlay.stretch_mode = TextureRect.STRETCH_SCALE
+	edge_overlay.texture = view.get_texture()
+	edge_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_edge_overlay_material = ShaderMaterial.new()
+	_edge_overlay_material.shader = TopEdgeLightShader
+	_edge_overlay_material.set_shader_parameter("avatar_texture", view.get_texture())
+	edge_overlay.material = _edge_overlay_material
+	add_child(edge_overlay)
 	pet_effect = PetEffect.new()
 	pet_effect.name = "PetEffect"
 	view.add_child(pet_effect)
 	sketchbook = SketchbookProp.new()
 	sketchbook.name = "Sketchbook"
 	pivot.add_child(sketchbook)
+	paper_star = PaperStarProp.new()
+	paper_star.name = "PaperStar"
+	pivot.add_child(paper_star)
 	resized.connect(_on_resized)
 	_on_resized()
 
 func load_model(path: String) -> Dictionary:
 	is_loaded = false
+	_soft_toon_materials.clear()
+	_toon_light_dirty = true
 	report = {}
 	model_data = {}
 	# A reload must not retain meshes, bone indices or drivers from the old avatar.
@@ -109,6 +154,12 @@ func load_model(path: String) -> Dictionary:
 	sketchbook = SketchbookProp.new()
 	sketchbook.name = "Sketchbook"
 	pivot.add_child(sketchbook)
+	if is_instance_valid(paper_star):
+		pivot.remove_child(paper_star)
+		paper_star.queue_free()
+	paper_star = PaperStarProp.new()
+	paper_star.name = "PaperStar"
+	pivot.add_child(paper_star)
 	var life_seed: int = 42 if OS.get_cmdline_user_args().has("--test-mode") else int(Time.get_ticks_usec())
 	edge_life.seed_random(life_seed)
 	idle_life.seed_random(life_seed + 19)
@@ -131,6 +182,10 @@ func load_model(path: String) -> Dictionary:
 		return rig_report
 	var merged: AABB = AABB()
 	var have_bounds: bool = false
+	var source_materials: Dictionary = {}
+	for item in loaded["source"].get("materials", []):
+		if item is Dictionary:
+			source_materials[str(item.get("name", ""))] = item
 	var meshes: Array[Node] = avatar.find_children("*", "MeshInstance3D", true, false)
 	_mesh_count = meshes.size()
 	for child in meshes:
@@ -141,12 +196,14 @@ func load_model(path: String) -> Dictionary:
 		var bounds: AABB = transform_to_avatar * instance.get_aabb()
 		merged = merged.merge(bounds) if have_bounds else bounds
 		have_bounds = true
+		_apply_soft_toon(instance, source_materials)
 		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		instance.extra_cull_margin = 0.25
 	if not have_bounds or merged.size.y < 0.1:
 		return {"error": "Модель импортирована, но её видимая геометрия не найдена."}
 	model_height = merged.size.y
 	sketchbook.setup(model_height)
+	paper_star.setup(model_height)
 	avatar.position.y -= merged.position.y
 	avatar.position.x -= merged.get_center().x
 	avatar.position.z -= merged.get_center().z
@@ -165,7 +222,79 @@ func load_model(path: String) -> Dictionary:
 		"status": "ready" if bool(face_report.get("blink_available", false)) else "partial",
 		"warnings": face_report.get("warnings", PackedStringArray())}
 	fit_camera()
+	_update_toon_light()
+	_update_toon_shading()
 	return report
+
+func set_light_position(value: Vector3) -> void:
+	light_position = Vector3(clampf(value.x, -3.0, 3.0), clampf(value.y, 0.2, 3.5), clampf(value.z, 0.4, 4.0))
+	_toon_light_dirty = true
+	_update_toon_light()
+
+func _update_toon_light() -> void:
+	var world_position: Vector3 = pivot.position + light_position if is_instance_valid(pivot) else light_position
+	if not _toon_light_dirty and world_position == _last_toon_light_position:
+		return
+	for material in _soft_toon_materials:
+		material.set_shader_parameter("light_position_world", world_position)
+	_last_toon_light_position = world_position
+	_toon_light_dirty = false
+
+func set_shading_settings(shadow_power: float, shadow_color_value: Color, edge_power: float, edge_color_value: Color, edge_width_value: float,
+		outline_power: float = 0.45, outline_color_value: Color = Color(0.20, 0.16, 0.27), outline_width_value: float = 0.35) -> void:
+	shadow_strength = clampf(shadow_power, 0.0, 1.5)
+	shadow_tint = Color(clampf(shadow_color_value.r, 0.0, 1.0), clampf(shadow_color_value.g, 0.0, 1.0), clampf(shadow_color_value.b, 0.0, 1.0))
+	edge_strength = clampf(edge_power, 0.0, 0.5)
+	edge_color = Color(clampf(edge_color_value.r, 0.0, 1.0), clampf(edge_color_value.g, 0.0, 1.0), clampf(edge_color_value.b, 0.0, 1.0))
+	edge_width = clampf(edge_width_value, 0.0, 1.0)
+	outline_strength = clampf(outline_power, 0.0, 1.0)
+	outline_color = Color(clampf(outline_color_value.r, 0.0, 1.0), clampf(outline_color_value.g, 0.0, 1.0), clampf(outline_color_value.b, 0.0, 1.0))
+	outline_width = clampf(outline_width_value, 0.0, 1.0)
+	_update_toon_shading()
+
+func _update_toon_shading() -> void:
+	for material in _soft_toon_materials:
+		material.set_shader_parameter("shadow_strength", shadow_strength)
+		material.set_shader_parameter("shadow_tint", Vector3(shadow_tint.r, shadow_tint.g, shadow_tint.b))
+	if _edge_overlay_material != null:
+		_edge_overlay_material.set_shader_parameter("edge_strength", edge_strength)
+		_edge_overlay_material.set_shader_parameter("edge_color", Vector3(edge_color.r, edge_color.g, edge_color.b))
+		_edge_overlay_material.set_shader_parameter("edge_width", edge_width)
+		_edge_overlay_material.set_shader_parameter("outline_strength", outline_strength)
+		_edge_overlay_material.set_shader_parameter("outline_color", Vector3(outline_color.r, outline_color.g, outline_color.b))
+		_edge_overlay_material.set_shader_parameter("outline_width", outline_width)
+		edge_overlay.visible = (edge_strength > 0.001 or outline_strength > 0.001) and not cinematic_active()
+
+func _apply_soft_toon(instance: MeshInstance3D, source_materials: Dictionary) -> void:
+	# The imported glTF fallback is unlit. Use the VRM's authored MToon shade
+	# factors on runtime materials; keep the supplied file and eye details intact.
+	for surface in range(instance.mesh.get_surface_count()):
+		var original: Material = instance.mesh.surface_get_material(surface)
+		if not original is BaseMaterial3D:
+			continue
+		var base: BaseMaterial3D = original as BaseMaterial3D
+		var material_name: String = base.resource_name.to_lower()
+		if material_name.contains("eye") or material_name.contains("brow") or material_name.contains("mouth"):
+			continue
+		if base.shading_mode != BaseMaterial3D.SHADING_MODE_UNSHADED or base.albedo_texture == null:
+			continue
+		var source_material: Dictionary = source_materials.get(base.resource_name, {})
+		var mtoon: Dictionary = source_material.get("extensions", {}).get("VRMC_materials_mtoon", {})
+		var shade_values: Array = mtoon.get("shadeColorFactor", [1.0, 1.0, 1.0])
+		var shade_factor := Vector3(float(shade_values[0]), float(shade_values[1]), float(shade_values[2]))
+		var extra_shade: float = 0.25 if material_name.contains("hair") else (0.08 if material_name.contains("skin") else 0.18)
+		var toon := ShaderMaterial.new()
+		toon.shader = SoftToonShader if base.cull_mode == BaseMaterial3D.CULL_DISABLED else _soft_toon_culled
+		toon.set_shader_parameter("base_texture", base.albedo_texture)
+		toon.set_shader_parameter("base_factor", base.albedo_color)
+		toon.set_shader_parameter("shade_factor", shade_factor)
+		toon.set_shader_parameter("shade_shift", float(mtoon.get("shadingShiftFactor", -0.3)))
+		toon.set_shader_parameter("shade_toony", float(mtoon.get("shadingToonyFactor", 0.8)))
+		toon.set_shader_parameter("extra_shade", extra_shade)
+		toon.set_shader_parameter("rim_strength", 0.08 if material_name.contains("hair") else 0.035)
+		toon.set_shader_parameter("alpha_cutoff", base.alpha_scissor_threshold)
+		instance.set_surface_override_material(surface, toon)
+		_soft_toon_materials.append(toon)
 
 func _on_resized() -> void:
 	if view == null:
@@ -191,10 +320,25 @@ func animate(delta: float, state, gaze: Vector2, walk_frame: Dictionary = {}) ->
 	if not is_loaded:
 		return
 	_tick_cinematic(delta, state.time)
+	edge_overlay.visible = (edge_strength > 0.001 or outline_strength > 0.001) and not cinematic_active()
 	pivot.rotation.y = deg_to_rad(yaw)
 	pivot.position = Vector3(travel_offset_px * meters_per_pixel(), 0.0, _cinematic_z)
+	_update_toon_light()
 	var life_frame: Dictionary = edge_life.tick(delta, state, edge_suspended, cozy_corner_active)
-	life_frame["sketch_progress"] = edge_life.sketch_progress
+	if animation_workshop_progress >= 0.0:
+		for key in edge_life.weights:
+			life_frame[key] = 0.0
+		life_frame["sketch"] = 1.0
+	life_frame["sketch_progress"] = clampf(animation_workshop_progress, 0.0, 1.0) if animation_workshop_progress >= 0.0 else edge_life.sketch_progress
+	life_frame["sketch_channels"] = SketchMotion.sample(float(life_frame["sketch_progress"]))
+	last_sketch_channels = life_frame["sketch_channels"]
+	var gesture_channels: Dictionary = {}
+	for gesture in SeatedMotion.kinds():
+		if float(life_frame.get(gesture, 0.0)) > 0.001:
+			gesture_channels[gesture] = SeatedMotion.sample(gesture, float(edge_life.gesture_progress.get(gesture, 0.0)))
+	life_frame["gesture_channels"] = gesture_channels
+	life_frame["fold_progress"] = edge_life.fold_progress
+	life_frame["admire_progress"] = edge_life.admire_progress
 	life_frame["scoot_weight"] = float(edge_scoot.get("weight", 0.0))
 	life_frame["scoot_direction"] = float(edge_scoot.get("direction", 0.0))
 	var walk_weight: float = float(walk_frame.get("weight", 0.0))
@@ -212,11 +356,35 @@ func animate(delta: float, state, gaze: Vector2, walk_frame: Dictionary = {}) ->
 	var active_context: String = "portal" if cinematic_active() else context_action
 	context_pose.tick(delta, active_context, context_velocity, context_progress, context_impact, yaw)
 	context_pose.apply(state.time)
-	sketchbook.update_pose(pivot, rig, float(life_frame.get("sketch", 0.0)) if state.posture.kind == "edge" and cozy_corner_active and not edge_suspended and not state.dozing else 0.0, edge_life.sketch_progress)
+	sketchbook.update_pose(pivot, rig, float(life_frame.get("sketch", 0.0)) if state.posture.kind == "edge" and cozy_corner_active and not edge_suspended and not state.dozing else 0.0, float(life_frame["sketch_progress"]))
+	var prop_samples: Dictionary = {}
+	var prop_strengths: Dictionary = {}
+	var clip_samples: Dictionary = {"sketch": life_frame["sketch_channels"]}
+	clip_samples.merge(gesture_channels)
+	for gesture in clip_samples:
+		var weight: float = float(life_frame.get(gesture, 0.0))
+		var gesture_props: Dictionary = (clip_samples[gesture] as Dictionary).get("props", {})
+		for prop_id in gesture_props:
+			if weight > float(prop_strengths.get(prop_id, -1.0)):
+				prop_strengths[prop_id] = weight
+				prop_samples[prop_id] = gesture_props[prop_id]
+	for prop in animation_props():
+		prop.apply_pose(pivot, rig, model_height, prop_samples.get(prop.prop_id, {}))
+	paper_star.update_pose(pivot, rig,
+		float(life_frame.get("fold", 0.0)) if state.posture.kind == "edge" and cozy_corner_active and not edge_suspended and not state.dozing else 0.0,
+		edge_life.fold_progress,
+		float(life_frame.get("admire_star", 0.0)) if state.posture.kind == "edge" and cozy_corner_active and not edge_suspended and not state.dozing else 0.0,
+		edge_life.admire_progress,
+		prop_samples)
 	var face_weights: Dictionary = state.expression_weights()
+	_voice_mouth = lerpf(_voice_mouth, voice_level, 1.0 - exp(-delta * (20.0 if voice_level > _voice_mouth else 12.0)))
+	face_weights["aa"] = maxf(float(face_weights.get("aa", 0.0)), _voice_mouth * 0.72)
 	if cozy_corner_active and not edge_suspended and float(life_frame.get("sketch", 0.0)) > 0.01:
-		var show: float = smoothstep(0.70, 0.86, edge_life.sketch_progress) * (1.0 - smoothstep(0.94, 1.0, edge_life.sketch_progress))
+		var show: float = smoothstep(0.70, 0.86, float(life_frame["sketch_progress"])) * (1.0 - smoothstep(0.94, 1.0, float(life_frame["sketch_progress"])))
 		face_weights["happy"] = maxf(float(face_weights.get("happy", 0.0)), float(life_frame["sketch"]) * show * 0.34)
+	if cozy_corner_active and not edge_suspended:
+		var paper_show: float = smoothstep(0.70, 0.83, edge_life.fold_progress) * (1.0 - smoothstep(0.93, 1.0, edge_life.fold_progress))
+		face_weights["happy"] = maxf(float(face_weights.get("happy", 0.0)), float(life_frame.get("fold", 0.0)) * paper_show * 0.42 + float(life_frame.get("admire_star", 0.0)) * 0.38)
 	expressions.apply(face_weights)
 	pet_effect.tick(delta, head_pixel() + state.pet_follow * body_pixels * 0.09 + Vector2(0.0, -body_pixels * 0.055), state.pet_contact_active)
 
@@ -390,3 +558,12 @@ func hit_avatar(point: Vector2) -> bool:
 
 func model_name() -> String:
 	return str(model_data.get("vrm", {}).get("meta", {}).get("name", "Hoshi"))
+
+func animation_props() -> Array:
+	var result: Array = []
+	if pivot == null:
+		return result
+	for node in pivot.find_children("*", "Node3D", true, false):
+		if node is AnimatedProp and not (node as AnimatedProp).prop_id.is_empty():
+			result.append(node)
+	return result

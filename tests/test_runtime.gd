@@ -9,6 +9,7 @@ const Director = preload("res://scripts/behavior_director.gd")
 const IntentPlanner = preload("res://scripts/intent_planner.gd")
 const InteractionSession = preload("res://scripts/interaction_session.gd")
 const UI = preload("res://scripts/companion_ui.gd")
+const Companion = preload("res://scripts/companion.gd")
 
 var failures: int = 0
 var checks: int = 0
@@ -63,8 +64,29 @@ func _run() -> void:
 	_check(bool(result["face"].get("blink_available", false)), "actual Hoshi blink resolved on a live mesh")
 	_check(result["face"].get("mapping", []).size() > 0, "mesh mapping diagnostics emitted")
 	_check(stage.model_height > 0.5 and stage.model_height < 3.0, "model scale is plausible")
+	_check(not stage._soft_toon_materials.is_empty(), "runtime toon materials bind to the avatar")
+	_check(stage.view.msaa_3d == Viewport.MSAA_4X, "avatar viewport uses four-sample 3D anti-aliasing")
+	stage.set_light_position(Vector3(1.1, 2.0, 2.8))
+	if not stage._soft_toon_materials.is_empty():
+		_check(stage._soft_toon_materials[0].get_shader_parameter("light_position_world") == Vector3(1.1, 2.0, 2.8), "moving the light updates the live avatar material")
+	stage.set_shading_settings(0.55, Color(0.5, 0.7, 1.0), 0.3, Color(0.8, 0.9, 1.0), 0.65,
+		0.6, Color(0.2, 0.3, 0.5), 0.7)
+	if not stage._soft_toon_materials.is_empty():
+		_check(is_equal_approx(float(stage._soft_toon_materials[0].get_shader_parameter("shadow_strength")), 0.55), "shadow strength reaches the avatar material")
+	_check(is_equal_approx(float(stage._edge_overlay_material.get_shader_parameter("edge_strength")), 0.3), "upper silhouette light receives its own strength")
+	_check(is_equal_approx(float(stage._edge_overlay_material.get_shader_parameter("outline_strength")), 0.6), "outline controls reach the live silhouette shader")
+	_check(stage.edge_overlay.mouse_filter == Control.MOUSE_FILTER_IGNORE, "upper silhouette light does not intercept pointer input")
+	stage.set_shading_settings(1.0, Color.WHITE, 0.16, Color(1.0, 0.92, 0.98), 0.4)
 	_check(int(result["mesh_count"]) >= 3, "face, body and hair mesh nodes")
 	_check(stage.rig.bones.size() >= 40, "humanoid bones resolved")
+	var hair_simulator: SpringBoneSimulator3D = stage.rig.hair_springs.simulator
+	_check(is_instance_valid(hair_simulator) and hair_simulator.setting_count == 18, "native hair simulation binds all authored hair chains")
+	_check(hair_simulator.get_joint_count(0) >= 3 and hair_simulator.get_center_from(0) == SpringBoneSimulator3D.CENTER_FROM_BONE,
+		"hair chains use imported joints and an avatar-relative center")
+	stage.rig.hair_enabled = false
+	_check(not hair_simulator.active, "hair toggle disables the native simulation")
+	stage.rig.hair_enabled = true
+	_check(hair_simulator.active, "hair toggle restores the native simulation")
 	_check(stage.head_contact_hit(stage.head_pixel()), "projected head center belongs to the petting contact zone")
 	_check(not stage.head_contact_hit(stage.standing_anchor_pixel()), "feet stay outside the head petting contact zone")
 	_check(stage.hand_contact_side(stage.hand_pixel("left")) == "left", "left palm can start a cursor hold")
@@ -190,7 +212,39 @@ func _run() -> void:
 	root.add_child(user_interface)
 	await process_frame
 	await process_frame
-	_check(user_interface.menu.get_item_index(199) >= 0, "close command exists")
+	_check(user_interface.action_menu(199) == user_interface.menu, "close command stays easy to find")
+	_check(user_interface.action_menu(150) != null, "light editor is available from the desktop menu")
+	_check(user_interface.action_menu(160) != null and user_interface.action_menu(161) != null, "window diagnostics remain available in tools")
+	var light_changes: Array[Vector3] = []
+	user_interface.light_position_changed.connect(func(value: Vector3): light_changes.append(value))
+	user_interface.set_light_position(Vector3(-1.2, 2.2, 2.4))
+	user_interface._light_sliders[0].value = 0.75
+	_check(light_changes.size() == 1 and is_equal_approx(light_changes[0].x, 0.75), "light control reports live position changes")
+	var shading_changes: Array[Dictionary] = []
+	user_interface.shading_changed.connect(func(settings: Dictionary): shading_changes.append(settings))
+	user_interface.set_shading_settings({"shadow_strength": 1.0, "shadow_color": Color.WHITE,
+		"edge_strength": 0.16, "edge_color": Color(1.0, 0.92, 0.98), "edge_width": 0.4,
+		"outline_strength": 0.45, "outline_color": Color(0.20, 0.16, 0.27), "outline_width": 0.35})
+	user_interface._edge_slider.value = 0.3
+	_check(shading_changes.size() == 1 and is_equal_approx(float(shading_changes[0]["edge_strength"]), 0.3), "upper silhouette light control reports live changes")
+	user_interface._edge_color_button.color = Color(0.3, 0.7, 1.0)
+	user_interface._edge_color_button.color_changed.emit(user_interface._edge_color_button.color)
+	_check(shading_changes.size() == 2 and shading_changes[1]["edge_color"].is_equal_approx(Color(0.3, 0.7, 1.0)), "upper silhouette light color reports live changes")
+	user_interface._outline_slider.value = 0.0
+	_check(shading_changes.size() == 3 and is_zero_approx(float(shading_changes[2]["outline_strength"])), "outline can be turned off without changing its chosen color")
+	var legacy_input_settings := ConfigFile.new()
+	legacy_input_settings.set_value("window", "mask_enabled", false)
+	_check(Companion.clickthrough_setting(legacy_input_settings), "ambiguous legacy mask-off preference migrates to click-through")
+	legacy_input_settings.set_value("window", "clickthrough_enabled", false)
+	_check(not Companion.clickthrough_setting(legacy_input_settings), "explicit full-window capture preference remains available")
+	user_interface.clickthrough_enabled = true
+	user_interface.refresh(state)
+	var click_menu: PopupMenu = user_interface.action_menu(124)
+	var click_item: int = click_menu.get_item_index(124)
+	_check(click_item >= 0 and click_menu.is_item_checked(click_item), "menu shows that only Hoshi receives clicks")
+	user_interface.clickthrough_enabled = false
+	user_interface.refresh(state)
+	_check(click_item >= 0 and not click_menu.is_item_checked(click_item), "menu makes full-window capture visible when selected")
 	_check(user_interface.panel.get_combined_minimum_size().y <= 580.0, "preview controls fit vertically")
 	user_interface.model_ready("Test Hoshi", result)
 	_check(user_interface.note.text.contains("моргание подключено"), "UI reports actual facial capability")
@@ -199,6 +253,8 @@ func _run() -> void:
 	var hair_before: int = stage.rig._hair.size()
 	stage.rig.setup(stage.avatar, stage.model_data["source"], stage.model_data["state"])
 	_check(stage.rig._hair.size() == hair_before, "repeated rig setup does not accumulate hair bones")
+	_check(stage.rig.hair_springs.simulator.setting_count == 18 and stage.rig.skeleton.find_children("HoshiHairSprings", "SpringBoneSimulator3D", false, false).size() == 1,
+		"repeated rig setup replaces the old hair simulator")
 	await _check_degraded_startup(source)
 	stage.queue_free()
 	await process_frame
@@ -482,7 +538,7 @@ func _check_intent_planner() -> void:
 			cozy_steps[str(step)] = true
 		cozy_scenes.activate(cozy_scene)
 		cozy_scenes.interrupt("cozy_scene_test")
-	_check(cozy_steps.has("edge_sway") and cozy_steps.has("edge_sketch") and cozy_steps.has("look"), "cozy quiet scenes alternate sway, notebook and looking around")
+	_check(cozy_steps.has("edge_sway") and cozy_steps.has("edge_sketch") and cozy_steps.has("edge_fold") and cozy_steps.has("look"), "cozy quiet scenes alternate sway, notebook, paper star and looking around")
 	_check(cozy_scenes.rejection_reason("leave_support", cozy_context) == "cannot_leave", "cozy corner remains the autonomous home")
 	var normal_vibes: Dictionary = {}
 	var normal_bounded: bool = true

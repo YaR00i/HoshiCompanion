@@ -255,11 +255,13 @@ func _variants(intent_name: String, context: Dictionary, activity: String) -> Ar
 						return [
 							{"id": "cozy_sway", "steps": ["edge_sway"]},
 							{"id": "cozy_sketch", "steps": ["edge_sketch"]},
+							{"id": "cozy_fold", "steps": ["edge_fold"]},
 							{"id": "cozy_look", "steps": ["look"]},
 						]
 					return [
 						{"id": "cozy_sway", "steps": ["edge_sway"]},
 						{"id": "cozy_sketch", "steps": ["edge_sketch"]},
+						{"id": "cozy_fold", "steps": ["edge_fold"]},
 						{"id": "cozy_look", "steps": ["look"]},
 						{"id": "cozy_peek", "steps": ["edge_peek"]},
 					]

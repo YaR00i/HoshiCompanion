@@ -33,6 +33,23 @@ func _run() -> void:
 	var cozy: Window = app.playground.shelf
 	var id: int = cozy.get_window_id()
 	_check(_native_visible(cozy), "native cozy window is visible before menu action")
+	var legs_button: Button = cozy.get_child(0).get_node("Actions").get_child(2)
+	app.set_process(false)
+	app.host.update_pointer_interaction(false)
+	app.host.update_pointer_interaction(false)
+	for i in range(3):
+		await get_tree().process_frame
+	var native_hit: Dictionary = _native_hit(cozy, legs_button.get_global_rect().get_center())
+	var native_point: Array = native_hit.get("point", [])
+	var native_rect: Array = native_hit.get("overlay_rect", [])
+	var local_point: Vector2 = Vector2.ZERO
+	if native_point.size() == 2 and native_rect.size() == 4:
+		local_point = Vector2((float(native_point[0]) - float(native_rect[0])) * float(app.host.window.size.x) / maxf(1.0, float(native_rect[2]) - float(native_rect[0])), (float(native_point[1]) - float(native_rect[1])) * float(app.host.window.size.y) / maxf(1.0, float(native_rect[3]) - float(native_rect[1])))
+	await RenderingServer.frame_post_draw
+	app.stage.refresh_interaction_alpha()
+	_check(native_point.size() == 2 and not app.stage.visible_avatar_hit(local_point), "Ножками button sits below transparent Hoshi space")
+	_check(native_hit.get("target", "") == "underlay", "native click reaches the cozy Ножками button below Hoshi")
+	app.set_process(true)
 	for i in range(3):
 		app._open_menu()
 		app._on_action(43)
@@ -60,6 +77,17 @@ func _native_visible(window: Window) -> bool:
 	var code: int = OS.execute(python_path, PackedStringArray([helper, str(hwnd), str(OS.get_process_id())]), lines, true)
 	var state: Variant = JSON.parse_string("".join(lines))
 	return code == 0 and state is Dictionary and bool(state.get("visible", false))
+
+func _native_hit(window: Window, local_point: Vector2) -> Dictionary:
+	var python_path: String = FileAccess.get_file_as_string("res://python_path.txt").strip_edges()
+	var helper: String = ProjectSettings.globalize_path("res://tests/own_window_input_style.py")
+	var avatar_hwnd: int = DisplayServer.window_get_native_handle(DisplayServer.WINDOW_HANDLE)
+	var corner_hwnd: int = DisplayServer.window_get_native_handle(DisplayServer.WINDOW_HANDLE, window.get_window_id())
+	var lines: Array = []
+	var args := PackedStringArray([helper, str(avatar_hwnd), str(OS.get_process_id()), str(corner_hwnd), str(local_point.x), str(local_point.y), str(window.size.x), str(window.size.y)])
+	var code: int = OS.execute(python_path, args, lines, true)
+	var result: Variant = JSON.parse_string("".join(lines))
+	return result if code == 0 and result is Dictionary else {}
 
 func _check(condition: bool, label: String) -> void:
 	checks += 1

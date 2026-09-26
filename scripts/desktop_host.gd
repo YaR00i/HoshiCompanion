@@ -161,6 +161,7 @@ func apply_mask(expanded: bool = false) -> void:
 	_mask = _fallback_mask(expanded)
 	if _native_passthrough_available:
 		DisplayServer.window_set_mouse_passthrough(PackedVector2Array())
+		_prepare_native_input()
 		_set_native_passthrough(mask_enabled, true)
 		return
 	if not mask_enabled:
@@ -198,6 +199,7 @@ func menu_focus(active: bool) -> void:
 	if headless or preview:
 		return
 	window.unfocusable = not active
+	_prepare_native_input()
 	if active:
 		window.grab_focus()
 		if _native_passthrough_available:
@@ -212,6 +214,7 @@ func cinematic_mask(active: bool) -> void:
 	_mask = _fallback_mask(active)
 	if _native_passthrough_available:
 		DisplayServer.window_set_mouse_passthrough(PackedVector2Array())
+		_prepare_native_input()
 		if active:
 			_set_native_passthrough(true, true)
 		else:
@@ -271,6 +274,16 @@ func _set_native_passthrough(active: bool, force: bool = false) -> void:
 	_input_passthrough = active
 	_input_passthrough_known = true
 
+func _prepare_native_input() -> void:
+	if not _native_passthrough_available or _input_io == null:
+		return
+	if not _input_helper_alive():
+		_native_passthrough_available = false
+		return
+	_input_io.store_line(JSON.stringify({"op": "prepare", "active": _input_passthrough}))
+	_input_io.flush()
+	_input_passthrough_known = false
+
 func _stop_input_helper() -> void:
 	if _input_io != null:
 		if _input_helper_alive():
@@ -296,6 +309,7 @@ func raise_companion() -> void:
 		return
 	window.always_on_top = true
 	DisplayServer.window_move_to_foreground(window.get_window_id())
+	_prepare_native_input()
 
 func mask_contains(point: Vector2) -> bool:
 	if preview or not mask_enabled or _mask.is_empty():

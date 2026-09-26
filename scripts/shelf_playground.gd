@@ -4,6 +4,7 @@ extends RefCounted
 const Shelf = preload("res://scripts/shelf_window.gd")
 const Cozy = preload("res://scripts/cozy_window.gd")
 var cozy_mode: bool = false
+var cozy_stars_made: int = 0
 const External = preload("res://scripts/external_window.gd")
 const Surface = preload("res://scripts/surface_controller.gd")
 var external = External.new()
@@ -98,6 +99,8 @@ func _create_shelf() -> void:
 	shelf.size = Vector2i(460, 170) if cozy_mode else Vector2i(600, 285)
 	shelf.theme = app.ui.theme
 	app.add_child(shelf)
+	if cozy_mode:
+		shelf.set_star_count(mini(3, cozy_stars_made), cozy_stars_made)
 	shelf.close_requested.connect(close_shelf)
 	shelf.sit_requested.connect(show_demo.bind(cozy_mode))
 	if cozy_mode:
@@ -105,6 +108,12 @@ func _create_shelf() -> void:
 	shelf.leave_requested.connect(return_home)
 	shelf.preview_requested.connect(app._switch_mode.bind(true))
 	_place_shelf_near_companion()
+
+func add_cozy_star() -> void:
+	if not cozy_mode or phase != "attached" or not is_instance_valid(shelf):
+		return
+	cozy_stars_made += 1
+	shelf.set_star_count(mini(3, cozy_stars_made), cozy_stars_made)
 
 func before_tick(delta: float) -> void:
 	if phase in ["selection_start", "auto_selection_start"]:

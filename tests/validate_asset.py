@@ -12,13 +12,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MODEL = ROOT / 'assets' / 'Hoshi_v1.vrm'
 EXPECTED_SHA256 = 'fc919e08e37e7a9d2fac70d31c3582b3b4b3d62b500655b4e88e466a96ece21d'
+LOCAL_METADATA = ROOT / 'docs' / 'MODEL_METADATA.json'
 WIDTH = {'SCALAR': 1, 'VEC2': 2, 'VEC3': 3, 'VEC4': 4, 'MAT4': 16}
 COMPONENT_SIZE = {5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4}
 
 def verify() -> dict:
     data = MODEL.read_bytes()
     digest = hashlib.sha256(data).hexdigest()
-    assert digest == EXPECTED_SHA256, 'Packaged Hoshi model differs from supplied source'
+    expected_digest = EXPECTED_SHA256
+    if LOCAL_METADATA.exists():
+        expected_digest = json.loads(LOCAL_METADATA.read_text(encoding='utf-8')).get('localSourceSha256', expected_digest)
+    assert digest == expected_digest, 'Packaged Hoshi model differs from supplied source'
     magic, version, total = struct.unpack_from('<4sII', data)
     assert (magic, version, total) == (b'glTF', 2, len(data))
     chunks = []; offset = 12

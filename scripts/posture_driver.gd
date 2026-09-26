@@ -1,3 +1,4 @@
+@tool
 extends RefCounted
 ## Floor sitting layered over the existing rig. Never edits RESTs or skin binds.
 ## All IK targets are in SKELETON space; only local pose channels are written.

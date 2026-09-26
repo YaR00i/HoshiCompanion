@@ -1,3 +1,4 @@
+@tool
 extends RefCounted
 ## Separate ledge pose. Reuses the tested IK solver, never changes the floor pose.
 ## +Z is forward; dangling legs are not treated as planted feet.
@@ -24,10 +25,47 @@ func apply(amount: float, time: float, wave: float, motion: bool, life: Dictiona
 	var hum: float = clampf(float(life.get("hum", 0.0)), 0.0, 1.0) * p
 	var nod: float = clampf(float(life.get("nod", 0.0)), 0.0, 1.0) * p
 	var sketch: float = clampf(float(life.get("sketch", 0.0)), 0.0, 1.0) * p
+	var fold: float = clampf(float(life.get("fold", 0.0)), 0.0, 1.0) * p
+	var admire_star: float = clampf(float(life.get("admire_star", 0.0)), 0.0, 1.0) * p
 	var scoot: float = clampf(float(life.get("scoot_weight", 0.0)), 0.0, 1.0) * p
 	var scoot_direction: float = signf(float(life.get("scoot_direction", 0.0)))
 	var sketch_progress: float = clampf(float(life.get("sketch_progress", 0.0)), 0.0, 1.0)
 	var sketch_show: float = smoothstep(0.70, 0.86, sketch_progress) * (1.0 - smoothstep(0.94, 1.0, sketch_progress))
+	var sketch_channels: Dictionary = life.get("sketch_channels", {})
+	var head_correction: float = 0.0
+	var chest_correction: float = 0.0
+	var hand_corrections: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
+	var wrist_corrections: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
+	var gesture_channels: Dictionary = life.get("gesture_channels", {})
+	var baked_weights: Dictionary = {}
+	for gesture in gesture_channels:
+		var strength: float = clampf(float(life.get(gesture, 0.0)), 0.0, 1.0) * p
+		var corrections: Dictionary = gesture_channels[gesture]
+		if not (corrections.get("bones", {}) as Dictionary).is_empty():
+			baked_weights[gesture] = strength
+		head_correction += strength * float(corrections.get("head_pitch", 0.0))
+		chest_correction += strength * float(corrections.get("chest_pitch", 0.0))
+		hand_corrections[0] += strength * (corrections.get("left_hand", Vector3.ZERO) as Vector3) * driver.height_m
+		hand_corrections[1] += strength * (corrections.get("right_hand", Vector3.ZERO) as Vector3) * driver.height_m
+		wrist_corrections[0] += strength * (corrections.get("left_hand_rotation", Vector3.ZERO) as Vector3)
+		wrist_corrections[1] += strength * (corrections.get("right_hand_rotation", Vector3.ZERO) as Vector3)
+	# The saved pose now contains the visible gesture. Keep the old procedural path
+	# for an unbaked clip and for the reference baker, but never apply both.
+	for gesture in baked_weights:
+		match gesture:
+			"lean": lean = 0.0
+			"swing": swing = 0.0
+			"peek": peek = 0.0
+			"balance": balance = 0.0
+			"sway": sway = 0.0
+			"hum": hum = 0.0
+			"nod": nod = 0.0
+			"fold": fold = 0.0
+			"admire_star": admire_star = 0.0
+	var fold_progress: float = clampf(float(life.get("fold_progress", 0.0)), 0.0, 1.0)
+	var fold_show: float = smoothstep(0.70, 0.83, fold_progress) * (1.0 - smoothstep(0.93, 1.0, fold_progress))
+	var admire_progress: float = clampf(float(life.get("admire_progress", 0.0)), 0.0, 1.0)
+	var admire_show: float = smoothstep(0.0, 0.23, admire_progress) * (1.0 - smoothstep(0.80, 1.0, admire_progress))
 	var balance_wave: float = sin(time * 1.75) * balance
 	# Two close but non-identical waves keep sway from reading as a metronome.
 	var sway_spine: float = (sin(time * 1.55) * 0.82 + sin(time * 0.73 + 0.65) * 0.18) * sway
@@ -47,11 +85,11 @@ func apply(amount: float, time: float, wave: float, motion: bool, life: Dictiona
 	hip.y += h * 0.018 * scoot
 	driver._set_position_global(driver.gait.hips_id, hip)
 	driver._add_rotation("spine", Vector3(
-		3.0 * p - lean * 19.0 + hum_bob * 0.45 + scoot * 3.0,
+		3.0 * p - lean * 19.0 + hum_bob * 0.45 + scoot * 3.0 + fold * (3.5 - fold_show * 4.5),
 		balance_wave * 1.5 + sway_spine * 0.30 + hum_side * 0.25,
 		balance_wave * 3.8 + sway_spine * 3.6 + hum_side * 0.45 + scoot_direction * scoot * 18.0))
 	driver._add_rotation("chest", Vector3(
-		-lean * 10.0 + hum_bob * 0.80 - nod_cycle * 0.45,
+		-lean * 10.0 + hum_bob * 0.80 - nod_cycle * 0.45 + sketch * float(sketch_channels.get("chest_pitch", 0.0)) + chest_correction,
 		-balance_wave * 1.0 - sway_chest * 0.18 - hum_side * 0.20,
 		-balance_wave * 2.7 - sway_chest * 1.35 - hum_side * 0.18 + scoot_direction * scoot * 9.0))
 	driver._add_rotation("neck", Vector3(
@@ -59,7 +97,7 @@ func apply(amount: float, time: float, wave: float, motion: bool, life: Dictiona
 		hum_side * 0.25 + nod_side * 0.20,
 		-sway_head * 0.85 - hum_side * 0.18 + nod_side * 0.18))
 	driver._add_rotation("head", Vector3(
-		peek * 14.0 + lean * 9.0 + hum_bob * 0.35 + nod_cycle * 3.80 + sketch * (11.0 * (1.0 - sketch_show) - 3.0 * sketch_show),
+		peek * 14.0 + lean * 9.0 + hum_bob * 0.35 + nod_cycle * 3.80 + sketch * float(sketch_channels.get("head_pitch", 11.0 * (1.0 - sketch_show) - 3.0 * sketch_show)) + fold * (10.0 * (1.0 - fold_show) - 4.0 * fold_show) - admire_star * admire_show * 3.0 + head_correction,
 		peek * 3.0 - balance_wave * 2.0 - hum_side * 0.18 + nod_side * 0.35,
 		-balance_wave * 2.2 - sway_head * 0.95 - hum_side * 0.12 - nod_side * 0.25))
 	var left_hum: float = sin(time * 4.70 + 0.20) * hum
@@ -96,14 +134,34 @@ func apply(amount: float, time: float, wave: float, motion: bool, life: Dictiona
 			var brace_hand: Vector3 = seat_point + Vector3(sign_x * h * 0.17, h * 0.012, -h * 0.05)
 			wrist = wrist.lerp(brace_hand, scoot)
 		if sketch > 0.001:
-			var drawing_hand: Vector3 = hip + Vector3(sign_x * h * 0.09, h * (-0.065 + sketch_show * 0.18), h * (0.27 - sketch_show * 0.07))
-			if side == 1 and sketch_show < 0.5:
-				drawing_hand += Vector3(sin(time * 8.2) * h * 0.012, cos(time * 6.5) * h * 0.006, h * 0.012)
+			var default_hand: Vector3 = Vector3(sign_x * 0.09, -0.065 + sketch_show * 0.18, 0.27 - sketch_show * 0.07)
+			var authored_hand: Vector3 = sketch_channels.get("left_hand" if side == 0 else "right_hand", default_hand)
+			var drawing_hand: Vector3 = hip + authored_hand * h
 			wrist = wrist.lerp(drawing_hand, sketch)
+		if fold > 0.001:
+			var folding_hand: Vector3 = hip + Vector3(sign_x * h * (0.072 + fold_show * 0.015), h * (-0.035 + fold_show * 0.18), h * (0.27 - fold_show * 0.035))
+			if fold_progress > 0.12 and fold_progress < 0.68:
+				var crease_motion: float = sin(fold_progress * TAU * 4.0 + float(side) * PI)
+				folding_hand += Vector3(-sign_x * h * 0.016 * maxf(0.0, crease_motion), h * 0.007 * crease_motion, 0.0)
+			wrist = wrist.lerp(folding_hand, fold)
+		if admire_star > 0.001:
+			var admire_hand: Vector3 = hip + Vector3(sign_x * h * 0.08, h * (-0.025 + admire_show * 0.18), h * (0.27 - admire_show * 0.035))
+			wrist = wrist.lerp(admire_hand, admire_star)
+		if baked_weights.is_empty():
+			wrist += hand_corrections[side]
 		var saved: Array[Quaternion] = []
 		for key in ["upper", "lower", "end"]:
 			saved.append(skel.get_bone_pose_rotation(int(arm[key])))
 		var hand_q: Quaternion = Quaternion(Vector3.UP, -sign_x * PI * 0.5) * arm["end_q"]
+		if sketch > 0.001:
+			var rotation_key: String = "left_hand_rotation" if side == 0 else "right_hand_rotation"
+			var hand_rotation: Vector3 = sketch_channels.get(rotation_key, Vector3.ZERO)
+			# Authoring target axes are aligned with the scene, not the wrist's rest basis.
+			var authored_q: Quaternion = Quaternion.from_euler(hand_rotation * (PI / 180.0)) * hand_q
+			hand_q = hand_q.slerp(authored_q, sketch).normalized()
+		if baked_weights.is_empty() and wrist_corrections[side].length_squared() > 0.000001:
+			var extra_rotation: Vector3 = wrist_corrections[side].clamp(Vector3.ONE * -35.0, Vector3.ONE * 35.0)
+			hand_q = Quaternion.from_euler(extra_rotation * (PI / 180.0)) * hand_q
 		if bracing:
 			var finger_axis: Vector3 = (hand_q * Vector3.RIGHT).normalized()
 			var edge_grip: Quaternion = Quaternion(finger_axis, deg_to_rad(-72.0)) * hand_q
@@ -118,6 +176,39 @@ func apply(amount: float, time: float, wave: float, motion: bool, life: Dictiona
 		var keys: Array = ["upper", "lower", "end"]
 		for index in range(3):
 			var bone: int = int(arm[keys[index]])
+			skel.set_bone_pose_rotation(bone, saved[index].slerp(skel.get_bone_pose_rotation(bone), weight).normalized())
+	for gesture in baked_weights:
+		var weight: float = float(baked_weights[gesture])
+		var bone_deltas: Dictionary = (gesture_channels[gesture] as Dictionary).get("bones", {})
+		for semantic in bone_deltas:
+			if not driver.rig.bones.has(semantic):
+				continue
+			var bone_id: int = int(driver.rig.bones[semantic])
+			var base_rotation: Quaternion = skel.get_bone_pose_rotation(bone_id)
+			var delta_rotation: Quaternion = bone_deltas[semantic]
+			skel.set_bone_pose_rotation(bone_id, (base_rotation * Quaternion.IDENTITY.slerp(delta_rotation, weight)).normalized())
+	if not baked_weights.is_empty():
+		_apply_baked_hand_corrections(hand_corrections, wrist_corrections, p, wave)
+
+func _apply_baked_hand_corrections(positions: Array[Vector3], rotations: Array[Vector3], pose_weight: float, wave: float) -> void:
+	var skel: Skeleton3D = driver.skeleton
+	for side in range(2):
+		if positions[side].length_squared() < 0.00000001 and rotations[side].length_squared() < 0.000001:
+			continue
+		var arm: Dictionary = driver.arms[side]
+		var end_id: int = int(arm["end"])
+		var end_pose: Transform3D = skel.get_bone_global_pose(end_id)
+		var target: Vector3 = end_pose.origin + positions[side]
+		var rotation: Vector3 = rotations[side].clamp(Vector3.ONE * -35.0, Vector3.ONE * 35.0)
+		var hand_q: Quaternion = Quaternion.from_euler(rotation * (PI / 180.0)) * end_pose.basis.get_rotation_quaternion()
+		var saved: Array[Quaternion] = []
+		for key in ["upper", "lower", "end"]:
+			saved.append(skel.get_bone_pose_rotation(int(arm[key])))
+		var sign_x: float = 1.0 if side == 0 else -1.0
+		driver._solve(arm, target, Vector3(sign_x * 0.4, -1.0, -0.12), hand_q)
+		var weight: float = pose_weight * (1.0 - clampf(wave, 0.0, 1.0) if side == 1 else 1.0)
+		for index in range(3):
+			var bone: int = int(arm[["upper", "lower", "end"][index]])
 			skel.set_bone_pose_rotation(bone, saved[index].slerp(skel.get_bone_pose_rotation(bone), weight).normalized())
 
 func anchor_world() -> Vector3:

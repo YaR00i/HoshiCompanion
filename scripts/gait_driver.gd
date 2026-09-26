@@ -1,3 +1,4 @@
+@tool
 extends RefCounted
 ## Analytical two-bone IK. Only LOCAL POSE rotations/hip position are written;
 ## authored rest transforms and skin binds stay untouched. No SkeletonIK3D plugin.

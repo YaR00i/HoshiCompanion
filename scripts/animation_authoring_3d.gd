@@ -1,0 +1,235 @@
+@tool
+extends Node3D
+## Godot-native 3D authoring preview. Uses the runtime seated pose controller.
+
+const Source = preload("res://scripts/vrm_source.gd")
+const Rig = preload("res://scripts/rig_driver.gd")
+const Gait = preload("res://scripts/gait_driver.gd")
+const Posture = preload("res://scripts/posture_driver.gd")
+const EdgePose = preload("res://scripts/edge_pose.gd")
+const Sketchbook = preload("res://scripts/sketchbook_prop.gd")
+const PaperStar = preload("res://scripts/paper_star_prop.gd")
+const AnimatedProp = preload("res://scripts/animated_prop.gd")
+const SketchMotion = preload("res://scripts/sketch_motion.gd")
+const PropTracks = preload("res://scripts/prop_track_schema.gd")
+const MODEL_PATH: String = "res://assets/Hoshi_v1.vrm"
+
+var rig
+var gait
+var posture
+var edge_pose
+var sketchbook
+var paper_star
+var model_height: float = 1.5
+var ready_to_preview: bool = false
+var preview_error: String = ""
+var _previewed_keys: Array = []
+@export var show_bone_controls: bool = true
+
+func _ready() -> void:
+	if Engine.is_editor_hint():
+		_load_preview.call_deferred()
+
+func _load_preview() -> void:
+	if not is_inside_tree() or ready_to_preview:
+		return
+	if not FileAccess.file_exists(MODEL_PATH):
+		preview_error = "Локальная модель не найдена: " + MODEL_PATH
+		return
+	var loaded: Dictionary = Source.load_avatar(MODEL_PATH)
+	if loaded.has("error"):
+		preview_error = str(loaded["error"])
+		return
+	var avatar: Node3D = loaded["model"]
+	$PreviewRoot.add_child(avatar)
+	_convert_editor_meshes(avatar)
+	var merged: AABB = AABB()
+	var have_bounds: bool = false
+	var mesh_nodes: Array[Node] = avatar.find_children("*", "MeshInstance3D", true, false)
+	for mesh in mesh_nodes:
+		var instance: MeshInstance3D = mesh as MeshInstance3D
+		if instance.mesh == null:
+			continue
+		var bounds: AABB = (avatar.global_transform.affine_inverse() * instance.global_transform) * instance.get_aabb()
+		merged = merged.merge(bounds) if have_bounds else bounds
+		have_bounds = true
+	if not have_bounds or merged.size.y < 0.1:
+		preview_error = "У модели не найдена видимая геометрия."
+		return
+	model_height = merged.size.y
+	avatar.position -= Vector3(merged.get_center().x, merged.position.y, merged.get_center().z)
+	rig = Rig.new()
+	var rig_report: Dictionary = rig.setup(avatar, loaded["source"], loaded["state"])
+	if rig_report.has("error"):
+		preview_error = str(rig_report["error"])
+		return
+	rig.hair_enabled = false
+	rig.tick(0.0, 0.0, Vector2.ZERO, 0.0, 0.0, 0.0, false)
+	gait = Gait.new()
+	gait.setup(rig, model_height)
+	posture = Posture.new()
+	posture.setup(rig, gait, model_height)
+	edge_pose = EdgePose.new()
+	edge_pose.setup(posture)
+	sketchbook = Sketchbook.new()
+	sketchbook.name = "PreviewSketchbook"
+	$PreviewRoot.add_child(sketchbook)
+	sketchbook.setup(model_height)
+	paper_star = PaperStar.new()
+	paper_star.name = "PreviewPaperStar"
+	$PreviewRoot.add_child(paper_star)
+	paper_star.setup(model_height)
+	ready_to_preview = true
+	set_process(true)
+	_update_preview()
+
+func _convert_editor_meshes(avatar: Node3D) -> void:
+	# GLTFDocument returns editor-only ImporterMeshInstance3D in editor mode.
+	# Convert only the in-memory preview; the source VRM and skin data stay intact.
+	for candidate in avatar.find_children("*", "ImporterMeshInstance3D", true, false):
+		var imported: ImporterMeshInstance3D = candidate as ImporterMeshInstance3D
+		var parent: Node = imported.get_parent()
+		var sibling_index: int = imported.get_index()
+		var name_before: String = imported.name
+		var transform_before: Transform3D = imported.transform
+		var mesh: Mesh = imported.mesh.get_mesh() if imported.mesh != null else null
+		var skin: Skin = imported.skin
+		var skeleton_path: NodePath = imported.skeleton_path
+		parent.remove_child(imported)
+		imported.free()
+		var display := MeshInstance3D.new()
+		display.name = name_before
+		display.transform = transform_before
+		display.mesh = mesh
+		display.skin = skin
+		display.skeleton = skeleton_path
+		parent.add_child(display)
+		parent.move_child(display, sibling_index)
+
+func _process(_delta: float) -> void:
+	if ready_to_preview and Engine.is_editor_hint():
+		_update_preview()
+
+func _update_preview() -> void:
+	var player: AnimationPlayer = $AnimationPlayer
+	var selected: String = player.selected_clip_name()
+	if selected.is_empty():
+		return
+	var clip: Animation = player.get_animation(selected)
+	var keys: Array = _clip_key_snapshot(clip)
+	if keys != _previewed_keys:
+		_previewed_keys = keys
+		if player.assigned_animation == selected:
+			# Editing a paused key changes the resource but leaves the animated target
+			# at its previously evaluated transform until AnimationPlayer seeks again.
+			player.seek(player.current_animation_position, true)
+	# The editor timeline can be paused while still assigning the selected clip.
+	var time: float = player.current_animation_position
+	var progress: float = clampf(time / clip.length, 0.0, 1.0)
+	$Targets.visible = selected == "sketch"
+	$Corrections.visible = selected != "sketch"
+	$Bones.visible = selected != "sketch" and show_bone_controls
+	for anchor_node in $Props.get_children():
+		var anchor: Node3D = anchor_node as Node3D
+		var prop_path: NodePath = NodePath(PropTracks.path_for(str(anchor.name), "position"))
+		anchor.visible = clip.find_track(prop_path, Animation.TYPE_POSITION_3D) >= 0 or clip.find_track(prop_path, Animation.TYPE_ROTATION_3D) >= 0 or clip.find_track(prop_path, Animation.TYPE_SCALE_3D) >= 0
+	var left_target: Marker3D = $Targets/left_hand if selected == "sketch" else get_node(SketchMotion.correction_path("left_hand")) as Marker3D
+	var right_target: Marker3D = $Targets/right_hand if selected == "sketch" else get_node(SketchMotion.correction_path("right_hand")) as Marker3D
+	var channels: Dictionary = {
+		"head_pitch": $Channels.head_pitch,
+		"chest_pitch": $Channels.chest_pitch,
+		"left_hand": left_target.position,
+		"right_hand": right_target.position,
+		"left_hand_rotation": left_target.rotation_degrees.clamp(Vector3.ONE * -SketchMotion.HAND_ROTATION_LIMIT_DEGREES, Vector3.ONE * SketchMotion.HAND_ROTATION_LIMIT_DEGREES),
+		"right_hand_rotation": right_target.rotation_degrees.clamp(Vector3.ONE * -SketchMotion.HAND_ROTATION_LIMIT_DEGREES, Vector3.ONE * SketchMotion.HAND_ROTATION_LIMIT_DEGREES),
+	}
+	var has_bone_tracks: bool = false
+	for bone_anchor in $Bones.get_children():
+		var semantic: String = str(bone_anchor.name)
+		var bone_path: NodePath = NodePath(SketchMotion.bone_path(semantic))
+		var has_track: bool = selected != "sketch" and clip.find_track(bone_path, Animation.TYPE_ROTATION_3D) >= 0
+		bone_anchor.visible = show_bone_controls and has_track
+		if has_track:
+			has_bone_tracks = true
+			channels["bones"] = channels.get("bones", {})
+			channels["bones"][semantic] = bone_anchor.get_node(SketchMotion.BONE_TARGET_NAMES[semantic]).quaternion
+	rig.tick(0.0, time, Vector2.ZERO, 0.0, 0.0, 0.0, true)
+	var life: Dictionary = {selected: 1.0}
+	if selected == "sketch":
+		life["sketch_progress"] = progress
+		life["sketch_channels"] = channels
+	else:
+		life["fold_progress"] = progress if selected == "fold" else 0.0
+		life["admire_progress"] = progress if selected == "admire_star" else 0.0
+		# Anchor rotation controls in the calm seated pose. Their local rotation is
+		# the same semantic bone delta that the runtime applies from the clip.
+		edge_pose.apply(1.0, time, 0.0, true)
+		for bone_anchor in $Bones.get_children():
+			if not rig.bones.has(str(bone_anchor.name)) or clip.find_track(NodePath(SketchMotion.bone_path(str(bone_anchor.name))), Animation.TYPE_ROTATION_3D) < 0:
+				continue
+			var bone_id: int = int(rig.bones[str(bone_anchor.name)])
+			var base_pose: Transform3D = rig.skeleton.get_bone_global_pose(bone_id)
+			bone_anchor.global_transform = rig.skeleton.global_transform * base_pose
+		# Calculate the wrist after the authored bone pose, before the separate
+		# correction track, so its gizmo represents a true offset.
+		rig.tick(0.0, time, Vector2.ZERO, 0.0, 0.0, 0.0, true)
+		var base_life: Dictionary = life.duplicate()
+		if has_bone_tracks:
+			base_life["gesture_channels"] = {selected: {"bones": channels["bones"]}}
+		# Place correction gizmos at the uncorrected wrists, then apply the clip.
+		edge_pose.apply(1.0, time, 0.0, true, base_life)
+		$Corrections/left_hand.global_position = rig.world_point("leftHand")
+		$Corrections/right_hand.global_position = rig.world_point("rightHand")
+		$Corrections/left_hand.scale = Vector3.ONE * model_height
+		$Corrections/right_hand.scale = Vector3.ONE * model_height
+		rig.tick(0.0, time, Vector2.ZERO, 0.0, 0.0, 0.0, true)
+		life["gesture_channels"] = {selected: channels}
+	edge_pose.apply(1.0, time, 0.0, true, life)
+	var hip: Vector3 = rig.world_point("hips")
+	$Targets.position = hip
+	$Targets.scale = Vector3.ONE * model_height
+	sketchbook.update_pose($PreviewRoot, rig, 1.0 if selected == "sketch" else 0.0, progress)
+	var paper_props: Dictionary = {}
+	if selected in ["fold", "admire_star"]:
+		for prop_id in ["paper_star", "paper_sheet", "paper_shape"]:
+			var target: Marker3D = $Props.get_node("%s/%s" % [prop_id, PropTracks.target_name(prop_id)])
+			paper_props[prop_id] = {"position": target.position, "rotation_degrees": target.rotation_degrees, "scale": target.scale}
+	paper_star.update_pose($PreviewRoot, rig, 1.0 if selected == "fold" else 0.0, progress, 1.0 if selected == "admire_star" else 0.0, progress, paper_props)
+	if selected in ["fold", "admire_star"]:
+		$Props/paper_star.position = hip
+		$Props/paper_star.scale = Vector3.ONE * model_height
+		for prop_id in ["paper_sheet", "paper_shape"]:
+			var anchor: Node3D = $Props.get_node(prop_id)
+			anchor.global_transform = paper_star.global_transform
+			anchor.scale = Vector3.ONE * model_height
+	for candidate in $PreviewRoot.find_children("*", "Node3D", true, false):
+		if not candidate is AnimatedProp:
+			continue
+		var prop: AnimatedProp = candidate as AnimatedProp
+		var anchor: Node3D = $Props.get_node_or_null(NodePath(prop.prop_id)) as Node3D
+		if anchor == null:
+			preview_error = "Нет цели для предмета: " + prop.prop_id
+			continue
+		var target: Node3D = anchor.get_node_or_null(PropTracks.target_name(prop.prop_id)) as Node3D
+		if target == null:
+			preview_error = "Нет узла Target для предмета: " + prop.prop_id
+			continue
+		anchor.position = rig.world_point(prop.anchor_bone)
+		anchor.scale = Vector3.ONE * model_height
+		prop.apply_pose($PreviewRoot, rig, model_height, {
+			"position": target.position,
+			"rotation_degrees": target.rotation_degrees,
+			"scale": target.scale,
+		})
+
+func _clip_key_snapshot(clip: Animation) -> Array:
+	var keys: Array = [clip.get_instance_id(), clip.length, clip.get_track_count()]
+	for track in range(clip.get_track_count()):
+		keys.append(clip.track_get_path(track))
+		keys.append(clip.track_get_type(track))
+		keys.append(clip.track_is_enabled(track))
+		keys.append(clip.track_get_key_count(track))
+		for key in range(clip.track_get_key_count(track)):
+			keys.append(clip.track_get_key_time(track, key))
+			keys.append(clip.track_get_key_value(track, key))
+	return keys

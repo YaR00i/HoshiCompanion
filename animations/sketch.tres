@@ -1,0 +1,120 @@
+[gd_resource type="Animation" format=3]
+
+[resource]
+resource_name = "sketch"
+length = 10.0
+step = 0.05
+markers = [{
+"color": Color(1, 1, 1, 1),
+"name": &"Блокнот",
+"time": 0.0
+}, {
+"color": Color(1, 1, 1, 1),
+"name": &"Рисует",
+"time": 3.0
+}, {
+"color": Color(1, 1, 1, 1),
+"name": &"Показывает рисунок",
+"time": 8.2
+}]
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Channels:head_pitch")
+tracks/0/interp = 2
+tracks/0/loop_wrap = false
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 1, 2.5, 4, 6.7, 8, 9.2, 10),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1, 1, 1, 1),
+"update": 0,
+"values": [11.0, 12.0, 10.0, 12.5, 11.0, -3.0, -3.0, 11.0]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("Channels:chest_pitch")
+tracks/1/interp = 2
+tracks/1/loop_wrap = false
+tracks/1/keys = {
+"times": PackedFloat32Array(0, 1, 6.8, 8, 9.2, 10),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1, 1),
+"update": 0,
+"values": [0.0, 2.0, 2.0, -2.0, -2.0, 0.0]
+}
+tracks/2/type = "position_3d"
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/path = NodePath("Targets/left_hand")
+tracks/2/interp = 2
+tracks/2/loop_wrap = false
+tracks/2/keys = PackedFloat32Array(0, 1, 0.09, -0.032817543, 0.27, 4.8, 1, 0.09, -0.065, 0.27, 6.9, 1, 0.100993454, -0.049846053, 0.24801305, 8, 1, 0.10501963, 0.18200237, 0.13012403, 9.2, 1, 0.04527246, 0.17510682, 0.1169394, 9.6, 1, 0.06899926, 0.095838904, 0.16056153, 9.83, 1, 0.08416717, 0.055312395, 0.15949748, 9.84, 1, 0.084648386, 0.053954333, 0.16389307, 10, 1, 0.091256484, -0.011975288, 0.27)
+tracks/3/type = "position_3d"
+tracks/3/imported = false
+tracks/3/enabled = true
+tracks/3/path = NodePath("Targets/right_hand")
+tracks/3/interp = 2
+tracks/3/loop_wrap = false
+tracks/3/keys = PackedFloat32Array(0, 1, -0.07426341, 0.0583452, 0.16719703, 1.2, 1, -0.090169385, -0.028452873, 0.27042666, 2, 1, -0.105, -0.058, 0.282, 2.7, 1, -0.077, -0.059, 0.282, 3.4, 1, -0.108, -0.064, 0.282, 4.1, 1, -0.079, -0.054, 0.282, 4.8, 1, -0.103, -0.058, 0.282, 5.5, 1, -0.08, -0.061, 0.282, 6.3, 1, -0.09, -0.065, 0.27, 6.9, 1, -0.09, -0.065, 0.27, 8, 1, -0.10514183, 0.17799675, 0.12549604, 9.2, 1, -0.034629337, 0.17699063, 0.12616141, 9.6, 1, -0.0641171, 0.09811723, 0.16765936, 9.83, 1, -0.082823895, 0.054658532, 0.16109431, 9.84, 1, -0.083416685, 0.056441694, 0.16533609, 10, 1, -0.09, -0.007754326, 0.27)
+tracks/4/type = "position_3d"
+tracks/4/imported = false
+tracks/4/enabled = true
+tracks/4/path = NodePath("Props/open_book/Блокнот")
+tracks/4/interp = 2
+tracks/4/loop_wrap = false
+tracks/4/keys = PackedFloat32Array(0, 1, 0, -0.065, 0.27, 4.11, 1, 0, -0.06463197, 0.24327673, 5.5, 1, 0, -0.06402105, 0.24878706, 6.65, 1, 0, -0.0707525, 0.25453895, 6.9, 1, 0, -0.0639869, 0.25831717, 7.45, 1, 0, -0.033902764, 0.24905813, 8, 1, 0, 0.075, 0.2, 8.61, 1, 0, 0.11016852, 0.18093051, 9.2, 1, 0, 0.075, 0.2, 9.63, 1, 0, -0.021571934, 0.23850435, 10, 1, 0, -0.055577606, 0.26159418)
+tracks/5/type = "rotation_3d"
+tracks/5/imported = false
+tracks/5/enabled = true
+tracks/5/path = NodePath("Props/open_book/Блокнот")
+tracks/5/interp = 2
+tracks/5/loop_wrap = false
+tracks/5/keys = PackedFloat32Array(0, 1, -0.18211018, 0, 0, 0.9832781, 6.23, 1, -0.152821, 0, 0, 0.9882539, 6.9, 1, -0.11320321, 0, 0, 0.9935719, 7.8, 1, -0.12678051, 0, 0, 0.99193084, 8, 1, -0.16872953, 0, 0, 0.9856624, 8.6, 1, -0.010153606, 0, 0, 0.99994844, 9.2, 1, -0.20265786, 0, 0, 0.9792496, 10, 1, -0.11320321, 0, 0, 0.9935719)
+tracks/6/type = "rotation_3d"
+tracks/6/imported = false
+tracks/6/enabled = true
+tracks/6/path = NodePath("Targets/left_hand")
+tracks/6/interp = 2
+tracks/6/loop_wrap = false
+tracks/6/keys = PackedFloat32Array(0, 1, 0.22765863, 0, 0, 0.973741, 6.9, 1, 0.055539206, 0, 0, 0.99845654, 8, 1, 0, 0, 0, 1, 9.2, 1, 0, 0, 0, 1, 9.85, 1, 0.014589189, 0, 0, 0.9998936, 10, 1, 0.21403645, 0, 0, 0.9768257)
+tracks/7/type = "rotation_3d"
+tracks/7/imported = false
+tracks/7/enabled = true
+tracks/7/path = NodePath("Targets/right_hand")
+tracks/7/interp = 2
+tracks/7/loop_wrap = false
+tracks/7/keys = PackedFloat32Array(0, 1, 0.23131475, -0.017268294, 0.21278186, 0.9491676, 5.5, 1, 0.23131475, -0.017268294, 0.21278186, 0.9491676, 6.9, 1, 0, 0, 0, 1, 8, 1, 0, 0, 0, 1, 9.2, 1, 0, 0, 0, 1, 9.8, 1, 0.041814234, 0, 0, 0.9991255, 10, 1, 0.18539603, 0, 0, 0.9826639)
+tracks/8/type = "scale_3d"
+tracks/8/imported = false
+tracks/8/enabled = true
+tracks/8/path = NodePath("Props/open_book/Блокнот")
+tracks/8/interp = 1
+tracks/8/loop_wrap = false
+tracks/8/keys = PackedFloat32Array(0, 1, 1, 1, 1, 6.23, 1, 1, 1, 1, 8.6, 1, 1, 1, 1, 10, 1, 1, 1, 1)
+tracks/9/type = "position_3d"
+tracks/9/imported = false
+tracks/9/enabled = true
+tracks/9/path = NodePath("Props/pencil/Мелок")
+tracks/9/interp = 2
+tracks/9/loop_wrap = false
+tracks/9/keys = PackedFloat32Array(0, 1, 0.028564863, -0.006681204, 0.062554136, 3.66, 1, 0.038907677, -0.028570205, 0.06527406, 6.24, 1, 0.028564863, -0.006681204, 0.062554136, 6.94, 1, 0.033347152, 0.0125181675, 0.06016843, 7.58, 1, 0.038643762, 0.0007843971, 0.009376824, 7.82, 1, 0.03986069, -0.08143759, -0.03280384, 9.2, 1, 0.029945135, -0.035089552, 0.03778165, 10, 1, -0.0060000047, -0.13143927, 0.0119999945)
+tracks/10/type = "rotation_3d"
+tracks/10/imported = false
+tracks/10/enabled = true
+tracks/10/path = NodePath("Props/pencil/Мелок")
+tracks/10/interp = 2
+tracks/10/loop_wrap = false
+tracks/10/keys = PackedFloat32Array(0, 1, -0.40399376, 0.25261912, -0.053624768, 0.8775518, 6.24, 1, -0.40399376, 0.25261912, -0.053624768, 0.8775518, 6.94, 1, -0.65909046, 0.16663317, -0.15604015, 0.7165784, 10, 1, 0, 0, -0.20845796, 0.97803134)
+tracks/11/type = "scale_3d"
+tracks/11/imported = false
+tracks/11/enabled = true
+tracks/11/path = NodePath("Props/pencil/Мелок")
+tracks/11/interp = 1
+tracks/11/loop_wrap = false
+tracks/11/keys = PackedFloat32Array(0, 1, 1, 1, 1, 6.94, 1, 1.0000001, 0.99999994, 1.0000001, 10, 1, 1, 1, 1)
+tracks/12/type = "scale_3d"
+tracks/12/imported = false
+tracks/12/enabled = true
+tracks/12/path = NodePath("Targets/right_hand")
+tracks/12/interp = 1
+tracks/12/loop_wrap = true
+tracks/12/keys = PackedFloat32Array(0, 1, 1.0000001, 1.0000002, 1)

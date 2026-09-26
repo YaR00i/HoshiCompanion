@@ -164,7 +164,7 @@ func _run() -> void:
 	for stroke in app.stage.sketchbook.star_strokes:
 		if stroke.visible: partial_strokes += 1
 	_check(partial_strokes > 0 and partial_strokes < 5, "the star develops in separate strokes")
-	var drawing_height: float = app.stage.sketchbook.position.y
+	var drawing_height: float = app.stage.sketchbook.book.global_position.y
 	await _capture("01_sketch_drawing")
 	app.stage.yaw = 65.0
 	_advance(1)
@@ -174,8 +174,41 @@ func _run() -> void:
 	var complete_strokes: int = 0
 	for stroke in app.stage.sketchbook.star_strokes:
 		if stroke.visible: complete_strokes += 1
-	_check(complete_strokes == 5 and app.stage.sketchbook.position.y > drawing_height + app.stage.model_height * 0.1, "finished star rises as Hoshi shows the page")
+	_check(complete_strokes == 5 and app.stage.sketchbook.book.global_position.y > drawing_height + app.stage.model_height * 0.1, "finished star rises as Hoshi shows the page")
 	await _capture("01_sketch_show")
+	app._on_action(314)
+	_advance(80)
+	_check(app.stage.paper_star.visible and app.stage.paper_star.paper.visible and app.playground.cozy_stars_made == 0, "paper star begins as a separate sheet without an early decoration")
+	_check(app.stage.edge_pose.anchor_world().distance_to(seat) < 0.001, "folding keeps the corner seat steady")
+	await _capture("01_paper_folding")
+	app.stage.yaw = 65.0
+	_advance(1)
+	await _capture("01_paper_folding_side")
+	app.stage.yaw = 0.0
+	app.state.pet()
+	_advance(40)
+	_check(app.playground.cozy_stars_made == 0 and app.stage.edge_life.fold_progress == 0.0, "petting interrupts folding without leaving an unfinished star")
+	_advance(80)
+	cozy.star_card.pressed.emit()
+	_advance(210)
+	_check(app.playground.cozy_stars_made == 0 and app.stage.paper_star.star.visible, "empty card starts folding and Hoshi shows the new star before pinning it")
+	await _capture("01_paper_show")
+	app.stage.yaw = 65.0
+	_advance(1)
+	await _capture("01_paper_show_side")
+	app.stage.yaw = 0.0
+	_advance(65)
+	_check(app.playground.cozy_stars_made == 1 and cozy.star_count == 1 and cozy.decor.star_count == 1, "completed star remains on the cozy card")
+	cozy.star_card.pressed.emit()
+	_advance(38)
+	_check(float(app.stage.edge_life.weights["admire_star"]) > 0.5 and cozy.decor.presenting_star, "pressing a finished star makes Hoshi show it")
+	await _capture("01_paper_admire")
+	_advance(130)
+	_check(not cozy.decor.presenting_star and cozy.star_count == 1, "shown star returns to the card")
+	for i in range(3):
+		app.playground.add_cozy_star()
+	_check(app.playground.cozy_stars_made == 4 and cozy.star_count == 3, "cozy card keeps at most three finished stars")
+	await _capture("01_paper_card")
 	app.stage.edge_suspended = true
 	app.stage.animate(1.0 / 30.0, app.state, Vector2.ZERO)
 	_check(not app.stage.sketchbook.visible, "manual contact hides the notebook immediately")
@@ -194,14 +227,19 @@ func _run() -> void:
 	await process_frame
 	_advance(3)
 	_check((Vector2(root.position - before) - Vector2(60, 10)).length() < 1.5, "avatar follows cozy corner movement")
+	app._on_action(314)
+	_advance(60)
+	var stars_before_leaving: int = app.playground.cozy_stars_made
 	app.playground.return_home()
 	_advance(190)
 	_check(not app.playground.active() and is_instance_valid(cozy) and cozy.visible, "cozy corner remains available after returning to floor")
+	_check(app.playground.cozy_stars_made == stars_before_leaving and not app.stage.paper_star.visible, "leaving the corner cancels unfinished folding")
 	var drop_point: Vector2 = Vector2(cozy.outer_rect().position) + Vector2(float(cozy.outer_rect().size.x) * 0.5, 0.0)
 	var reused: bool = app.playground.finish_drag_at(drop_point)
 	await process_frame
 	_advance(130)
 	_check(reused and app.playground.phase == "attached" and app.playground.cozy_mode and app.playground.shelf == cozy and not cozy.is_queued_for_deletion(), "dropping from floor onto cozy corner reuses its borderless window")
+	_check(cozy.star_count == 3, "finished stars stay on the corner after leaving and returning")
 	app.playground.close_shelf()
 	await process_frame
 	_advance(190)

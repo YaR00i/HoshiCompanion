@@ -10,11 +10,17 @@ const Director = preload("res://scripts/behavior_director.gd")
 const IntentPlanner = preload("res://scripts/intent_planner.gd")
 const PlaceDirector = preload("res://scripts/place_director.gd")
 const Playground = preload("res://scripts/shelf_playground.gd")
+const SurfaceProbe = preload("res://scripts/window_surface_probe.gd")
 const InteractionSession = preload("res://scripts/interaction_session.gd")
+const ChatVoiceBridge = preload("res://scripts/chat_voice_bridge.gd")
 const SETTINGS_PATH: String = "user://companion.cfg"
 const DEFAULT_AVATAR: String = "res://assets/Hoshi_v1.vrm"
+const DEFAULT_LIGHT_POSITION: Vector3 = Vector3(-1.2, 2.2, 2.4)
+const DEFAULT_EDGE_COLOR: Color = Color(1.0, 0.92, 0.98)
+const DEFAULT_OUTLINE_COLOR: Color = Color(0.20, 0.16, 0.27)
 
 var host = Host.new()
+var surface_probe = SurfaceProbe.new()
 var state = State.new()
 var walker = Locomotion.new()
 var air = AirMotion.new()
@@ -23,6 +29,7 @@ var intent_planner = IntentPlanner.new()
 var places = PlaceDirector.new()
 var playground = Playground.new()
 var interaction = InteractionSession.new()
+var chat_voice_bridge = ChatVoiceBridge.new()
 var stage
 var ui
 var background: ColorRect
@@ -58,6 +65,11 @@ var _surface_step_wait: float = 0.0
 var _surface_intent_wait: float = 5.0
 var _test_mode: bool = false
 var _settings: ConfigFile = ConfigFile.new()
+var _light_position: Vector3 = DEFAULT_LIGHT_POSITION
+var _shading_settings: Dictionary = {"shadow_strength": 1.0, "shadow_color": Color.WHITE,
+	"edge_strength": 0.16, "edge_color": DEFAULT_EDGE_COLOR, "edge_width": 0.4,
+	"outline_strength": 0.45, "outline_color": DEFAULT_OUTLINE_COLOR, "outline_width": 0.35}
+var _light_save_delay: float = -1.0
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -79,12 +91,18 @@ func _ready() -> void:
 	stage = Stage.new()
 	stage.name = "AvatarStage"
 	add_child(stage)
+	stage.set_light_position(_light_position)
+	_apply_shading_settings()
 	ui = UI.new()
 	ui.name = "CompanionUI"
 	add_child(ui)
+	ui.clickthrough_enabled = host.mask_enabled
 	playground.setup(self)
 	ui.action_requested.connect(_on_action)
+	ui.light_position_changed.connect(_on_light_position_changed)
+	ui.shading_changed.connect(_on_shading_changed)
 	ui.menu.popup_hide.connect(_on_menu_hidden)
+	ui.quick_menu.popup_hide.connect(_on_menu_hidden)
 	ui.bubbles_enabled = bool(_settings.get_value("behavior", "bubbles", true))
 	get_window().close_requested.connect(_quit)
 	var args: PackedStringArray = OS.get_cmdline_user_args()
@@ -105,8 +123,11 @@ func _ready() -> void:
 		_switch_mode(true)
 		ui.show_error(str(result["error"]))
 		return
+	stage.edge_life.paper_star_completed.connect(_on_paper_star_completed)
 	print("HOSHI_MODEL_READY status=", result.get("status", "ready"), " bones=", result.get("rig", {}).get("bones", 0), " meshes=", result.get("mesh_count", 0))
 	_ready_to_run = true
+	if args.has("--chat-voice-bridge"):
+		chat_voice_bridge.start()
 	ui.model_ready(stage.model_name(), result)
 	ui.refresh(state)
 	_layout()
@@ -165,7 +186,17 @@ func _process(delta: float) -> void:
 	if not _ready_to_run:
 		return
 	var dt: float = clampf(delta, 0.0, 0.1)
-	interaction.tick(delta, _press_active or ui.menu.visible)
+	chat_voice_bridge.tick(dt)
+	stage.voice_level = chat_voice_bridge.level
+	if surface_probe.status == "waiting":
+		surface_probe.tick(dt)
+		if surface_probe.status == "done":
+			ui.show_surface_scan(surface_probe.result)
+	if _light_save_delay >= 0.0:
+		_light_save_delay -= dt
+		if _light_save_delay < 0.0:
+			_save_settings()
+	interaction.tick(delta, _press_active or ui.menu_open())
 	_update_drag(dt)
 	playground.before_tick(dt)
 	var air_was_active: bool = air.active()
@@ -195,7 +226,7 @@ func _process(delta: float) -> void:
 			_rest_after_walk = false
 			_save_settings()
 	_resolve_posture_intent()
-	state.tick(dt, not _press_active and not ui.menu.visible and not walker.active())
+	state.tick(dt, not _press_active and not ui.menu_open() and not walker.active())
 	_resolve_posture_intent()
 	var cursor: Vector2 = host.cursor_local() - stage.position
 	var head: Vector2 = stage.head_pixel()
@@ -205,7 +236,7 @@ func _process(delta: float) -> void:
 	director.enabled = state.autonomy_enabled
 	director.walk_enabled = state.walk_enabled and state.motion_enabled
 	director.rest_enabled = state.rest_enabled and state.motion_enabled and state.place_mode == "off"
-	var control_blocked: bool = air.active() or stage.cinematic_active() or not _quit_phase.is_empty() or _press_active or ui.menu.visible or state.dozing or walker.active() or state.posture.transitioning() or not _pending_action.is_empty() or state.notice_weight > 0.1 or state.welcome_weight > 0.1 or state.pet_weight > 0.1 or state.wave_weight > 0.1 or state.release_reaction_active()
+	var control_blocked: bool = air.active() or stage.cinematic_active() or not _quit_phase.is_empty() or _press_active or ui.menu_open() or state.dozing or walker.active() or state.posture.transitioning() or not _pending_action.is_empty() or state.notice_weight > 0.1 or state.welcome_weight > 0.1 or state.pet_weight > 0.1 or state.wave_weight > 0.1 or state.release_reaction_active()
 	var blocked: bool = playground.active() or control_blocked
 	var place_request: String = places.tick(dt, state, {"blocked": blocked or host.preview, "can_place": not host.preview and host.is_grounded() and state.posture.mode == "standing"})
 	if place_request == "cozy":
@@ -238,7 +269,7 @@ func _process(delta: float) -> void:
 	else:
 		_tick_floor_intent(dt, behavior_context, cursor_gaze, distance < stage.body_pixels * 1.8)
 	var target: Vector2 = Vector2.ZERO
-	if state.look_enabled and not state.dozing and not ui.menu.visible and not walker.active() and absf(stage.yaw) < 55.0:
+	if state.look_enabled and not state.dozing and not ui.menu_open() and not walker.active() and absf(stage.yaw) < 55.0:
 		target = director.gaze
 		# Deliberate interaction briefly wins over independent attention.
 		if state.pet_contact_active:
@@ -250,7 +281,7 @@ func _process(delta: float) -> void:
 	var planner_scene_active: bool = not intent_planner.active_intent.is_empty()
 	stage.idle_life.autonomous_enabled = not planner_scene_active or playground.active()
 	stage.edge_life.autonomous_enabled = not planner_scene_active or not playground.active()
-	stage.edge_suspended = _press_active or ui.menu.visible or (playground.active() and (playground.phase != "attached" or playground.surface_busy()))
+	stage.edge_suspended = _press_active or ui.menu_open() or (playground.active() and (playground.phase != "attached" or playground.surface_busy()))
 	stage.cozy_corner_active = playground.active() and playground.cozy_mode and playground.phase == "attached"
 	stage.edge_scoot = playground.surface.scoot_pose() if playground.active() else {}
 	var context_action: String = "cursor_hang" if _cursor_hanging else ("carry" if _dragged and not host.preview else air.pose_mode())
@@ -261,6 +292,8 @@ func _process(delta: float) -> void:
 	var context_impact: float = air.impact_strength() if air.active() and context_action in ["jump", "fall", "land"] else 0.5
 	stage.set_context_action(context_action, context_velocity, context_progress, context_impact)
 	stage.animate(dt, state, _gaze, walker.sample())
+	if playground.cozy_mode and is_instance_valid(playground.shelf):
+		playground.shelf.set_star_presenting(float(stage.edge_life.weights.get("admire_star", 0.0)) > 0.05)
 	if _cursor_hanging and not host.hang_hand_to(host.cursor_global(), stage.hand_pixel(_hand_side)):
 		_end_cursor_hang()
 	if not host.preview:
@@ -269,7 +302,7 @@ func _process(delta: float) -> void:
 			_input_alpha_clock = 0.0
 			stage.refresh_interaction_alpha()
 		var avatar_hit: bool = not stage.cinematic_active() and stage.visible_avatar_hit(cursor)
-		host.update_pointer_interaction(avatar_hit, _press_active or ui.menu.visible)
+		host.update_pointer_interaction(avatar_hit, _press_active or ui.menu_open())
 	playground.after_tick()
 	if _cinematic_mask_active and not stage.cinematic_active():
 		host.cinematic_mask(false)
@@ -469,9 +502,9 @@ func _tick_surface_intent(delta: float, context: Dictionary, cursor_gaze: Vector
 				state.wave()
 				_surface_intent_step_started = true
 				_finish_surface_intent_step()
-			"edge_peek", "edge_balance", "edge_swing", "edge_lean", "edge_sway", "edge_hum", "edge_nod", "edge_sketch":
+			"edge_peek", "edge_balance", "edge_swing", "edge_lean", "edge_sway", "edge_hum", "edge_nod", "edge_sketch", "edge_fold":
 				var edge_gesture: String = step.trim_prefix("edge_")
-				if not playground.active() or state.posture.mode != "seated" or (edge_gesture == "sketch" and not playground.cozy_mode) or not stage.edge_life.request_gesture(edge_gesture):
+				if not playground.active() or state.posture.mode != "seated" or (edge_gesture in ["sketch", "fold"] and not playground.cozy_mode) or not stage.edge_life.request_gesture(edge_gesture):
 					_abort_autonomous_intent("edge_gesture_unavailable")
 					return
 				_surface_intent_step_started = true
@@ -504,7 +537,7 @@ func _tick_surface_intent(delta: float, context: Dictionary, cursor_gaze: Vector
 		"look":
 			if not director.look_active():
 				_finish_surface_intent_step()
-		"edge_peek", "edge_balance", "edge_swing", "edge_lean", "edge_sway", "edge_hum", "edge_nod", "edge_sketch":
+		"edge_peek", "edge_balance", "edge_swing", "edge_lean", "edge_sway", "edge_hum", "edge_nod", "edge_sketch", "edge_fold":
 			if not stage.edge_life.forced_active():
 				_finish_surface_intent_step()
 		"floor_peek_left", "floor_peek_right", "floor_weight_left", "floor_weight_right", "floor_hands", "floor_shoulders":
@@ -790,14 +823,37 @@ func _open_menu() -> void:
 	interaction.manual_activity()
 	state.cancel_pet_contact()
 	_stop_walk()
+	ui.clickthrough_enabled = host.mask_enabled
 	ui.refresh(state, walker.label(), walker.active())
 	host.menu_focus(true)
-	ui.menu.position = host.cursor_global()
-	ui.menu.popup()
+	ui.open_quick_menu(host.cursor_global())
 
 func _on_menu_hidden() -> void:
+	_finish_menu_close.call_deferred()
+
+func _finish_menu_close() -> void:
+	if ui.menu_open():
+		return
 	host.menu_focus(false)
 	director.user_interaction()
+
+func _on_paper_star_completed() -> void:
+	playground.add_cozy_star()
+
+func _on_light_position_changed(position_value: Vector3) -> void:
+	_light_position = position_value
+	stage.set_light_position(position_value)
+	_light_save_delay = 0.4
+
+func _on_shading_changed(settings: Dictionary) -> void:
+	_shading_settings = settings.duplicate()
+	_apply_shading_settings()
+	_light_save_delay = 0.4
+
+func _apply_shading_settings() -> void:
+	stage.set_shading_settings(float(_shading_settings["shadow_strength"]), _shading_settings["shadow_color"],
+		float(_shading_settings["edge_strength"]), _shading_settings["edge_color"], float(_shading_settings["edge_width"]),
+		float(_shading_settings["outline_strength"]), _shading_settings["outline_color"], float(_shading_settings["outline_width"]))
 
 func _on_action(action: int) -> void:
 	_abort_autonomous_intent("manual_action")
@@ -809,8 +865,34 @@ func _on_action(action: int) -> void:
 		return
 	if not _ready_to_run:
 		return
+	if action == 150:
+		ui.show_light_editor(_light_position, _shading_settings)
+		return
+	if action == 170:
+		chat_voice_bridge.start()
+		OS.shell_open("https://chatgpt.com/")
+		return
+	if action == 171:
+		OS.shell_open("https://chatgpt.com/")
+		return
+	if action == 160 or action == 161:
+		ui.surface_window.hide()
+		if surface_probe.begin("visual" if action == 161 else "structure"):
+			ui.say("Наведи на окно · кадр через 4 с" if action == 161 else "Наведи на окно · структура через 4 с")
+			ui._bubble_left = 5.0
+		else:
+			ui.show_surface_scan(surface_probe.result)
+		return
+	if action == 151:
+		_on_light_position_changed(DEFAULT_LIGHT_POSITION)
+		_on_shading_changed({"shadow_strength": 1.0, "shadow_color": Color.WHITE,
+			"edge_strength": 0.16, "edge_color": DEFAULT_EDGE_COLOR, "edge_width": 0.4,
+			"outline_strength": 0.45, "outline_color": DEFAULT_OUTLINE_COLOR, "outline_width": 0.35})
+		ui.set_light_position(_light_position)
+		ui.set_shading_settings(_shading_settings)
+		return
 	interaction.manual_activity()
-	if action in [10, 11, 12, 30, 31, 32, 33, 40, 41, 42, 43, 100, 101, 110, 111, 112, 140, 141, 305, 306, 307, 308, 313]:
+	if action in [10, 11, 12, 30, 31, 32, 33, 40, 41, 42, 43, 100, 101, 110, 111, 112, 140, 141, 305, 306, 307, 308, 313, 314, 315]:
 		places.manual_pause()
 	if action in [210, 211, 212]:
 		state.place_mode = ["off", "cozy", "smart"][action - 210]
@@ -821,6 +903,13 @@ func _on_action(action: int) -> void:
 	if action == 312:
 		if playground.active() and playground.cozy_mode and playground.phase == "attached" and state.posture.mode == "seated" and state.motion_enabled and not state.dozing:
 			stage.edge_life.request_gesture("sketch")
+		return
+	if action in [314, 315]:
+		if playground.active() and playground.cozy_mode and playground.phase == "attached" and state.posture.mode == "seated" and state.motion_enabled and not state.dozing:
+			if action == 314:
+				stage.edge_life.request_gesture("fold")
+			elif playground.cozy_stars_made > 0:
+				stage.edge_life.request_gesture("admire_star")
 		return
 	var edge_actions: Dictionary = {300: "auto", 301: "calm", 302: "swing", 303: "lean", 304: "peek", 309: "sway", 310: "hum", 311: "nod"}
 	if edge_actions.has(action):
@@ -890,6 +979,7 @@ func _on_action(action: int) -> void:
 		124:
 			host.mask_enabled = not host.mask_enabled
 			host.apply_mask()
+			ui.clickthrough_enabled = host.mask_enabled
 		125: state.walk_enabled = not state.walk_enabled
 		126: state.autonomy_enabled = not state.autonomy_enabled
 		127: state.rest_enabled = not state.rest_enabled
@@ -917,6 +1007,11 @@ func _on_action(action: int) -> void:
 	ui.refresh(state, walker.label(), walker.active())
 	_save_settings()
 
+static func clickthrough_setting(config: ConfigFile) -> bool:
+	# Legacy mask_enabled=false came from an unlabeled toggle. It is deliberately
+	# not treated as an opt-out of the explicit click-through setting.
+	return bool(config.get_value("window", "clickthrough_enabled", true))
+
 func _read_settings() -> void:
 	if _test_mode or OS.get_cmdline_user_args().has("--reset"):
 		return
@@ -926,7 +1021,7 @@ func _read_settings() -> void:
 	var stored_position: Variant = _settings.get_value("window", "position", Vector2i(-99999, -99999))
 	if stored_position is Vector2i:
 		host.saved_position = stored_position
-	host.mask_enabled = bool(_settings.get_value("window", "mask_enabled", true))
+	host.mask_enabled = clickthrough_setting(_settings)
 	state.look_enabled = bool(_settings.get_value("behavior", "look", true))
 	state.motion_enabled = bool(_settings.get_value("behavior", "motion", true))
 	state.hair_enabled = bool(_settings.get_value("behavior", "hair", true))
@@ -940,6 +1035,23 @@ func _read_settings() -> void:
 	var activity: String = str(_settings.get_value("behavior", "activity", "normal"))
 	state.activity = activity if activity in ["quiet", "normal", "playful"] else "normal"
 	frame_rate = 60 if int(_settings.get_value("render", "fps", 30)) == 60 else 30
+	var stored_light: Variant = _settings.get_value("render", "light_position", DEFAULT_LIGHT_POSITION)
+	if stored_light is Vector3:
+		_light_position = Vector3(clampf(stored_light.x, -3.0, 3.0), clampf(stored_light.y, 0.2, 3.5), clampf(stored_light.z, 0.4, 4.0))
+	_shading_settings["shadow_strength"] = clampf(float(_settings.get_value("render", "shadow_strength", 1.0)), 0.0, 1.5)
+	_shading_settings["edge_strength"] = clampf(float(_settings.get_value("render", "edge_strength", 0.16)), 0.0, 0.5)
+	_shading_settings["edge_width"] = clampf(float(_settings.get_value("render", "edge_width", 0.4)), 0.0, 1.0)
+	_shading_settings["outline_strength"] = clampf(float(_settings.get_value("render", "outline_strength", 0.45)), 0.0, 1.0)
+	_shading_settings["outline_width"] = clampf(float(_settings.get_value("render", "outline_width", 0.35)), 0.0, 1.0)
+	var stored_shadow_color: Variant = _settings.get_value("render", "shadow_color", Color.WHITE)
+	if stored_shadow_color is Color:
+		_shading_settings["shadow_color"] = stored_shadow_color
+	var stored_edge_color: Variant = _settings.get_value("render", "edge_color", DEFAULT_EDGE_COLOR)
+	if stored_edge_color is Color:
+		_shading_settings["edge_color"] = stored_edge_color
+	var stored_outline_color: Variant = _settings.get_value("render", "outline_color", DEFAULT_OUTLINE_COLOR)
+	if stored_outline_color is Color:
+		_shading_settings["outline_color"] = stored_outline_color
 
 func _save_settings() -> void:
 	if host.headless or _test_mode:
@@ -949,7 +1061,8 @@ func _save_settings() -> void:
 	if playground.active():
 		saved_window = playground.saved_floor_position
 	_settings.set_value("window", "position", saved_window)
-	_settings.set_value("window", "mask_enabled", host.mask_enabled)
+	_settings.erase_section_key("window", "mask_enabled")
+	_settings.set_value("window", "clickthrough_enabled", host.mask_enabled)
 	_settings.set_value("behavior", "look", state.look_enabled)
 	_settings.set_value("behavior", "motion", state.motion_enabled)
 	_settings.set_value("behavior", "hair", state.hair_enabled)
@@ -961,6 +1074,10 @@ func _save_settings() -> void:
 	_settings.set_value("behavior", "activity", state.activity)
 	_settings.set_value("behavior", "bubbles", ui.bubbles_enabled)
 	_settings.set_value("render", "fps", frame_rate)
+	_settings.set_value("render", "light_position", _light_position)
+	for key in ["shadow_strength", "shadow_color", "edge_strength", "edge_color", "edge_width",
+		"outline_strength", "outline_color", "outline_width"]:
+		_settings.set_value("render", key, _shading_settings[key])
 	var result: Error = _settings.save(SETTINGS_PATH)
 	if result != OK:
 		push_warning("Settings could not be saved: " + error_string(result))
@@ -1064,7 +1181,7 @@ func _request_stand() -> void:
 func _resolve_posture_intent() -> void:
 	if playground.active():
 		return
-	if _pending_action.is_empty() or walker.active() or _press_active or ui.menu.visible:
+	if _pending_action.is_empty() or walker.active() or _press_active or ui.menu_open():
 		return
 	if _pending_action == "walk":
 		if state.posture.mode == "standing":
@@ -1092,5 +1209,7 @@ func _stop_all_actions() -> void:
 		state.posture.request_stand()
 
 func _exit_tree() -> void:
+	chat_voice_bridge.stop()
 	host.shutdown()
 	playground.external.close()
+	surface_probe.close()

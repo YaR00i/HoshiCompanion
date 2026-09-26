@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Hoshi Voice Preview",
+  "version": "0.1.0",
+  "description": "Locally animates Hoshi from the audio of one ChatGPT tab.",
+  "minimum_chrome_version": "116",
+  "permissions": ["activeTab", "tabCapture", "offscreen"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "action": {"default_title": "Connect ChatGPT voice to Hoshi"},
+  "background": {"service_worker": "worker.js"}
+}

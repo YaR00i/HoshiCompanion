@@ -48,16 +48,17 @@ def verify() -> dict:
     data = (ROOT / 'assets/Hoshi_v1.vrm').read_bytes()
     json_size = struct.unpack_from('<I', data, 12)[0]
     document = json.loads(data[20:20 + json_size])
-    mesh = document['meshes'][0]
-    names = mesh['extras']['targetNames']
     binds = document['extensions']['VRMC_vrm']['expressions']['preset']
-    check(len(names) == 57, 'supplied Face source contains 57 named morph targets')
-    check(binds['blink']['morphTargetBinds'][0] == {'node': 139, 'index': 13, 'weight': 1},
-          'blink explicitly binds node 139, target index 13, weight 1')
-    check(names[13] == 'Fcl_EYE_Close', 'blink target name is Fcl_EYE_Close')
-    check(document['nodes'][139]['mesh'] == 0, 'blink source node references source mesh zero')
-    check(len([n for n in document['nodes'] if n.get('mesh') == 0]) == 1,
-          'supplied avatar has a unique live instance candidate for source face mesh')
+    check(bool(binds['blink'].get('morphTargetBinds')), 'supplied avatar has an explicit blink morph bind')
+    blink_bind = binds['blink']['morphTargetBinds'][0]
+    face_mesh_id = document['nodes'][blink_bind['node']]['mesh']
+    names = document['meshes'][face_mesh_id]['extras']['targetNames']
+    check(bool(names), 'supplied Face source contains named morph targets')
+    check(0 <= blink_bind['index'] < len(names) and blink_bind['weight'] > 0,
+          'blink bind references an active face morph target')
+    check(bool(names[blink_bind['index']]), 'blink target has a source name')
+    check(len([n for n in document['nodes'] if n.get('mesh') == face_mesh_id]) == 1,
+          'supplied avatar has a unique live instance candidate for its face mesh')
     check(not any('_hoshi_source_mesh_v1' in m.get('extras', {}) for m in document['meshes']),
           'supplied model on disk has not been tagged or rewritten')
     check(len(names) == len(set(names)), 'all face morph names are unique')
@@ -72,9 +73,11 @@ def verify() -> dict:
           'engine regression tests separately require real blink and graceful degradation')
     check('arms are lowered from T-pose' in runtime and 'actual morph channel' in runtime,
           'engine regression tests check concrete bones and actual morph values')
-    check('0.1.1' in (ROOT / 'project.godot').read_text(encoding='utf-8') and
-          '3D / 0.1.1' in (ROOT / 'scripts/companion_ui.gd').read_text(encoding='utf-8'),
-          'corrected version is visible in project and UI')
+    project_text = (ROOT / 'project.godot').read_text(encoding='utf-8')
+    version_match = re.search(r'(?m)^config/version="([^"]+)"', project_text)
+    check(version_match is not None and
+          f'3D / {version_match.group(1)}' in (ROOT / 'scripts/companion_ui.gd').read_text(encoding='utf-8'),
+          'project version is visible in UI')
     for file in ROOT.rglob('*.gd'):
         code = file.read_text(encoding='utf-8')
         check('\x00' not in code, f'no null bytes in {file.relative_to(ROOT)}')

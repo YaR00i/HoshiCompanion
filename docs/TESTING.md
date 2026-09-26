@@ -2,8 +2,8 @@
 
 ## Выполнено при сборке, без Godot
 
-1. `python tests/validate_asset.py`: исходный VRM, SHA-256, ссылки ресурсов, структура.
-2. `python tests/validate_hotfix.py`: прежние контракты исправленной привязки мимики.
+1. `python tests/validate_asset.py`: локальный VRM, SHA-256 из игнорируемого `docs/MODEL_METADATA.json`, ссылки ресурсов, структура.
+2. `python tests/validate_hotfix.py`: контракты исправленной привязки мимики без фиксированных индексов узлов конкретного экспорта.
 3. `python tests/offline/check_syntax.py`: 12 GD-файлов разобраны Lark-грамматикой,
    адаптированной из gdtoolkit. Это не type checker и не компиляция Godot.
 4. `python tests/offline/check_motion.py`: 212 проверок. Исполняется ограниченная

@@ -29,6 +29,7 @@ findstr /i /c:"SCRIPT ERROR:" /c:"Parse Error:" /c:"Failed to load script" "%ROO
 if not errorlevel 1 goto import_failed
 if "%MODE%"=="test" goto test
 if "%MODE%"=="desktop" goto desktop
+if "%MODE%"=="chat_voice" goto chat_voice
 if "%MODE%"=="capture" goto capture
 if "%MODE%"=="reset" goto reset
 if "%MODE%"=="walk" goto walk
@@ -37,6 +38,9 @@ start "Hoshi Preview" "%ENGINE%" --path "%ROOT%" --log-file "%ROOT%\logs\session
 exit /b 0
 :desktop
 start "Hoshi Companion" "%ENGINE%" --path "%ROOT%" --log-file "%ROOT%\logs\session.log" -- --desktop
+exit /b 0
+:chat_voice
+start "Hoshi Voice Preview" "%ENGINE%" --path "%ROOT%" --log-file "%ROOT%\logs\session.log" -- --desktop --chat-voice-bridge
 exit /b 0
 :capture
 start "Hoshi Preview Capture" "%ENGINE%" --path "%ROOT%" --log-file "%ROOT%\logs\session.log" -- --preview --capture

@@ -1,0 +1,142 @@
+[gd_resource type="Animation" format=3]
+
+[resource]
+resource_name = "sway"
+length = 6.5
+step = 0.05
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Channels:head_pitch")
+tracks/0/interp = 1
+tracks/0/loop_wrap = false
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 6.5),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [0.0, 0.0]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("Channels:chest_pitch")
+tracks/1/interp = 1
+tracks/1/loop_wrap = false
+tracks/1/keys = {
+"times": PackedFloat32Array(0, 6.5),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [0.0, 0.0]
+}
+tracks/2/type = "position_3d"
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/path = NodePath("Corrections/left_hand/Поправка левой кисти")
+tracks/2/interp = 1
+tracks/2/loop_wrap = false
+tracks/2/keys = PackedFloat32Array(0, 1, 0, 0, 0, 6.5, 1, 0, 0, 0)
+tracks/3/type = "position_3d"
+tracks/3/imported = false
+tracks/3/enabled = true
+tracks/3/path = NodePath("Corrections/right_hand/Поправка правой кисти")
+tracks/3/interp = 1
+tracks/3/loop_wrap = false
+tracks/3/keys = PackedFloat32Array(0, 1, 0, 0, 0, 6.5, 1, 0, 0, 0)
+tracks/4/type = "rotation_3d"
+tracks/4/imported = false
+tracks/4/enabled = true
+tracks/4/path = NodePath("Corrections/left_hand/Поправка левой кисти")
+tracks/4/interp = 1
+tracks/4/loop_wrap = false
+tracks/4/keys = PackedFloat32Array(0, 1, 0, 0, 0, 1, 6.5, 1, 0, 0, 0, 1)
+tracks/5/type = "rotation_3d"
+tracks/5/imported = false
+tracks/5/enabled = true
+tracks/5/path = NodePath("Corrections/right_hand/Поправка правой кисти")
+tracks/5/interp = 1
+tracks/5/loop_wrap = false
+tracks/5/keys = PackedFloat32Array(0, 1, 0, 0, 0, 1, 6.5, 1, 0, 0, 0, 1)
+tracks/6/type = "rotation_3d"
+tracks/6/imported = false
+tracks/6/enabled = true
+tracks/6/path = NodePath("Bones/spine/Спина")
+tracks/6/interp = 1
+tracks/6/loop_wrap = true
+tracks/6/keys = PackedFloat32Array(0, 1, 9.797513e-07, 0.00079568324, 0.0033253275, 0.9999942, 0.6, 1, 5.9813246e-05, 0.0060918247, 0.02489899, 0.99967146, 1.2, 1, 8.772387e-05, 0.007217154, 0.029436814, 0.99954057, 3.15, 1, 3.8444585e-05, -0.005523657, -0.02364907, 0.99970514, 5.1, 1, 3.4380155e-05, 0.004843842, 0.019791516, 0.99979246, 6.5, 1, 4.0554667e-05, -0.0045309514, -0.019442435, 0.99980074)
+tracks/7/type = "rotation_3d"
+tracks/7/imported = false
+tracks/7/enabled = true
+tracks/7/path = NodePath("Bones/chest/Грудь")
+tracks/7/interp = 1
+tracks/7/loop_wrap = true
+tracks/7/keys = PackedFloat32Array(0, 1, 7.301569e-07, 2.5344867e-05, 0.0023610925, 0.9999972, 1.2, 1, 2.2633028e-05, -0.00021223049, -0.011835771, 0.99992996, 3.3, 1, 1.2732367e-05, 5.6975397e-05, 0.011641698, 0.9999322, 5.25, 1, 1.7676517e-05, -0.0001912963, -0.011841962, 0.99992985, 6.5, 1, 5.4160473e-06, 1.6355189e-05, 0.0051719896, 0.99998665)
+tracks/8/type = "rotation_3d"
+tracks/8/imported = false
+tracks/8/enabled = true
+tracks/8/path = NodePath("Bones/neck/Шея")
+tracks/8/interp = 1
+tracks/8/loop_wrap = true
+tracks/8/keys = PackedFloat32Array(0, 1, -1.4901161e-08, 0.00032809807, 0.002731722, 0.99999624, 1.2, 1, 0, -0.00088090054, -0.007334317, 0.9999727, 3.15, 1, -1.4901161e-08, 0.00086513226, 0.00720303, 0.9999737, 5.25, 1, -1.4901161e-08, -0.00088043034, -0.0073304013, 0.9999728, 6.5, 1, 0, 0.00023612689, 0.0019659768, 0.99999803)
+tracks/9/type = "rotation_3d"
+tracks/9/imported = false
+tracks/9/enabled = true
+tracks/9/path = NodePath("Bones/head/Голова")
+tracks/9/interp = 1
+tracks/9/loop_wrap = true
+tracks/9/keys = PackedFloat32Array(0, 1, -6.733061e-10, 3.3236152e-05, 0.0030748623, 0.9999953, 1.2, 1, 1.8071658e-09, -8.923439e-05, -0.00825559, 0.9999659, 3.15, 1, -5.5006235e-09, 8.7637214e-05, 0.008107814, 0.9999671, 5.25, 1, -1.9184088e-09, -8.918695e-05, -0.008251182, 0.999966, 6.5, 1, -4.8436277e-10, 2.3919463e-05, 0.0022129302, 0.9999976)
+tracks/10/type = "rotation_3d"
+tracks/10/imported = false
+tracks/10/enabled = true
+tracks/10/path = NodePath("Bones/leftLowerLeg/Левая голень")
+tracks/10/interp = 1
+tracks/10/loop_wrap = true
+tracks/10/keys = PackedFloat32Array(0, 1, -2.9802322e-08, 0, -2.7755576e-15, 1, 0.6, 1, -0.06008506, 1.3690071e-10, -2.4484716e-09, 0.99819326, 1.2, 1, -0.07182321, 1.6364421e-10, -2.9268e-09, 0.99741745, 1.65, 1, -0.041346285, 9.420821e-11, -1.6848637e-09, 0.9991449, 2.55, 1, 0.054341704, -1.2381385e-10, 2.2144269e-09, 0.9985224, 3.15, 1, 0.073850185, -1.6826274e-10, 3.0093972e-09, 0.9972694, 3.6, 1, 0.048479766, -1.10455645e-10, 1.9755495e-09, 0.99882424, 4.65, 1, -0.059829794, 1.3631939e-10, -2.438065e-09, 0.99820864, 5.1, 1, -0.07483222, 1.7049383e-10, -3.0494125e-09, 0.99719614, 5.55, 1, -0.054924607, 1.251399e-10, -2.238179e-09, 0.9984906, 6.5, 1, 0.045386672, -1.0340795e-10, 1.8495019e-09, 0.99896955)
+tracks/11/type = "rotation_3d"
+tracks/11/imported = false
+tracks/11/enabled = true
+tracks/11/path = NodePath("Bones/leftFoot/Левая стопа")
+tracks/11/interp = 1
+tracks/11/loop_wrap = true
+tracks/11/keys = PackedFloat32Array(0, 1, 3.352761e-08, -1.6722732e-15, 1.4432897e-15, 1, 0.6, 1, 0.060085088, 2.296774e-15, 2.2204463e-16, 0.9981933, 1.2, 1, 0.07182321, -1.3877788e-17, -4.440892e-16, 0.9974174, 1.65, 1, 0.041346252, 6.2450045e-16, 2.220446e-15, 0.9991449, 2.55, 1, -0.05434172, 9.367507e-16, -1.4016566e-15, 0.99852246, 3.15, 1, -0.073850214, 6.1409195e-16, 1.7763564e-15, 0.99726933, 3.6, 1, -0.048479713, 2.1163626e-16, -1.1657342e-15, 0.99882424, 4.65, 1, 0.05982985, -6.661337e-16, -2.2204458e-16, 0.99820864, 5.1, 1, 0.07483225, 1.4085951e-15, 2.2204455e-16, 0.99719614, 5.55, 1, 0.054924652, 3.1294412e-15, 1.110223e-15, 0.9984906, 6.5, 1, -0.045386653, 2.5257572e-15, 2.4424904e-15, 0.9989695)
+tracks/12/type = "rotation_3d"
+tracks/12/imported = false
+tracks/12/enabled = true
+tracks/12/path = NodePath("Bones/rightLowerLeg/Правая голень")
+tracks/12/interp = 1
+tracks/12/loop_wrap = true
+tracks/12/keys = PackedFloat32Array(0, 1, -1.8197973e-23, 1.7763568e-15, 1.110223e-16, 1, 0.6, 1, 0.060085297, 1.3714807e-10, -2.4087128e-09, 0.99819326, 1.2, 1, 0.07182347, 1.6393552e-10, -2.8792764e-09, 0.99741733, 1.65, 1, 0.04134652, 9.4375174e-11, -1.6575072e-09, 0.9991449, 2.55, 1, -0.054341704, -1.2403145e-10, 2.1784659e-09, 0.9985224, 3.15, 1, -0.073850244, -1.6855894e-10, 2.9605276e-09, 0.9972694, 3.6, 1, -0.048479855, -1.106546e-10, 1.9434696e-09, 0.99882424, 4.65, 1, 0.05982998, 1.3655566e-10, -2.398479e-09, 0.99820864, 5.1, 1, 0.07483242, 1.7079317e-10, -2.9998986e-09, 0.9971962, 5.55, 1, 0.05492484, 1.2536104e-10, -2.20184e-09, 0.9984905, 6.5, 1, -0.045386612, -1.035918e-10, 1.8194709e-09, 0.9989695)
+tracks/13/type = "rotation_3d"
+tracks/13/imported = false
+tracks/13/enabled = true
+tracks/13/path = NodePath("Bones/rightFoot/Правая стопа")
+tracks/13/interp = 1
+tracks/13/loop_wrap = true
+tracks/13/keys = PackedFloat32Array(0, 1, 0, 0, 0, 1, 0.6, 1, -0.06008526, -5.245804e-15, -1.3322676e-15, 0.99819326, 1.2, 1, -0.07182348, 3.629041e-15, -1.6098232e-15, 0.99741733, 1.65, 1, -0.041346464, -4.3472166e-15, -3.053113e-16, 0.99914485, 2.55, 1, 0.054341715, 1.7694177e-15, -8.881783e-16, 0.9985224, 3.15, 1, 0.07385027, -1.6861512e-15, -1.110223e-15, 0.9972694, 3.6, 1, 0.04847987, 2.9819892e-15, 3.3306687e-15, 0.9988242, 4.65, 1, -0.059829988, -2.4980018e-16, -5.759282e-16, 0.9982086, 5.1, 1, -0.07483241, -5.2041704e-16, -6.3794456e-16, 0.99719614, 5.55, 1, -0.05492484, -6.550316e-15, 2.7755576e-16, 0.9984905, 6.5, 1, 0.045386616, 7.251143e-16, -8.881783e-16, 0.9989695)
+tracks/14/type = "rotation_3d"
+tracks/14/imported = false
+tracks/14/enabled = true
+tracks/14/path = NodePath("Bones/leftUpperArm/Левое плечо")
+tracks/14/interp = 1
+tracks/14/loop_wrap = true
+tracks/14/keys = PackedFloat32Array(0, 1, -0.0005698353, 0.0005716607, -0.0014387965, 0.9999987, 6.5, 1, 0.00043095642, -0.0021580828, 0.0005929544, 0.9999974)
+tracks/15/type = "rotation_3d"
+tracks/15/imported = false
+tracks/15/enabled = true
+tracks/15/path = NodePath("Bones/leftHand/Левая кисть")
+tracks/15/interp = 1
+tracks/15/loop_wrap = true
+tracks/15/keys = PackedFloat32Array(0, 1, -0.0043948665, -4.9084425e-05, 0.00073477626, 0.9999901, 1.2, 1, -0.01934506, -0.0009847581, 0.0025306195, 0.9998092, 3.15, 1, 0.014203085, 0.0007585137, -0.0017883775, 0.99989724, 5.1, 1, -0.010788738, -0.00070087606, 0.0012551098, 0.99994075, 6.5, 1, 0.014464518, 0.0005129426, -0.002044469, 0.9998932)
+tracks/16/type = "rotation_3d"
+tracks/16/imported = false
+tracks/16/enabled = true
+tracks/16/path = NodePath("Bones/rightUpperArm/Правое плечо")
+tracks/16/interp = 1
+tracks/16/loop_wrap = true
+tracks/16/keys = PackedFloat32Array(0, 1, 0.00056809187, 0.0005823076, -0.001430694, 0.9999987, 6.5, 1, -0.00045481324, -0.002034761, 0.0006996915, 0.9999976)
+tracks/17/type = "rotation_3d"
+tracks/17/imported = false
+tracks/17/enabled = true
+tracks/17/path = NodePath("Bones/rightHand/Правая кисть")
+tracks/17/interp = 1
+tracks/17/loop_wrap = true
+tracks/17/keys = PackedFloat32Array(0, 1, 0.0044034496, -4.4494867e-05, 0.00073872507, 0.9999901, 1.05, 1, 0.020410495, -0.0009928496, 0.0026887658, 0.9997876, 3.15, 1, -0.014147131, 0.0007533132, -0.0018038896, 0.999898, 5.1, 1, 0.01082611, -0.0007089823, 0.0012489556, 0.9999404, 6.5, 1, -0.014360145, 0.0005341172, -0.0020228475, 0.99989474)
