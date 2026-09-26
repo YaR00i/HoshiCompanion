@@ -36,6 +36,8 @@ const MAX_RUNS_PER_SECOND: float = 8.0
 
 var enabled: bool = false
 var pairing_code: String = ""
+## Растёт при каждой смене кода — чтобы окно с QR обновилось.
+var code_version: int = 0
 ## Ключи привязанных телефонов (хранятся в настройках Хоши).
 var tokens: PackedStringArray = []
 var adapters = Adapters.new()
@@ -94,6 +96,12 @@ func stop() -> void:
 func new_pairing_code() -> void:
 	pairing_code = "%06d" % _rng.randi_range(0, 999999)
 	_wrong_codes = 0
+	code_version += 1
+
+## Ссылка для QR: адрес пульта + одноразовый код. Телефон, открыв её,
+## привязывается сам, без ввода кода.
+func pairing_url(address: String) -> String:
+	return "%s#pair=%s" % [address, pairing_code]
 
 func forget_phones() -> void:
 	tokens = PackedStringArray()

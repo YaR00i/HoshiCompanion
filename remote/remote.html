@@ -169,6 +169,9 @@
 const WS_URL = `ws://${location.hostname}:18771/hoshi-remote-v1`;
 let socket = null, token = null, catalog = {quick: [], groups: []}, state = {}, retry = 800;
 try { token = localStorage.getItem("hoshi-token"); } catch (e) {}
+// Ссылка из QR-кода: #pair=123456 — привязаться без ввода кода.
+let linkCode = (location.hash.match(/pair=(\d{6})/) || [])[1] || "";
+if (linkCode) history.replaceState(null, "", location.pathname);
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
 
@@ -196,7 +199,12 @@ for (const tabButton of document.querySelectorAll("nav button")) {
 function connect() {
   online(false, "Подключаюсь…");
   socket = new WebSocket(WS_URL);
-  socket.onopen = () => { retry = 800; if (token) send({op: "hello", token}); else showPair(); };
+  socket.onopen = () => {
+    retry = 800;
+    if (token) send({op: "hello", token});
+    else if (linkCode) { send({op: "pair", code: linkCode}); linkCode = ""; }
+    else showPair();
+  };
   socket.onmessage = (event) => {
     let m; try { m = JSON.parse(event.data); } catch (e) { return; }
     if (m.op === "paired") { token = m.token; try { localStorage.setItem("hoshi-token", token); } catch (e) {} }
@@ -205,7 +213,10 @@ function connect() {
     else if (m.op === "ran" && !m.ok) toast({not_allowed: "С телефона так нельзя", missing: "Не нашла этот файл на компьютере",
       nothing_to_cancel: "Нечего отменять", need_confirm: "Нужно подтвердить"}[m.reason] || "Сейчас не получилось");
     else if (m.op === "error") {
-      if (m.reason === "need_pairing") { token = null; try { localStorage.removeItem("hoshi-token"); } catch (e) {} showPair(); }
+      if (m.reason === "need_pairing") {
+        token = null; try { localStorage.removeItem("hoshi-token"); } catch (e) {}
+        if (linkCode) { send({op: "pair", code: linkCode}); linkCode = ""; } else showPair();
+      }
       else if (m.reason === "bad_code") showPair("Код не подошёл — посмотри на экран компьютера");
       else if (m.reason === "too_fast") toast("Помедленнее :)");
     }

@@ -1,6 +1,7 @@
 extends Control
 const SurfaceMap = preload("res://scripts/window_surface_map.gd")
 const QuickMenu = preload("res://scripts/hoshi_quick_menu.gd")
+const QRCode = preload("res://scripts/qr_code.gd")
 const Commands = preload("res://scripts/hoshi_commands.gd")
 
 signal action_requested(command: String)
@@ -39,6 +40,9 @@ var _pc_source
 var _pc_changed: Callable
 var _pc_dialog: FileDialog
 var _remote_text: Label
+var _remote_qr: TextureRect
+## Какой код сейчас показан в окне (remote_bus.code_version).
+var remote_code_version: int = -1
 var edge_pick: OptionButton
 var _walk_available: bool = false
 var menu: PopupMenu
@@ -563,11 +567,12 @@ func _refresh_pc_actions() -> void:
 		_pc_list.add_child(row)
 
 ## Окно «Пульт с телефона»: адрес страницы и код привязки крупно.
-func show_remote_info(enabled: bool, addresses: PackedStringArray, code: String, phones: int, error: String = "") -> void:
+func show_remote_info(enabled: bool, addresses: PackedStringArray, code: String, phones: int, error: String = "", qr_text: String = "", code_version: int = -1) -> void:
+	remote_code_version = code_version
 	if remote_window == null:
 		remote_window = Window.new()
 		remote_window.title = "Пульт Хоши с телефона"
-		remote_window.size = Vector2i(420, 300)
+		remote_window.size = Vector2i(440, 600)
 		remote_window.unresizable = true
 		remote_window.always_on_top = true
 		remote_window.theme = theme
@@ -580,10 +585,24 @@ func show_remote_info(enabled: bool, addresses: PackedStringArray, code: String,
 		style.set_content_margin_all(18)
 		panel_bg.add_theme_stylebox_override("panel", style)
 		remote_window.add_child(panel_bg)
-		_remote_text = _label("", 15, INK)
+		var column := VBoxContainer.new()
+		column.add_theme_constant_override("separation", 10)
+		panel_bg.add_child(column)
+		_remote_qr = TextureRect.new()
+		_remote_qr.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+		_remote_qr.custom_minimum_size = Vector2(0, 300)
+		column.add_child(_remote_qr)
+		_remote_text = _label("", 14, INK)
 		_remote_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		panel_bg.add_child(_remote_text)
+		column.add_child(_remote_text)
 	var lines: PackedStringArray = []
+	var qr: Image = QRCode.to_image(qr_text, 7, 3, INK, Color.WHITE) if enabled and not qr_text.is_empty() else null
+	_remote_qr.texture = ImageTexture.create_from_image(qr) if qr != null else null
+	_remote_qr.visible = qr != null
+	if qr != null:
+		lines.append("Наведи камеру телефона на QR-код и открой ссылку —")
+		lines.append("пульт привяжется сам. Или вручную:")
+		lines.append("")
 	if not enabled:
 		lines.append("Пульт выключен." if error.is_empty() else "Не получилось включить пульт: порт занят другой программой.")
 		lines.append("Меню → Пульт с телефона → Пульт включён.")

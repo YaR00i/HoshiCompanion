@@ -4,6 +4,7 @@ extends SceneTree
 
 const RemoteBus = preload("res://scripts/remote_bus.gd")
 const Commands = preload("res://scripts/hoshi_commands.gd")
+const QR = preload("res://scripts/qr_code.gd")
 
 class StubApp extends RefCounted:
 	var ran: Array[String] = []
@@ -98,6 +99,12 @@ func _run() -> void:
 	bus.ws_port = 18871
 	_check(bus.start() and bus.pairing_code.length() == 6, "remote starts with a 6-digit code")
 
+	var version_before: int = bus.code_version
+	var link: String = bus.pairing_url("http://192.168.1.23:18770/")
+	_check(link == "http://192.168.1.23:18770/#pair=" + bus.pairing_code, "QR link carries the address and the one-time code")
+	var modules: Array = QR.encode(link)
+	_check(modules.size() == 29 and modules[0][0] and modules[0][6] and not modules[1][1] and modules[3][3] and modules[28][0], "QR code is built with finder squares (version 3)")
+	_check(QR.to_image(link, 6, 4).get_width() == (29 + 8) * 6 and QR.encode("x".repeat(400)).is_empty(), "QR image size; too long text is refused")
 	var page: String = _http("/")
 	_check(page.begins_with("HTTP/1.1 200") and page.contains("<title>Хоши</title>"), "phone gets the remote page")
 	_check(_http("/../project.godot").begins_with("HTTP/1.1 404"), "other files are not served")
@@ -118,6 +125,7 @@ func _run() -> void:
 	var welcome: Dictionary = _find(messages, "welcome")
 	_check(token.length() >= 32 and bus.tokens.has(token) and app.saves >= 1, "right code pairs the phone and remembers it")
 	_check(bus.pairing_code != code, "a code works only once")
+	_check(bus.code_version > version_before, "a new code refreshes the QR window")
 	var catalog_text: String = JSON.stringify(welcome.get("catalog", []))
 	_check(catalog_text.contains("\"wave\"") and not catalog_text.contains("\"quit\"") and not catalog_text.contains("\"look\""), "phone sees only phone commands")
 	_check(_find(messages, "state").get("hoshi", {}).get("status", "") == "Сидит в уголке", "phone sees what Hoshi is doing")

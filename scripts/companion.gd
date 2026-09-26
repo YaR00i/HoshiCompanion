@@ -234,6 +234,9 @@ func _process(delta: float) -> void:
 	focus.ensure(_ready_to_run and state.place_mode == "focus" and not host.preview and not host.headless)
 	focus.tick(dt)
 	remote.tick(dt)
+	# Код одноразовый: после привязки телефона окно сразу показывает новый QR.
+	if ui.remote_window != null and ui.remote_window.visible and ui.remote_code_version != remote.code_version:
+		_show_remote_info()
 	var place_request: String = places.tick(dt, state, {"blocked": blocked or host.preview, "can_place": not host.preview and host.is_grounded() and state.posture.mode == "standing"})
 	if place_request == "cozy":
 		blocked = playground.show_demo(true) or blocked
@@ -524,6 +527,12 @@ func remote_snapshot() -> Dictionary:
 	return {"name": "Хоши", "status": ui.status.text if ui != null and ui.status != null else "",
 		"where": where, "dozing": state.dozing, "mood": state.mood, "selected": selected}
 
+## Окно «Пульт с телефона»: адрес, код и QR-код со ссылкой для привязки.
+func _show_remote_info() -> void:
+	var addresses: PackedStringArray = remote.addresses()
+	var qr_text: String = remote.pairing_url(addresses[0]) if remote.enabled and not addresses.is_empty() else ""
+	ui.show_remote_info(remote.enabled, addresses, remote.pairing_code, remote.phone_count(), remote.last_error, qr_text, remote.code_version)
+
 ## Реплика Хоши на действие с пульта («Открываю: Blender»).
 func remote_say(text: String) -> void:
 	if _ready_to_run:
@@ -582,7 +591,7 @@ func _on_action(command: Variant) -> void:
 		if remote.enabled:
 			remote.stop()
 		elif remote.start():
-			ui.show_remote_info(true, remote.addresses(), remote.pairing_code, remote.phone_count())
+			_show_remote_info()
 		else:
 			ui.show_remote_info(false, PackedStringArray(), "", 0, remote.last_error)
 		ui.remote_enabled = remote.enabled
@@ -590,7 +599,7 @@ func _on_action(command: Variant) -> void:
 		_save_settings()
 		return
 	if action == "remote_info":
-		ui.show_remote_info(remote.enabled, remote.addresses(), remote.pairing_code, remote.phone_count(), remote.last_error)
+		_show_remote_info()
 		return
 	if action == "pc_actions_editor":
 		ui.show_pc_actions(remote.pc, remote.refresh_catalog)
