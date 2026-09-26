@@ -720,6 +720,7 @@ func _exit_tree() -> void:
 	chat_voice_bridge.stop()
 	host.shutdown()
 	playground.external.close()
+	playground.ledge_probe.close()
 	surface_probe.close()
 
 # --- Тонкие переходники: старые имена, которыми пользуются опоры и тесты ---

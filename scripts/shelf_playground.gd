@@ -7,9 +7,18 @@ var cozy_mode: bool = false
 var cozy_stars_made: int = 0
 const External = preload("res://scripts/external_window.gd")
 const Surface = preload("res://scripts/surface_controller.gd")
+const SurfaceProbe = preload("res://scripts/window_surface_probe.gd")
+const Judge = preload("res://scripts/support_judge.gd")
 var external = External.new()
 var surface = Surface.new()
 var external_mode: bool = false
+## Опора-линия внутри выбранного окна (пусто — сидим на верхнем краю окна).
+## {source, kind, x, y, width, confidence, level} в пикселях Хоши от угла окна.
+var ledge: Dictionary = {}
+## Имя программы выбранного окна, например "explorer.exe" (только имя файла).
+var support_app: String = ""
+var ledge_probe = SurfaceProbe.new()
+var _pick_cursor: Vector2 = Vector2(-1, -1)
 var _countdown_number: int = -1
 var _start_handle: int = 0
 var _start_wait: float = 0.0
@@ -143,9 +152,23 @@ func before_tick(delta: float) -> void:
 			port.say("Наведи на окно · %d" % seconds)
 	if phase in ["selecting", "auto_selecting"] and external.status == "following":
 		anchor_u = float(external.snapshot.get("fraction", 0.60))
+		support_app = str(external.snapshot.get("app", ""))
+		var pointed_by_user: bool = phase == "selecting"
 		_choice_request = {}
 		_auto_choice = false
 		phase = "preparing"
+		if pointed_by_user and _start_ledge_scan():
+			phase = "ledge_scan"
+	if phase == "ledge_scan":
+		if not _shelf_usable():
+			ledge_probe.close()
+			return_home()
+		else:
+			ledge_probe.tick(delta)
+			if ledge_probe.status == "done":
+				_choose_ledge(ledge_probe.result)
+				ledge_probe.close()
+				phase = "preparing"
 	if phase == "preparing":
 		if not _shelf_usable():
 			return_home()
@@ -186,6 +209,49 @@ func before_tick(delta: float) -> void:
 	if phase == "attached":
 		surface.before_tick(delta)
 
+## Человек показал внутрь окна, а не на его верх: посмотреть структуру окна.
+func _start_ledge_scan() -> bool:
+	var pointed: Array = external.snapshot.get("cursor_fraction", [])
+	if pointed.size() != 2:
+		return false
+	var size: Vector2 = Vector2(external.current_rect().size)
+	var cursor := Vector2(float(pointed[0]), float(pointed[1])) * size
+	if cursor.y < float(Judge.MIN_TOP_OFFSET * 2):
+		return false
+	var hwnd: int = int(str(external.snapshot.get("hwnd", "0")))
+	if hwnd <= 0 or not ledge_probe.begin("structure", hwnd):
+		ledge_probe.close()
+		return false
+	_pick_cursor = cursor
+	port.say("Смотрю, за что тут зацепиться…", 4.0)
+	return true
+
+## Выбрать линию под указателем; не нашлось — сесть на верх окна, как раньше.
+func _choose_ledge(result: Dictionary) -> void:
+	ledge = {}
+	if str(result.get("app", "")) != "":
+		support_app = str(result["app"])
+	var size: Vector2i = external.current_rect().size
+	var found: Array[Dictionary] = Judge.normalize(result, size)
+	var picked: Dictionary = Judge.pick_under_cursor(found, _pick_cursor, size)
+	if port.test_mode():
+		print("LEDGE_SCAN app=", support_app, " ok=", result.get("ok", false), " reason=", result.get("reason", ""), " candidates=", found.size(), " picked=", picked)
+	if picked.is_empty():
+		port.say("Внутри не за что зацепиться — сяду сверху")
+		return
+	ledge = picked
+	anchor_u = Judge.seat_fraction(ledge, _pick_cursor.x)
+
+func _clear_ledge() -> void:
+	ledge_probe.close()
+	ledge = {}
+	support_app = ""
+	_pick_cursor = Vector2(-1, -1)
+
+## Прислоняться к бокам окна можно, только когда Хоши на его верхнем крае.
+func side_edges_available() -> bool:
+	return external_mode and ledge.is_empty()
+
 func _retry_explicit_bind() -> bool:
 	if _start_handle <= 0 or _explicit_bind_retries >= MAX_EXPLICIT_BIND_RETRIES:
 		return false
@@ -213,6 +279,7 @@ func _fallback_cozy() -> void:
 
 func _finish_return() -> void:
 	external.close()
+	_clear_ledge()
 	external_mode = false
 	app.state.posture.kind = "floor"
 	app.host.window.position = app.host.floor_position()
@@ -276,6 +343,7 @@ func return_home(walk_after: bool = false) -> void:
 	if not active() or phase in ["returning", "settling"]:
 		return
 	external.close()
+	ledge_probe.close()
 	port.cancel_plans_and_walk()
 	app.state.dozing = false
 	app.state.posture.request_stand()
@@ -288,7 +356,7 @@ func return_home(walk_after: bool = false) -> void:
 
 func begin_drag() -> void:
 	surface.reset()
-	if phase in ["selection_start", "selecting", "auto_selection_start", "auto_selecting"]:
+	if phase in ["selection_start", "selecting", "auto_selection_start", "auto_selecting", "ledge_scan"]:
 		release_for_mode_change()
 		return
 	if active():
@@ -328,6 +396,7 @@ func release_for_mode_change() -> void:
 	_choice_request = {}
 	_auto_choice = false
 	external.close()
+	_clear_ledge()
 	external_mode = false
 	if active():
 		app.host.place_at(Vector2(app.host.clamp_position(saved_floor_position)))
@@ -372,7 +441,7 @@ func handle_action(action: String) -> bool:
 		return true
 	if action == "stop":
 		_walk_after = false
-		if phase in ["selection_start", "selecting", "auto_selection_start", "auto_selecting", "preparing", "boarding"]:
+		if phase in ["selection_start", "selecting", "auto_selection_start", "auto_selecting", "ledge_scan", "preparing", "boarding"]:
 			return_home()
 		return true
 	if action == "toggle_motion":
@@ -395,6 +464,10 @@ func label() -> String:
 		return "Наведи на окно: %d с · ПКМ → На пол — отмена" % maxi(0, int(ceil(external.seconds_left)))
 	if phase in ["auto_selection_start", "auto_selecting"]:
 		return "Ищет себе уютный край"
+	if phase == "ledge_scan":
+		return "Смотрит, за что зацепиться в окне"
+	if external_mode and phase == "attached" and not ledge.is_empty():
+		return "Дремлет на полочке внутри окна" if app.state.dozing else "Сидит на полочке внутри окна"
 	if external_mode and phase == "attached":
 		return "Дремлет на выбранном окне" if app.state.dozing else "Сидит на выбранном окне"
 	if cozy_mode and phase == "attached":
@@ -470,6 +543,8 @@ func surface_context() -> String:
 	return surface.context_action() if active() else "idle"
 
 func support_rect() -> Rect2i:
+	if external_mode and not ledge.is_empty():
+		return Judge.ledge_rect(external.current_rect(), ledge)
 	return external.current_rect() if external_mode else shelf.outer_rect()
 
 func support_area() -> Rect2i:

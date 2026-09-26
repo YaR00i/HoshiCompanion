@@ -9,7 +9,8 @@ var _err: FileAccess
 var _buffer: String = ""
 var _age: float = 0.0
 
-func begin(mode: String = "structure") -> bool:
+## hwnd > 0: сразу смотреть это окно (Хоши выбирает, куда сесть), без отсчёта.
+func begin(mode: String = "structure", hwnd: int = 0) -> bool:
 	close()
 	if OS.get_name() != "Windows":
 		_fail("platform")
@@ -23,6 +24,8 @@ func begin(mode: String = "structure") -> bool:
 		return false
 	var own: int = DisplayServer.window_get_native_handle(DisplayServer.WINDOW_HANDLE)
 	var args: PackedStringArray = ["-u", helper, str(OS.get_process_id()), str(own), mode]
+	if hwnd > 0:
+		args.append(str(hwnd))
 	var process: Dictionary = OS.execute_with_pipe(python_path, args, false)
 	if process.is_empty():
 		_fail("python")

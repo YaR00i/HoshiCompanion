@@ -31,6 +31,8 @@ not public. See [assets/README.md](assets/README.md) for local setup.
 External-window features use geometry/state only. Autonomous discovery is explicit
 and bounded; neither mode reads window titles, page text, screenshots, microphone,
 camera or network content.
+For the selected window Hoshi also reads the owning program's executable file name
+(e.g. `explorer.exe`) to choose how to look inside it; see docs/SUPPORTS_RU.md.
 
 Russian documentation: [README_RU.md](README_RU.md).
 Manual 0.7 acceptance: [docs/ACCEPTANCE_07_RU.md](docs/ACCEPTANCE_07_RU.md).

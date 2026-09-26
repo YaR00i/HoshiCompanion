@@ -45,6 +45,8 @@
 - Manual user actions override autonomy; canceled routes must never resume unexpectedly.
 - Closing/minimizing an active support returns the companion to a safe floor state.
 - Manual external-window selection must not read titles, pixels, page content, microphone or network data.
+- Exception approved by the user (2026-09-27): the owning executable FILE NAME only (tools/window_identity.py)
+  for the selected/occupied window. Never paths, command lines, titles or element names/text.
 - A known explicit HWND may retry the same geometry-only bind at most twice for transient restore-state errors; never turn retry into new window discovery.
 - Current full regression suite is calibrated to the local development Hoshi model.
 
@@ -114,3 +116,14 @@
 - Manual-command rules live in registry flags (pauses_places / keeps_intent / keeps_walk).
 - New sources (phone remote, voice, AI, app adapters) must call companion.run_command(name) and
   must not invent new command paths or bypass the runner.
+
+## Supports inside windows (read docs/SUPPORTS_RU.md)
+- All support sources produce one candidate format {source, kind, x, y, width, confidence} in Hoshi
+  pixels relative to the window; scripts/support_judge.gd is the single judge (width, room below,
+  not the top edge, inside the window, confidence level auto/manual/show).
+- An inner ledge is represented as a smaller support rect whose top is the line (Judge.ledge_rect);
+  keep SurfaceController/solve_placement unaware of the source. Side leaning is only for the window top.
+- Structure (UIA) ledges are "manual" level: used only when the user pointed at them. Do not let
+  autonomy choose inner ledges before adapters and occlusion checks exist.
+- test_supports.gd covers the judge, ledge geometry and the no-titles/no-text rule for window helpers.
+

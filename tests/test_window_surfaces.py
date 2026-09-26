@@ -34,6 +34,28 @@ def test_display_covers_full_list() -> None:
     assert result['candidates'][-1]['y'] == 30 + 39 * 24, result
 
 
+def test_ledge_mode_frame_and_bars() -> None:
+    """Seat search keeps full-width bars and reports lines relative to the visible frame."""
+    payload = {'rect': [93, 193, 614, 414], 'frame': [100, 200, 600, 400], 'elements': [
+        {'kind': 'ToolBar', 'rect': [100, 260, 600, 44]},
+        {'kind': 'Pane', 'rect': [100, 200, 600, 400]},
+    ] + [{'kind': 'ListItem', 'rect': [120, 320 + index * 2, 200, 16]} for index in range(40)]}
+    diagnostic = candidates(payload)
+    assert all(line['kind'] != 'ToolBar' for line in diagnostic['candidates'])
+    seat = candidates(payload, ledge_mode=True)
+    bar = [line for line in seat['candidates'] if line['kind'] == 'ToolBar']
+    assert bar and bar[0]['x'] == 2 and bar[0]['y'] == 60, bar
+    assert seat['window'] == [600, 400]
+    assert all(line['kind'] != 'Pane' for line in seat['candidates'])
+
+
+def test_process_name_is_file_name_only() -> None:
+    from window_identity import clean_name
+    assert clean_name(r'C:\Program Files\Blender Foundation\Blender 4.5\blender.exe') == 'blender.exe'
+    assert clean_name('Discord.exe') == 'discord.exe'
+    assert len(clean_name('x' * 300)) == 64
+
+
 def test_native_fixture() -> None:
     if sys.platform != 'win32':
         return
@@ -70,5 +92,7 @@ root.mainloop()
 if __name__ == '__main__':
     test_filter()
     test_display_covers_full_list()
+    test_ledge_mode_frame_and_bars()
+    test_process_name_is_file_name_only()
     test_native_fixture()
-    print('HOSHI_WINDOW_SURFACES_RESULT checks=3 failures=0')
+    print('HOSHI_WINDOW_SURFACES_RESULT checks=5 failures=0')

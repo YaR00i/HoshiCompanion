@@ -659,6 +659,9 @@ func show_surface_scan(data: Dictionary) -> void:
 			surface_detail.text = "Структура пуста. Попробуй «Другое окно · кадр»." if not visual_mode else "На кадре не нашлось подходящих краёв."
 		else:
 			surface_detail.text = "Это ориентиры, пока не готовые маршруты для прыжка."
+		var app_name: String = str(data.get("app", ""))
+		if not app_name.is_empty():
+			surface_summary.text = "%s · %s" % [app_name, surface_summary.text]
 		surface_map.show_result(data)
 	else:
 		var reason: String = str(data.get("reason", "unavailable"))

@@ -1,4 +1,5 @@
-"""One-shot, opt-in edge preview for a window chosen under the cursor.
+"""One-shot, opt-in edge preview for a window chosen under the cursor, or for
+one window Hoshi is about to sit on (explicit handle, no countdown).
 
 Structure mode requests only UIA types and rectangles. The separately chosen
 visual mode captures one frame in a bounded child. Neither mode returns titles,
@@ -14,14 +15,20 @@ import subprocess
 import sys
 import time
 
+from window_identity import process_name
+
 SCRIPT = Path(__file__).with_suffix('.ps1')
 MAX_CANDIDATES = 24
+# When Hoshi looks for a seat (not the diagnostic map) keep every line.
+LEDGE_CANDIDATES = 120
 KINDS = {'ToolBar', 'Tab', 'TabItem', 'Header', 'HeaderItem', 'ListItem',
          'Button', 'Group', 'Pane', 'Custom'}
 
 
-def candidates(payload: dict) -> dict:
-    root = payload['rect']
+def candidates(payload: dict, ledge_mode: bool = False) -> dict:
+    # 'frame' is the visible window (without invisible resize borders) in the
+    # same physical pixels as the elements; lines are reported relative to it.
+    root = payload.get('frame') or payload['rect']
     rx, ry, rw, rh = (int(v) for v in root)
     if rw < 120 or rh < 80 or rw > 20000 or rh > 20000:
         raise ValueError('bounds')
@@ -37,7 +44,10 @@ def candidates(payload: dict) -> dict:
         width = right - left
         if width < 90 or bottom - top < 15 or top <= ry + 8:
             continue
-        if width > rw * .96 or bottom - top > rh * .65:
+        # Full-width bars (Explorer command bar, tab strips) are good seats; only
+        # the diagnostic map drops them together with whole-window panes.
+        full_width_bar = ledge_mode and bottom - top <= 120
+        if (width > rw * .96 and not full_width_bar) or bottom - top > rh * .65:
             continue
         key = (round((left - rx) / 8), round((top - ry) / 8), round(width / 8))
         if key in seen:
@@ -46,10 +56,11 @@ def candidates(payload: dict) -> dict:
         lines.append({'x': left - rx, 'y': top - ry, 'width': width,
                       'kind': kind})
     lines.sort(key=lambda line: (line['y'], line['x']))
-    if len(lines) > MAX_CANDIDATES:
+    limit = LEDGE_CANDIDATES if ledge_mode else MAX_CANDIDATES
+    if len(lines) > limit:
         # A dense toolbar must not consume the whole map before list content.
-        shown = [lines[round(index * (len(lines) - 1) / (MAX_CANDIDATES - 1))]
-                 for index in range(MAX_CANDIDATES)]
+        shown = [lines[round(index * (len(lines) - 1) / (limit - 1))]
+                 for index in range(limit)]
     else:
         shown = lines
     return {'ok': True, 'window': [rw, rh], 'candidates': shown,
@@ -93,7 +104,35 @@ def selected_window(owner_pid: int, owner_hwnd: int) -> int:
     return hwnd
 
 
-def inspect(hwnd: int, max_depth: int = 12) -> dict:
+def visible_frame(hwnd: int) -> list[int] | None:
+    """DWM visible bounds in physical pixels (matches the UIA script's DPI mode)."""
+    user32 = C.WinDLL('user32', use_last_error=True)
+    dwm = C.WinDLL('dwmapi', use_last_error=True)
+    user32.SetThreadDpiAwarenessContext.argtypes = [W.HANDLE]
+    user32.SetThreadDpiAwarenessContext.restype = W.HANDLE
+    dwm.DwmGetWindowAttribute.argtypes = [W.HWND, W.DWORD, C.c_void_p, W.DWORD]
+    dwm.DwmGetWindowAttribute.restype = C.c_long
+    old = user32.SetThreadDpiAwarenessContext(C.c_void_p(-4))
+    try:
+        rect = W.RECT()
+        if dwm.DwmGetWindowAttribute(W.HWND(hwnd), 9, C.byref(rect), C.sizeof(rect)) != 0:
+            return None
+        return [rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top]
+    finally:
+        if old:
+            user32.SetThreadDpiAwarenessContext(old)
+
+
+def window_owner(hwnd: int) -> int:
+    user32 = C.WinDLL('user32', use_last_error=True)
+    user32.GetWindowThreadProcessId.argtypes = [W.HWND, C.POINTER(W.DWORD)]
+    user32.GetWindowThreadProcessId.restype = W.DWORD
+    pid = W.DWORD()
+    user32.GetWindowThreadProcessId(W.HWND(hwnd), C.byref(pid))
+    return pid.value
+
+
+def inspect(hwnd: int, max_depth: int = 12, ledge_mode: bool = False) -> dict:
     args = ['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy',
             'Bypass', '-File', str(SCRIPT), '-TargetHandle', str(hwnd),
             '-MaxDepth', str(max_depth)]
@@ -104,17 +143,28 @@ def inspect(hwnd: int, max_depth: int = 12) -> dict:
     )
     if proc.returncode:
         raise ValueError('uia_unavailable')
-    return candidates(json.loads(proc.stdout.decode('utf-8-sig')))
+    payload = json.loads(proc.stdout.decode('utf-8-sig'))
+    frame = visible_frame(hwnd)
+    if frame:
+        payload['frame'] = frame
+    return candidates(payload, ledge_mode)
 
 
 def main() -> None:
-    if sys.platform != 'win32' or len(sys.argv) not in (3, 4):
+    if sys.platform != 'win32' or len(sys.argv) not in (3, 4, 5):
         raise ValueError('platform')
     owner_pid, owner_hwnd = int(sys.argv[1]), int(sys.argv[2])
+    mode = sys.argv[3] if len(sys.argv) >= 4 else 'structure'
     print(json.dumps({'ready': True}), flush=True)
-    time.sleep(4.0)
-    hwnd = selected_window(owner_pid, owner_hwnd)
-    mode = sys.argv[3] if len(sys.argv) == 4 else 'structure'
+    ledge_mode = len(sys.argv) == 5
+    if ledge_mode:
+        # Hoshi already chose this window (the user pointed at it): no countdown.
+        hwnd = int(sys.argv[4])
+        if not hwnd or hwnd == owner_hwnd or window_owner(hwnd) in (0, owner_pid):
+            raise ValueError('own_or_hidden')
+    else:
+        time.sleep(4.0)
+        hwnd = selected_window(owner_pid, owner_hwnd)
     if mode == 'visual':
         helper = Path(__file__).with_name('window_visual_surfaces.py')
         child = subprocess.run([sys.executable, str(helper), str(hwnd)],
@@ -124,9 +174,10 @@ def main() -> None:
             raise ValueError('visual_unavailable')
         result = json.loads(child.stdout)
     elif mode == 'structure':
-        result = inspect(hwnd)
+        result = inspect(hwnd, ledge_mode=ledge_mode)
     else:
         raise ValueError('mode')
+    result['app'] = process_name(window_owner(hwnd))
     print(json.dumps(result, separators=(',', ':')), flush=True)
 
 
@@ -136,5 +187,5 @@ if __name__ == '__main__':
     except (ValueError, OSError, KeyError, TypeError, subprocess.TimeoutExpired,
             json.JSONDecodeError) as exc:
         reason = str(exc) if isinstance(exc, ValueError) else 'uia_unavailable'
-        source = sys.argv[3] if len(sys.argv) == 4 and sys.argv[3] in ('structure', 'visual') else 'structure'
+        source = sys.argv[3] if len(sys.argv) >= 4 and sys.argv[3] in ('structure', 'visual') else 'structure'
         print(json.dumps({'ok': False, 'reason': reason, 'source': source}), flush=True)

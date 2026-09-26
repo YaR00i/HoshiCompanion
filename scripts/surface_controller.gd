@@ -108,7 +108,7 @@ func scoot_pose() -> Dictionary:
 	return {"weight": pow(sin(PI * progress), 2.0), "progress": progress, "direction": _scoot_direction}
 
 func available_side() -> String:
-	if _owner().phase != "attached" or not _owner().external_mode or not _owner()._shelf_usable() or mode != "sit":
+	if _owner().phase != "attached" or not _owner().side_edges_available() or not _owner()._shelf_usable() or mode != "sit":
 		return ""
 	var first: String = "right" if side == "left" else "left"
 	var second: String = "left" if first == "right" else "right"
@@ -130,7 +130,7 @@ func request_walk() -> bool:
 	return true
 
 func request_side(window_side: String, automatic: bool = false) -> bool:
-	if _owner().phase != "attached" or not _owner().external_mode or not _owner()._shelf_usable():
+	if _owner().phase != "attached" or not _owner().side_edges_available() or not _owner()._shelf_usable():
 		return false
 	if not window_side in ["left", "right"]:
 		return false
@@ -257,10 +257,10 @@ func _tick_autonomy(delta: float) -> void:
 	if _auto_wait > 0.0:
 		return
 	var activity: String = _app().state.activity
-	var side_chance: float = 0.0 if not _owner().external_mode else (0.28 if activity == "playful" else (0.16 if activity == "normal" else 0.05))
+	var side_chance: float = 0.0 if not _owner().side_edges_available() else (0.28 if activity == "playful" else (0.16 if activity == "normal" else 0.05))
 	var leave_chance: float = 0.15 if activity == "playful" else (0.07 if activity == "normal" else 0.02)
 	var roll: float = _rng.randf()
-	if _owner().external_mode and roll < side_chance:
+	if _owner().side_edges_available() and roll < side_chance:
 		var first_side: String = "left" if _rng.randf() < 0.5 else "right"
 		var other_side: String = "right" if first_side == "left" else "left"
 		if request_side(first_side, true) or request_side(other_side, true):

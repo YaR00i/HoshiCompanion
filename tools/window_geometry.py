@@ -1,4 +1,5 @@
 """Opt-in, read-only geometry of ONE selected window; JSON lines over stdio.
+Also reports the owning executable file name only (window_identity.py).
 No window titles, screen pixels, hooks, networking, writes or global settings.
 The caller may pick once or request one bounded geometry-only candidate search,
 then probes the chosen HWND. EOF/5s idle exits.
@@ -11,6 +12,7 @@ import queue
 import sys
 import threading
 from window_choice import choose
+from window_identity import process_name
 
 
 def winapi(dll, name, result, *args):
@@ -106,12 +108,18 @@ class Geometry:
             finally:
                 self.dpi(old)
             result['fraction'] = min(.95, max(.05, (point.x - bounds.left - 24) / max(1, bounds.right - bounds.left - 48)))
+            # Where inside the window the user pointed (0..1), to pick an inner ledge.
+            width, height = max(1, bounds.right - bounds.left), max(1, bounds.bottom - bounds.top)
+            result['cursor_fraction'] = [min(1.0, max(0.0, (point.x - bounds.left) / width)),
+                                         min(1.0, max(0.0, (point.y - bounds.top) / height))]
         return result
 
     def bind(self, hwnd: int):
         self.hwnd = hwnd
         self.identity = self.identify(hwnd) if self.valid(hwnd) else None
         reply = self.probe()
+        if reply.get('ok') and self.identity:
+            reply['app'] = process_name(self.identity[0])
         return reply
 
     def probe(self):
