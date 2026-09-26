@@ -138,18 +138,35 @@ const LIST := {
 	"place_focus": {"title": "Моё окно → уголок", "group": "rest_place", "menu_id": 213, "sources": ["user", "remote"]},
 }
 
-## Разделы пульта с телефона (команды с источником "remote"), по порядку.
+## Пульт с телефона. Вкладки: "main" — главное (быстрые кнопки и приложения),
+## "play" — всё, что Хоши делает (плитки с иконками), "modes" — режимы (чипы).
+const REMOTE_QUICK: Array[String] = ["wave", "pet", "cozy_corner", "walk", "stop", "doze"]
+## Разделы пульта: [группа команд, заголовок, вкладка], по порядку.
+## «Общение» (помахать, погладить, дремать) — только быстрыми кнопками на главной.
 const REMOTE_GROUPS: Array = [
-	["life", "Общение"], ["move", "Движение"], ["place", "Места"], ["surface", "На окне"],
-	["scene", "Сценки"], ["mood", "Настроение"], ["seated_mode", "Занятие сидя"], ["rhythm", "Ритм дня"], ["rest_place", "Где отдыхать"],
-	["autonomy", "Самостоятельность"],
+	["scene", "Сценки", "play"], ["mood", "Настроение", "play"],
+	["move", "Движение", "play"], ["place", "Места", "play"], ["surface", "На окне", "play"],
+	["rhythm", "Ритм дня", "modes"], ["rest_place", "Где отдыхать", "modes"],
+	["seated_mode", "Занятие сидя", "modes"], ["autonomy", "Самостоятельность", "modes"],
 ]
-## Значки для пульта (необязательно).
+## Значки для пульта (плитки и быстрые кнопки).
 const ICONS := {
-	"wave": "👋", "pet": "🤍", "doze": "🌙", "walk": "✦", "stop": "○", "sit": "⌒", "stand": "↑",
-	"cozy_corner": "☁", "return_floor": "↓", "surface_walk": "↔", "surface_scoot": "⇆",
-	"side_left": "◧", "side_right": "◨", "side_return": "⌂", "edge_sketch": "✎", "edge_fold": "★", "edge_admire_star": "✧",
-	"mood_neutral": "·", "mood_happy": "♪", "mood_relaxed": "~", "mood_surprised": "!", "mood_sad": "…",
+	"wave": "👋", "pet": "🤍", "doze": "😴", "walk": "🚶", "stop": "✋", "sit": "🪑", "stand": "🧍",
+	"cozy_corner": "🏠", "return_floor": "⬇️", "surface_walk": "↔️", "surface_scoot": "🔀",
+	"side_left": "⬅️", "side_right": "➡️", "side_return": "⤴️",
+	"edge_sketch": "✏️", "edge_fold": "⭐", "edge_admire_star": "🌟",
+	"mood_neutral": "🙂", "mood_happy": "😊", "mood_relaxed": "🍃", "mood_surprised": "😮", "mood_sad": "🥺",
+}
+## Короткие подписи для маленьких кнопок (иначе — обычный title).
+const SHORT_TITLES := {
+	"wave": "Помахать", "pet": "Погладить", "cozy_corner": "Уголок", "walk": "Пройтись", "stop": "Стоп",
+	"doze": "Дремать", "return_floor": "На пол", "sit": "Сесть", "stand": "Встать",
+	"surface_walk": "По краю", "surface_scoot": "Подвинуться", "side_left": "Левый бок", "side_right": "Правый бок",
+	"side_return": "Сесть обратно", "edge_sketch": "Рисовать", "edge_fold": "Звёздочка", "edge_admire_star": "Любоваться",
+	"mood_neutral": "Спокойная", "mood_happy": "Радостная", "mood_relaxed": "Расслабленная",
+	"mood_surprised": "Удивлённая", "mood_sad": "Грустная",
+	"toggle_autonomy": "Сама решает", "toggle_auto_walk": "Гуляет сама", "toggle_auto_rest": "Отдыхает сама",
+	"activity_quiet": "Тихая",
 }
 
 ## Группы вариантов для выпадающих списков: порядок = порядок пунктов.
@@ -187,6 +204,9 @@ static func from_menu_id(id: int) -> String:
 
 static func icon(command: String) -> String:
 	return str(ICONS.get(command, ""))
+
+static func short_title(command: String) -> String:
+	return str(SHORT_TITLES.get(command, title(command)))
 
 static func has_flag(command: String, flag: String) -> bool:
 	return flag in LIST.get(command, {}).get("flags", [])

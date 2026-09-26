@@ -4,7 +4,8 @@ extends RefCounted
 ## Аддон подключается к Хоши по локальному WebSocket (только с этого же ПК) и
 ## объявляет себя:
 ##   {"op": "adapter", "id": "youtube", "title": "YouTube",
-##    "commands": [{"name": "pause", "title": "Пауза", "icon": "⏸", "args": {...}}],
+##    "commands": [{"name": "pause", "title": "Пауза", "icon": "⏸", "row": "main", "args": {...}}],
+##   row: "main" — большие кнопки плеера, иначе маленькие во втором ряду.
 ##    "state": {...}}
 ## Потом присылает обновления состояния {"op": "adapter_state", "state": {...}}.
 ## Его команды появляются в пульте и в списке команд под именем
@@ -41,7 +42,7 @@ func announce(peer_key: int, message: Dictionary) -> String:
 		if _id_check.search(name) == null:
 			continue
 		commands.append({"name": name, "title": str(item.get("title", name)).left(40),
-			"icon": str(item.get("icon", "")).left(4), "args": item.get("args", {}) if item.get("args", {}) is Dictionary else {}})
+			"icon": str(item.get("icon", "")).left(4), "row": "main" if str(item.get("row", "")) == "main" else "extra", "args": item.get("args", {}) if item.get("args", {}) is Dictionary else {}})
 	adapters[id] = {"title": str(message.get("title", id)).left(40), "commands": commands,
 		"state": _clean_state(message.get("state", {})), "peer": peer_key}
 	return id
@@ -78,7 +79,7 @@ func catalog() -> Array:
 		var commands: Array = []
 		for command in adapters[id]["commands"]:
 			commands.append({"command": "app:%s:%s" % [id, command["name"]], "title": command["title"],
-				"icon": command["icon"], "args": command["args"]})
+				"icon": command["icon"], "row": command["row"], "args": command["args"]})
 		groups.append({"id": id, "title": adapters[id]["title"], "state": adapters[id]["state"], "commands": commands})
 	return groups
 

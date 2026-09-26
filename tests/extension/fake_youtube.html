@@ -1,0 +1,30 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Lo-fi для рисования — 1 час - YouTube</title></head>
+<body>
+<!-- Упрощённая копия разметки YouTube для проверки youtube.js без сети. -->
+<div id="movie_player">
+  <video class="html5-main-video"></video>
+  <button class="ytp-mute-button" onclick="window.__v.muted = !window.__v.muted">mute</button>
+  <button class="ytp-next-button" onclick="window.__nextClicks = (window.__nextClicks || 0) + 1">next</button>
+</div>
+<ytd-watch-metadata>
+  <h1><yt-formatted-string>Lo-fi для рисования — 1 час</yt-formatted-string></h1>
+  <ytd-channel-name><a href="#">Hoshi Radio</a></ytd-channel-name>
+  <like-button-view-model><button aria-pressed="false"
+    onclick="this.setAttribute('aria-pressed', this.getAttribute('aria-pressed') === 'true' ? 'false' : 'true')">like</button></like-button-view-model>
+</ytd-watch-metadata>
+<script>
+  // Настоящее видео не нужно: подменяем свойства плеера управляемыми значениями.
+  const v = document.querySelector("video");
+  window.__v = v;
+  let paused = true, time = 42, volume = 0.5, muted = false;
+  Object.defineProperty(v, "paused", { get: () => paused });
+  Object.defineProperty(v, "ended", { get: () => false });
+  Object.defineProperty(v, "duration", { get: () => 3600 });
+  Object.defineProperty(v, "currentTime", { get: () => time, set: (x) => { time = x; } });
+  Object.defineProperty(v, "volume", { get: () => volume, set: (x) => { volume = x; } });
+  Object.defineProperty(v, "muted", { get: () => muted, set: (x) => { muted = x; } });
+  v.play = () => { paused = false; v.dispatchEvent(new Event("play")); return Promise.resolve(); };
+  v.pause = () => { paused = true; v.dispatchEvent(new Event("pause")); };
+</script>
+</body></html>

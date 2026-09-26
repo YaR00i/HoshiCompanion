@@ -368,17 +368,24 @@ func _welcome(key: int) -> void:
 	_send(key, {"op": "welcome", "catalog": remote_catalog()})
 	_send(key, _state_message())
 
-## Команды Хоши для пульта, по разделам (порядок — как в REMOTE_GROUPS).
-func remote_catalog() -> Array:
+## Команды Хоши для пульта: быстрые кнопки и разделы по вкладкам.
+func remote_catalog() -> Dictionary:
+	var quick: Array = []
+	for command in Commands.REMOTE_QUICK:
+		if Commands.allows(command, "remote"):
+			quick.append(_item(command))
 	var groups: Array = []
 	for group in Commands.REMOTE_GROUPS:
 		var items: Array = []
 		for command in Commands.names():
 			if Commands.group(command) == group[0] and Commands.allows(command, "remote"):
-				items.append({"command": command, "title": Commands.title(command), "icon": Commands.icon(command)})
+				items.append(_item(command))
 		if not items.is_empty():
-			groups.append({"id": group[0], "title": group[1], "commands": items})
-	return groups
+			groups.append({"id": group[0], "title": group[1], "tab": group[2], "commands": items})
+	return {"quick": quick, "groups": groups}
+
+func _item(command: String) -> Dictionary:
+	return {"command": command, "title": Commands.short_title(command), "icon": Commands.icon(command)}
 
 func _state_message() -> Dictionary:
 	var app = _app()

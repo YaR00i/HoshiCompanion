@@ -3,198 +3,252 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#665479">
+<meta name="theme-color" content="#5f4d74">
 <link rel="manifest" href="/manifest.webmanifest">
 <title>Хоши</title>
 <style>
   :root {
-    --ink: #3b3449; --muted: #82798f; --plum: #665479; --plum-soft: #efe7f3;
-    --gold: #c4a36e; --paper: #fff8f1; --card: #fffdfb; --line: #e5d7dc; --rose: #f5e5ec;
+    --ink: #3b3449; --muted: #8b8198; --plum: #665479; --plum-2: #7d6894; --soft: #f1e9f5;
+    --gold: #d2ae70; --paper: #fbf5f1; --card: #fffdfb; --line: #eadde3;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  body { margin: 0; background: var(--paper); color: var(--ink);
-    font: 16px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  header { position: sticky; top: 0; z-index: 2; padding: 18px 18px 16px;
-    background: linear-gradient(160deg, #6f5b86, #544567); color: #fff; overflow: hidden; }
-  header h1 { margin: 0; font-size: 26px; font-weight: 650; letter-spacing: .5px; }
-  header .status { margin-top: 4px; font-size: 14px; opacity: .88; min-height: 19px; }
-  header .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: #b9e3b0; vertical-align: 1px; }
-  header .dot.off { background: #e7a4a4; }
-  .stars { position: absolute; right: 16px; top: 10px; font-size: 20px; color: #f3dca8; letter-spacing: 6px; pointer-events: none; }
-  main { padding: 14px 14px 40px; max-width: 560px; margin: 0 auto; }
-  section { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 14px; margin-bottom: 12px; }
-  section h2 { margin: 0 0 10px; font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: 1.2px; text-transform: uppercase; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
-  button { font: inherit; color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 14px;
-    padding: 12px 12px; min-height: 48px; text-align: left; display: flex; gap: 8px; align-items: center; }
-  button:active { transform: scale(.98); background: var(--plum-soft); }
-  button.on { background: var(--plum); color: #fff; border-color: var(--plum); }
-  button .icon { width: 22px; text-align: center; opacity: .9; }
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-  .chips button { min-height: 40px; padding: 8px 14px; border-radius: 999px; }
-  .now { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
-  .now .title { font-weight: 650; font-size: 17px; }
-  .now .sub { color: var(--muted); font-size: 14px; }
-  .bar { height: 6px; background: var(--plum-soft); border-radius: 3px; overflow: hidden; }
-  .bar i { display: block; height: 100%; background: var(--gold); width: 0; transition: width .4s; }
-  .times { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; }
-  .app { border-color: #dccbe3; background: linear-gradient(180deg, #fffdfb, #fbf5fb); }
-  #pair { text-align: center; padding-top: 30px; }
-  #pair p { color: var(--muted); }
-  #code { font-size: 32px; letter-spacing: 10px; text-align: center; width: 100%; max-width: 280px; padding: 12px;
+  html, body { margin: 0; background: var(--paper); color: var(--ink); }
+  body { font: 15px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+  button { font: inherit; color: inherit; border: 0; background: none; padding: 0; cursor: pointer; }
+
+  header { padding: calc(14px + env(safe-area-inset-top)) 18px 14px; color: #fff;
+    background: linear-gradient(155deg, #7a6590, #54456a); border-radius: 0 0 22px 22px; position: relative; }
+  header h1 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: .3px; }
+  header .status { margin-top: 3px; font-size: 13px; opacity: .9; display: flex; align-items: center; gap: 6px; min-height: 17px; }
+  header .dot { width: 7px; height: 7px; border-radius: 50%; background: #bfe6b5; flex: none; }
+  header .dot.off { background: #eaa7a7; }
+  header .moon { position: absolute; right: 18px; top: calc(12px + env(safe-area-inset-top)); color: #f4dca8; font-size: 18px; letter-spacing: 5px; }
+
+  main { padding: 14px 14px 8px; max-width: 520px; margin: 0 auto; }
+  .tab { display: none; } .tab.active { display: block; }
+  h2 { margin: 16px 4px 8px; font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+  h2:first-child { margin-top: 2px; }
+
+  /* круглые быстрые кнопки */
+  .quick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 6px; }
+  .round { display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
+  .round .face { width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; font-size: 26px;
+    background: var(--card); border: 1px solid var(--line); box-shadow: 0 2px 6px rgba(80, 60, 100, .08); transition: transform .12s; }
+  .round:active .face { transform: scale(.92); background: var(--soft); }
+
+  /* плитки */
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .tile { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 2px 8px; border-radius: 16px;
+    background: var(--card); border: 1px solid var(--line); font-size: 11px; color: var(--ink); min-height: 72px; text-align: center; }
+  .tile .icon { font-size: 24px; line-height: 28px; }
+  .tile:active { transform: scale(.95); background: var(--soft); }
+  .tile.on { background: var(--plum); border-color: var(--plum); color: #fff; }
+
+  /* чипы режимов */
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .chip { padding: 8px 13px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); font-size: 13px; }
+  .chip:active { background: var(--soft); }
+  .chip.on { background: var(--plum); border-color: var(--plum); color: #fff; }
+
+  /* карточка приложения */
+  .app { margin-top: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 12px;
+    box-shadow: 0 3px 12px rgba(80, 60, 100, .07); }
+  .app-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700;
+    color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin: 0 2px 10px; }
+  .now { display: flex; gap: 10px; align-items: center; }
+  .thumb { width: 96px; height: 54px; border-radius: 10px; background: var(--soft) center/cover no-repeat; flex: none; }
+  .now .text { min-width: 0; }
+  .now .title { font-weight: 650; font-size: 14px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .now .sub { color: var(--muted); font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .progress { margin: 12px 2px 2px; }
+  .bar { height: 6px; border-radius: 3px; background: var(--soft); position: relative; }
+  .bar i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--gold); }
+  .bar.seekable { height: 8px; }
+  .times { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .controls { display: flex; justify-content: center; align-items: center; gap: 14px; margin-top: 8px; }
+  .ctl { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; font-size: 20px;
+    background: var(--soft); color: var(--plum); }
+  .ctl.big { width: 60px; height: 60px; font-size: 26px; background: var(--plum); color: #fff; }
+  .ctl.small { width: 40px; height: 40px; font-size: 16px; background: transparent; border: 1px solid var(--line); }
+  .ctl.on { background: #f7dfe7; color: #b04a6a; border-color: #f0c9d6; }
+  .ctl:active { transform: scale(.92); }
+  .extra { display: flex; justify-content: center; gap: 10px; margin-top: 10px; }
+  .empty { text-align: center; color: var(--muted); font-size: 13px; padding: 18px 10px 4px; }
+
+  /* вкладки */
+  nav { position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-around;
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); background: rgba(255, 253, 251, .96);
+    border-top: 1px solid var(--line); backdrop-filter: blur(8px); }
+  nav button { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--muted); padding: 2px 16px; border-radius: 12px; }
+  nav button .icon { font-size: 19px; }
+  nav button.active { color: var(--plum); background: var(--soft); }
+
+  /* привязка */
+  #pair { text-align: center; padding: 34px 20px; }
+  #pair .hello { font-size: 20px; font-weight: 650; color: var(--plum); }
+  #pair p { color: var(--muted); font-size: 14px; }
+  #code { font-size: 30px; letter-spacing: 10px; text-align: center; width: 100%; max-width: 270px; padding: 12px;
     border: 2px solid var(--line); border-radius: 16px; background: #fff; color: var(--ink); }
-  #pair button { margin: 14px auto 0; justify-content: center; background: var(--plum); color: #fff; border-color: var(--plum); min-width: 200px; }
-  .error { color: #b25b6d; min-height: 22px; margin-top: 10px; }
-  .toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); background: var(--ink); color: #fff;
-    padding: 10px 16px; border-radius: 999px; font-size: 14px; opacity: 0; transition: opacity .25s; pointer-events: none; }
+  #pairButton { margin-top: 14px; padding: 13px 34px; border-radius: 999px; background: var(--plum); color: #fff; }
+  .error { color: #b25b6d; min-height: 20px; margin-top: 10px; font-size: 14px; }
+  .toast { position: fixed; left: 50%; bottom: calc(86px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+    background: var(--ink); color: #fff; padding: 9px 16px; border-radius: 999px; font-size: 13px; opacity: 0; transition: opacity .25s; pointer-events: none; }
   .toast.show { opacity: .92; }
   .hidden { display: none !important; }
 </style>
 </head>
 <body>
 <header>
-  <div class="stars">✦ ☾ ✧</div>
+  <div class="moon">✦☾</div>
   <h1>Хоши</h1>
   <div class="status"><span class="dot off" id="dot"></span><span id="status">Подключаюсь…</span></div>
 </header>
+
 <main>
   <div id="pair" class="hidden">
-    <h2 style="color:var(--plum);text-transform:none;font-size:20px;letter-spacing:0">Привет!</h2>
-    <p>Введи код, который Хоши показывает на компьютере<br>(меню → Пульт с телефона → Адрес и код).</p>
+    <div class="hello">Привет!</div>
+    <p>Введи код, который Хоши показывает на компьютере<br>(меню → Пульт с телефона → Адрес и код)</p>
     <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••">
     <br><button id="pairButton">Подружиться</button>
     <div class="error" id="pairError"></div>
   </div>
+
   <div id="remote" class="hidden">
-    <div id="apps"></div>
-    <div id="groups"></div>
+    <section class="tab active" data-tab="main">
+      <div class="quick" id="quick"></div>
+      <div id="apps"></div>
+    </section>
+    <section class="tab" data-tab="play" id="playTab"></section>
+    <section class="tab" data-tab="modes" id="modesTab"></section>
   </div>
 </main>
+
+<nav id="nav" class="hidden">
+  <button data-tab="main" class="active"><span class="icon">✦</span>Главное</button>
+  <button data-tab="play"><span class="icon">☁️</span>Хоши</button>
+  <button data-tab="modes"><span class="icon">⚙️</span>Режимы</button>
+</nav>
 <div class="toast" id="toast"></div>
+
 <script>
 "use strict";
 const WS_URL = `ws://${location.hostname}:18771/hoshi-remote-v1`;
-const CHOICE_GROUPS = new Set(["mood", "seated_mode", "rhythm", "rest_place", "autonomy"]);
-let socket = null, token = null, catalog = [], lastState = {}, retry = 800;
-
-try { token = localStorage.getItem("hoshi-token"); } catch (e) { token = null; }
+let socket = null, token = null, catalog = {quick: [], groups: []}, state = {}, retry = 800;
+try { token = localStorage.getItem("hoshi-token"); } catch (e) {}
 const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
 
 function toast(text) {
   const box = $("toast"); box.textContent = text; box.classList.add("show");
-  clearTimeout(toast.timer); toast.timer = setTimeout(() => box.classList.remove("show"), 1600);
+  clearTimeout(toast.t); toast.t = setTimeout(() => box.classList.remove("show"), 1500);
 }
-function setOnline(online, text) {
-  $("dot").classList.toggle("off", !online);
-  if (text !== undefined) $("status").textContent = text;
-}
-function send(message) {
-  if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
-}
-function run(command, args) {
-  send({op: "run", command, args: args || {}});
-  if (navigator.vibrate) navigator.vibrate(12);
-}
+function send(message) { if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
+function run(command, args) { send({op: "run", command, args: args || {}}); if (navigator.vibrate) navigator.vibrate(10); }
+function online(yes, text) { $("dot").classList.toggle("off", !yes); if (text !== undefined) $("status").textContent = text; }
 function showPair(error) {
-  $("remote").classList.add("hidden"); $("pair").classList.remove("hidden");
-  $("pairError").textContent = error || "";
+  $("remote").classList.add("hidden"); $("nav").classList.add("hidden");
+  $("pair").classList.remove("hidden"); $("pairError").textContent = error || "";
 }
-function showRemote() { $("pair").classList.add("hidden"); $("remote").classList.remove("hidden"); }
+function showRemote() { $("pair").classList.add("hidden"); $("remote").classList.remove("hidden"); $("nav").classList.remove("hidden"); }
+
+for (const tabButton of document.querySelectorAll("nav button")) {
+  tabButton.addEventListener("click", () => {
+    for (const b of document.querySelectorAll("nav button")) b.classList.toggle("active", b === tabButton);
+    for (const t of document.querySelectorAll(".tab")) t.classList.toggle("active", t.dataset.tab === tabButton.dataset.tab);
+    window.scrollTo({top: 0});
+  });
+}
 
 function connect() {
-  setOnline(false, "Подключаюсь…");
+  online(false, "Подключаюсь…");
   socket = new WebSocket(WS_URL);
-  socket.onopen = () => {
-    retry = 800;
-    if (token) send({op: "hello", token}); else showPair();
-  };
+  socket.onopen = () => { retry = 800; if (token) send({op: "hello", token}); else showPair(); };
   socket.onmessage = (event) => {
-    let message; try { message = JSON.parse(event.data); } catch (e) { return; }
-    switch (message.op) {
-      case "paired":
-        token = message.token;
-        try { localStorage.setItem("hoshi-token", token); } catch (e) {}
-        break;
-      case "welcome":
-        catalog = message.catalog || []; showRemote(); renderGroups(); break;
-      case "state":
-        lastState = message; renderState(); break;
-      case "ran":
-        if (!message.ok) toast(message.reason === "not_allowed" ? "С телефона так нельзя" : "Не получилось");
-        break;
-      case "error":
-        if (message.reason === "need_pairing") { token = null; try { localStorage.removeItem("hoshi-token"); } catch (e) {} showPair(); }
-        else if (message.reason === "bad_code") showPair("Код не подошёл. Посмотри на экран компьютера ещё раз.");
-        else if (message.reason === "too_fast") toast("Помедленнее :)");
-        break;
+    let m; try { m = JSON.parse(event.data); } catch (e) { return; }
+    if (m.op === "paired") { token = m.token; try { localStorage.setItem("hoshi-token", token); } catch (e) {} }
+    else if (m.op === "welcome") { catalog = m.catalog || catalog; showRemote(); renderHoshi(); }
+    else if (m.op === "state") { state = m; online(true, (m.hoshi && m.hoshi.status) || "На связи"); renderHoshi(); renderApps(); }
+    else if (m.op === "ran" && !m.ok) toast(m.reason === "not_allowed" ? "С телефона так нельзя" : "Сейчас не получилось");
+    else if (m.op === "error") {
+      if (m.reason === "need_pairing") { token = null; try { localStorage.removeItem("hoshi-token"); } catch (e) {} showPair(); }
+      else if (m.reason === "bad_code") showPair("Код не подошёл — посмотри на экран компьютера");
+      else if (m.reason === "too_fast") toast("Помедленнее :)");
     }
   };
-  socket.onclose = () => {
-    setOnline(false, "Хоши не на связи — жду…");
-    setTimeout(connect, retry); retry = Math.min(retry * 1.6, 8000);
-  };
+  socket.onclose = () => { online(false, "Хоши не на связи — жду…"); setTimeout(connect, retry); retry = Math.min(retry * 1.6, 8000); };
 }
 
-function button(item, isOn) {
-  const node = document.createElement("button");
-  if (isOn) node.classList.add("on");
-  if (item.icon) { const icon = document.createElement("span"); icon.className = "icon"; icon.textContent = item.icon; node.append(icon); }
-  node.append(document.createTextNode(item.title));
-  node.addEventListener("click", () => run(item.command, item.args));
-  return node;
-}
+function selected() { return new Set((state.hoshi && state.hoshi.selected) || []); }
 
-function renderGroups() {
-  const root = $("groups"); root.textContent = "";
-  const selected = new Set((lastState.hoshi && lastState.hoshi.selected) || []);
-  for (const group of catalog) {
-    const section = document.createElement("section");
-    const title = document.createElement("h2"); title.textContent = group.title; section.append(title);
-    const box = document.createElement("div"); box.className = CHOICE_GROUPS.has(group.id) ? "chips" : "grid";
-    for (const item of group.commands) box.append(button(item, selected.has(item.command)));
-    section.append(box); root.append(section);
+function renderHoshi() {
+  const on = selected();
+  const quick = $("quick"); quick.textContent = "";
+  for (const item of catalog.quick || []) {
+    const b = el("button", "round"); const face = el("span", "face", item.icon || "✦");
+    b.append(face, el("span", "", item.title)); b.onclick = () => run(item.command); quick.append(b);
+  }
+  for (const tab of ["play", "modes"]) {
+    const root = $(tab + "Tab"); root.textContent = "";
+    for (const group of (catalog.groups || []).filter((g) => g.tab === tab)) {
+      root.append(el("h2", "", group.title));
+      const box = el("div", tab === "play" ? "tiles" : "chips");
+      for (const item of group.commands) {
+        let b;
+        if (tab === "play") { b = el("button", "tile"); b.append(el("span", "icon", item.icon || "✦"), el("span", "", item.title)); }
+        else b = el("button", "chip", item.title);
+        if (on.has(item.command)) b.classList.add("on");
+        b.onclick = () => run(item.command); box.append(b);
+      }
+      root.append(box);
+    }
   }
 }
 
-function clock(seconds) {
-  if (!isFinite(seconds) || seconds < 0) return "";
-  seconds = Math.floor(seconds);
-  const h = Math.floor(seconds / 3600), m = Math.floor(seconds % 3600 / 60), s = seconds % 60;
-  return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(s).padStart(2, "0");
+function clock(s) {
+  if (!isFinite(s) || s < 0) return "";
+  s = Math.floor(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), r = s % 60;
+  return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(r).padStart(2, "0");
 }
 
 function renderApps() {
   const root = $("apps"); root.textContent = "";
-  for (const app of lastState.apps || []) {
-    const state = app.state || {};
-    const section = document.createElement("section"); section.className = "app";
-    const title = document.createElement("h2"); title.textContent = app.title; section.append(title);
-    if (state.title || state.subtitle) {
-      const now = document.createElement("div"); now.className = "now";
-      const t = document.createElement("div"); t.className = "title"; t.textContent = state.title || ""; now.append(t);
-      if (state.subtitle) { const sub = document.createElement("div"); sub.className = "sub"; sub.textContent = state.subtitle; now.append(sub); }
-      if (state.duration > 0) {
-        const bar = document.createElement("div"); bar.className = "bar";
-        const fill = document.createElement("i"); fill.style.width = Math.min(100, 100 * state.time / state.duration) + "%";
-        bar.append(fill); now.append(bar);
-        const times = document.createElement("div"); times.className = "times";
-        times.innerHTML = "<span></span><span></span>";
-        times.children[0].textContent = clock(state.time); times.children[1].textContent = clock(state.duration);
-        now.append(times);
+  const apps = state.apps || [];
+  if (!apps.length) { root.append(el("div", "empty", "Когда откроешь YouTube в Chrome с расширением Хоши, здесь появится пульт для видео")); return; }
+  for (const app of apps) {
+    const s = app.state || {}, icons = s.icons || {}, active = new Set(s.active || []);
+    const card = el("div", "app");
+    const head = el("div", "app-head"); head.append(el("span", "", app.title), el("span", "", s.playing ? "▶ играет" : (s.title ? "⏸ пауза" : ""))); card.append(head);
+    if (s.title) {
+      const now = el("div", "now"); const thumb = el("div", "thumb");
+      if (s.thumbnail) thumb.style.backgroundImage = `url("${String(s.thumbnail).replace(/"/g, "")}")`;
+      const text = el("div", "text"); text.append(el("div", "title", s.title)); if (s.subtitle) text.append(el("div", "sub", s.subtitle));
+      now.append(thumb, text); card.append(now);
+    } else card.append(el("div", "empty", s.hint || "Ничего не играет"));
+    const byName = {}; for (const c of app.commands) byName[c.command.split(":")[2]] = c;
+    if (s.duration > 0) {
+      const prog = el("div", "progress"); const bar = el("div", "bar"); const fill = el("i");
+      fill.style.width = Math.min(100, 100 * (s.time || 0) / s.duration) + "%"; bar.append(fill);
+      if (byName.seek_to) {
+        bar.classList.add("seekable");
+        bar.onclick = (e) => { const r = bar.getBoundingClientRect(); run(byName.seek_to.command, {time: Math.round(s.duration * (e.clientX - r.left) / r.width)}); };
       }
-      section.append(now);
+      const times = el("div", "times"); times.append(el("span", "", clock(s.time)), el("span", "", clock(s.duration)));
+      prog.append(bar, times); card.append(prog);
     }
-    const box = document.createElement("div"); box.className = "grid";
-    const active = new Set(state.active || []);
-    for (const item of app.commands) box.append(button(item, active.has(item.command.split(":")[2])));
-    section.append(box); root.append(section);
+    const main = el("div", "controls"), extra = el("div", "extra");
+    for (const c of app.commands) {
+      const name = c.command.split(":")[2];
+      if (name === "seek_to") continue;
+      const isMain = c.row === "main";
+      const b = el("button", "ctl " + (name === "toggle" ? "big" : (isMain ? "" : "small")), icons[name] || c.icon || "•");
+      b.title = c.title; b.setAttribute("aria-label", c.title);
+      if (active.has(name)) b.classList.add("on");
+      b.onclick = () => run(c.command, c.args);
+      (isMain || name === "toggle" ? main : extra).append(b);
+    }
+    card.append(main); if (extra.children.length) card.append(extra);
+    root.append(card);
   }
-}
-
-function renderState() {
-  const hoshi = lastState.hoshi || {};
-  setOnline(true, hoshi.status || "На связи");
-  renderApps(); renderGroups();
 }
 
 $("pairButton").addEventListener("click", () => {
@@ -202,7 +256,7 @@ $("pairButton").addEventListener("click", () => {
   if (code.length !== 6) { $("pairError").textContent = "Нужно 6 цифр"; return; }
   send({op: "pair", code});
 });
-$("code").addEventListener("keydown", (event) => { if (event.key === "Enter") $("pairButton").click(); });
+$("code").addEventListener("keydown", (e) => { if (e.key === "Enter") $("pairButton").click(); });
 connect();
 </script>
 </body>

@@ -139,4 +139,8 @@
 - Add-ons connect only from 127.0.0.1 at /hoshi-adapter-v1 and declare commands/state (app_adapters.gd).
   Add-on commands run only on an explicit human press; autonomy must never trigger them.
 - test_remote.gd covers pairing, refusals, routing to a stub add-on and cleanup.
+- browser_extension/hoshi_apps: MV3 add-on for www.youtube.com only. youtube.js reads now-playing and
+  presses player controls; worker.js keeps the single 127.0.0.1 adapter connection while a YouTube tab
+  exists. Never add other sites, history, comments or account data without a new user decision.
+  tests/extension/test_youtube_content.py checks youtube.js on a fake page (optional, needs Playwright).
 
