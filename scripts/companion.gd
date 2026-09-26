@@ -15,11 +15,10 @@ const InteractionSession = preload("res://scripts/interaction_session.gd")
 const ChatVoiceBridge = preload("res://scripts/chat_voice_bridge.gd")
 const Commands = preload("res://scripts/hoshi_commands.gd")
 const CommandRunner = preload("res://scripts/command_runner.gd")
-const SETTINGS_PATH: String = "user://companion.cfg"
+const DesktopInput = preload("res://scripts/desktop_input.gd")
+const CompanionSettings = preload("res://scripts/companion_settings.gd")
+const SessionLifecycle = preload("res://scripts/session_lifecycle.gd")
 const DEFAULT_AVATAR: String = "res://assets/Hoshi_v1.vrm"
-const DEFAULT_LIGHT_POSITION: Vector3 = Vector3(-1.2, 2.2, 2.4)
-const DEFAULT_EDGE_COLOR: Color = Color(1.0, 0.92, 0.98)
-const DEFAULT_OUTLINE_COLOR: Color = Color(0.20, 0.16, 0.27)
 
 var host = Host.new()
 var surface_probe = SurfaceProbe.new()
@@ -33,25 +32,16 @@ var playground = Playground.new()
 var interaction = InteractionSession.new()
 var chat_voice_bridge = ChatVoiceBridge.new()
 var runner = CommandRunner.new()
+## Помощники coordinator'а (у каждого одна забота, см. docs/SKELETON_RU.md):
+var desk_input = DesktopInput.new()        # мышь и клавиатура
+var settings = CompanionSettings.new()     # сохранение настроек, свет
+var lifecycle = SessionLifecycle.new()     # вход и уход через звёздную дверь
 var stage
 var ui
 var background: ColorRect
 var frame_rate: int = 30
 var _ready_to_run: bool = false
 var _gaze: Vector2 = Vector2.ZERO
-var _press_active: bool = false
-var _dragged: bool = false
-var _double_clicked: bool = false
-var _press_cursor: Vector2i = Vector2i.ZERO
-var _press_window: Vector2i = Vector2i.ZERO
-var _press_yaw: float = 0.0
-var _last_drag_cursor: Vector2i = Vector2i.ZERO
-var _drag_velocity: Vector2 = Vector2.ZERO
-var _hand_side: String = ""
-var _hand_hold_age: float = 0.0
-var _cursor_hanging: bool = false
-var _quit_phase: String = ""
-var _cinematic_mask_active: bool = false
 var _preview_zoom: float = 1.0
 var _ui_clock: float = 0.0
 var _screen_clock: float = 0.0
@@ -66,22 +56,19 @@ var _floor_intent_wait: float = 4.0
 var _surface_intent_step_started: bool = false
 var _surface_intent_wait: float = 5.0
 var _test_mode: bool = false
-var _settings: ConfigFile = ConfigFile.new()
-var _light_position: Vector3 = DEFAULT_LIGHT_POSITION
-var _shading_settings: Dictionary = {"shadow_strength": 1.0, "shadow_color": Color.WHITE,
-	"edge_strength": 0.16, "edge_color": DEFAULT_EDGE_COLOR, "edge_width": 0.4,
-	"outline_strength": 0.45, "outline_color": DEFAULT_OUTLINE_COLOR, "outline_width": 0.35}
-var _light_save_delay: float = -1.0
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	desk_input.setup(self)
+	settings.setup(self)
+	lifecycle.setup(self)
 	host.setup(get_window())
 	var seed_value: int = 70420 if OS.get_cmdline_user_args().has("--test-mode") else int(Time.get_ticks_usec())
 	state.seed_random(seed_value)
 	director.seed_random(seed_value + 7)
 	intent_planner.seed_random(seed_value + 17)
 	_test_mode = OS.get_cmdline_user_args().has("--test-mode")
-	_read_settings()
+	settings.read()
 	director.set_activity(state.activity)
 	places.change_mode(state.place_mode)
 	Engine.max_fps = frame_rate
@@ -93,8 +80,8 @@ func _ready() -> void:
 	stage = Stage.new()
 	stage.name = "AvatarStage"
 	add_child(stage)
-	stage.set_light_position(_light_position)
-	_apply_shading_settings()
+	stage.set_light_position(settings.light_position)
+	settings.apply_shading()
 	ui = UI.new()
 	ui.name = "CompanionUI"
 	add_child(ui)
@@ -102,11 +89,11 @@ func _ready() -> void:
 	playground.setup(self)
 	runner.setup(self)
 	ui.action_requested.connect(_on_action)
-	ui.light_position_changed.connect(_on_light_position_changed)
-	ui.shading_changed.connect(_on_shading_changed)
+	ui.light_position_changed.connect(settings.set_light_position)
+	ui.shading_changed.connect(settings.set_shading)
 	ui.menu.popup_hide.connect(_on_menu_hidden)
 	ui.quick_menu.popup_hide.connect(_on_menu_hidden)
-	ui.bubbles_enabled = bool(_settings.get_value("behavior", "bubbles", true))
+	ui.bubbles_enabled = settings.bubbles_enabled()
 	get_window().close_requested.connect(_quit)
 	var args: PackedStringArray = OS.get_cmdline_user_args()
 	var wants_preview: bool = not args.has("--desktop") or args.has("--preview")
@@ -135,7 +122,7 @@ func _ready() -> void:
 	ui.refresh(state)
 	_layout()
 	if not host.preview and not _test_mode:
-		_start_intro()
+		lifecycle.start_intro()
 	ui.say("Привет, Серёж!")
 	if args.has("--shelf-demo"):
 		await get_tree().create_timer(0.5).timeout
@@ -150,11 +137,7 @@ func _switch_mode(preview: bool) -> void:
 	var was_preview: bool = host.preview
 	playground.release_for_mode_change()
 	air.cancel(Vector2(host.window.position) if host.window != null else Vector2.ZERO)
-	_press_active = false
-	_dragged = false
-	_hand_side = ""
-	_hand_hold_age = 0.0
-	_cursor_hanging = false
+	desk_input.reset()
 	interaction.cancel()
 	state.cancel_pet_contact()
 	state.cancel_release_reaction()
@@ -165,9 +148,7 @@ func _switch_mode(preview: bool) -> void:
 		_hard_stop()
 		stage.travel_offset_px = 0.0
 	_input_alpha_clock = 0.0
-	if _cinematic_mask_active:
-		host.cinematic_mask(false)
-		_cinematic_mask_active = false
+	lifecycle.clear_mask()
 	host.switch_mode(preview)
 	ui.set_preview(host.preview)
 	background.visible = host.preview
@@ -176,7 +157,7 @@ func _switch_mode(preview: bool) -> void:
 	_layout()
 	_layout.call_deferred()
 	if was_preview and not host.preview and _ready_to_run and not _test_mode:
-		_start_intro()
+		lifecycle.start_intro()
 
 func _layout() -> void:
 	if stage == null:
@@ -195,12 +176,9 @@ func _process(delta: float) -> void:
 		surface_probe.tick(dt)
 		if surface_probe.status == "done":
 			ui.show_surface_scan(surface_probe.result)
-	if _light_save_delay >= 0.0:
-		_light_save_delay -= dt
-		if _light_save_delay < 0.0:
-			_save_settings()
-	interaction.tick(delta, _press_active or ui.menu_open())
-	_update_drag(dt)
+	settings.tick(dt)
+	interaction.tick(delta, desk_input.press_active or ui.menu_open())
+	desk_input.update_drag(dt)
 	playground.before_tick(dt)
 	var air_was_active: bool = air.active()
 	var air_position: Vector2 = air.tick(dt)
@@ -221,7 +199,7 @@ func _process(delta: float) -> void:
 			stage.travel_offset_px = walker.x_px
 		elif playground.surface_walking():
 			stage.travel_offset_px = 0.0
-		elif not _dragged or not _press_active:
+		elif not desk_input.dragged or not desk_input.press_active:
 			stage.travel_offset_px = host.walk_to(walker.x_px)
 		if not walker.active():
 			if _rest_after_walk and state.rest_enabled and state.autonomy_enabled:
@@ -229,7 +207,7 @@ func _process(delta: float) -> void:
 			_rest_after_walk = false
 			_save_settings()
 	_resolve_posture_intent()
-	state.tick(dt, not _press_active and not ui.menu_open() and not walker.active())
+	state.tick(dt, not desk_input.press_active and not ui.menu_open() and not walker.active())
 	_resolve_posture_intent()
 	var cursor: Vector2 = host.cursor_local() - stage.position
 	var head: Vector2 = stage.head_pixel()
@@ -239,7 +217,7 @@ func _process(delta: float) -> void:
 	director.enabled = state.autonomy_enabled
 	director.walk_enabled = state.walk_enabled and state.motion_enabled
 	director.rest_enabled = state.rest_enabled and state.motion_enabled and state.place_mode == "off"
-	var control_blocked: bool = air.active() or stage.cinematic_active() or not _quit_phase.is_empty() or _press_active or ui.menu_open() or state.dozing or walker.active() or state.posture.transitioning() or not _pending_action.is_empty() or state.notice_weight > 0.1 or state.welcome_weight > 0.1 or state.pet_weight > 0.1 or state.wave_weight > 0.1 or state.release_reaction_active()
+	var control_blocked: bool = air.active() or stage.cinematic_active() or not lifecycle.phase.is_empty() or desk_input.press_active or ui.menu_open() or state.dozing or walker.active() or state.posture.transitioning() or not _pending_action.is_empty() or state.notice_weight > 0.1 or state.welcome_weight > 0.1 or state.pet_weight > 0.1 or state.wave_weight > 0.1 or state.release_reaction_active()
 	var blocked: bool = playground.active() or control_blocked
 	var place_request: String = places.tick(dt, state, {"blocked": blocked or host.preview, "can_place": not host.preview and host.is_grounded() and state.posture.mode == "standing"})
 	if place_request == "cozy":
@@ -284,36 +262,29 @@ func _process(delta: float) -> void:
 	var planner_scene_active: bool = not intent_planner.active_intent.is_empty()
 	stage.idle_life.autonomous_enabled = not planner_scene_active or playground.active()
 	stage.edge_life.autonomous_enabled = not planner_scene_active or not playground.active()
-	stage.edge_suspended = _press_active or ui.menu_open() or (playground.active() and (playground.phase != "attached" or playground.surface_busy()))
+	stage.edge_suspended = desk_input.press_active or ui.menu_open() or (playground.active() and (playground.phase != "attached" or playground.surface_busy()))
 	stage.cozy_corner_active = playground.active() and playground.cozy_mode and playground.phase == "attached"
 	stage.edge_scoot = playground.surface.scoot_pose() if playground.active() else {}
-	var context_action: String = "cursor_hang" if _cursor_hanging else ("carry" if _dragged and not host.preview else air.pose_mode())
+	var context_action: String = "cursor_hang" if desk_input.cursor_hanging else ("carry" if desk_input.dragged and not host.preview else air.pose_mode())
 	if context_action == "idle":
 		context_action = playground.surface_context()
-	var context_velocity: Vector2 = _drag_velocity if context_action in ["carry", "cursor_hang"] else (air.screen_velocity() if air.active() else Vector2.ZERO)
-	var context_progress: float = clampf(float(_press_cursor.y - host.cursor_global().y) / maxf(stage.body_pixels * 0.60, 1.0), 0.0, 1.0) if context_action == "cursor_hang" else (air.pose_progress() if air.active() and context_action in ["jump", "fall", "land"] else -1.0)
+	var context_velocity: Vector2 = desk_input.drag_velocity if context_action in ["carry", "cursor_hang"] else (air.screen_velocity() if air.active() else Vector2.ZERO)
+	var context_progress: float = clampf(float(desk_input.press_cursor.y - host.cursor_global().y) / maxf(stage.body_pixels * 0.60, 1.0), 0.0, 1.0) if context_action == "cursor_hang" else (air.pose_progress() if air.active() and context_action in ["jump", "fall", "land"] else -1.0)
 	var context_impact: float = air.impact_strength() if air.active() and context_action in ["jump", "fall", "land"] else 0.5
 	stage.set_context_action(context_action, context_velocity, context_progress, context_impact)
 	stage.animate(dt, state, _gaze, walker.sample())
 	if playground.cozy_mode and is_instance_valid(playground.shelf):
 		playground.shelf.set_star_presenting(float(stage.edge_life.weights.get("admire_star", 0.0)) > 0.05)
-	if _cursor_hanging and not host.hang_hand_to(host.cursor_global(), stage.hand_pixel(_hand_side)):
-		_end_cursor_hang()
+	desk_input.tick_hang()
 	if not host.preview:
 		_input_alpha_clock += dt
 		if not stage.cinematic_active() and _input_alpha_clock >= 0.18:
 			_input_alpha_clock = 0.0
 			stage.refresh_interaction_alpha()
 		var avatar_hit: bool = not stage.cinematic_active() and stage.visible_avatar_hit(cursor)
-		host.update_pointer_interaction(avatar_hit, _press_active or ui.menu_open())
+		host.update_pointer_interaction(avatar_hit, desk_input.press_active or ui.menu_open())
 	playground.after_tick()
-	if _cinematic_mask_active and not stage.cinematic_active():
-		host.cinematic_mask(false)
-		_cinematic_mask_active = false
-	if _quit_phase == "returning" and not playground.active() and not air.active() and state.posture.mode == "standing":
-		_begin_outro()
-	elif _quit_phase == "outro" and stage.outro_complete():
-		_finalize_quit()
+	if lifecycle.tick():
 		return
 	ui.shelf_active = playground.active()
 	ui.tick(dt, stage.head_pixel() + stage.position, stage.size)
@@ -501,225 +472,6 @@ func _hard_stop() -> void:
 		stage.gait.reset()
 	director.user_interaction()
 
-func _unhandled_input(event: InputEvent) -> void:
-	if not _ready_to_run or not _quit_phase.is_empty() or stage.cinematic_active():
-		return
-	if event is InputEventMouseButton:
-		var button: InputEventMouseButton = event as InputEventMouseButton
-		var local_point: Vector2 = button.position - stage.position
-		if button.button_index == MOUSE_BUTTON_RIGHT and button.pressed:
-			_open_menu()
-			get_viewport().set_input_as_handled()
-			return
-		if not stage.get_rect().has_point(button.position):
-			return
-		if button.button_index == MOUSE_BUTTON_WHEEL_UP and button.pressed:
-			_zoom(1)
-		elif button.button_index == MOUSE_BUTTON_WHEEL_DOWN and button.pressed:
-			_zoom(-1)
-		elif button.button_index == MOUSE_BUTTON_LEFT:
-			if button.pressed and stage.hit_avatar(local_point):
-				_abort_autonomous_intent("pointer")
-				_stop_walk()
-				_clear_intent()
-				state.posture.keep_rest()
-				_press_active = true
-				_dragged = false
-				_hand_side = ""
-				_hand_hold_age = 0.0
-				_cursor_hanging = false
-				_double_clicked = button.double_click
-				_press_cursor = host.cursor_global()
-				_press_window = get_window().position
-				_press_yaw = stage.yaw
-				_last_drag_cursor = _press_cursor
-				_drag_velocity = Vector2.ZERO
-				state.cancel_release_reaction()
-				var on_head: bool = stage.head_contact_hit(local_point)
-				if not on_head and not button.double_click and not host.preview and host.is_grounded() and not playground.active() and not air.active() and state.posture.mode == "standing" and not state.posture.transitioning() and state.wave_weight < 0.1:
-					_hand_side = stage.hand_contact_side(local_point)
-				if _hand_side.is_empty():
-					interaction.begin(Vector2(_press_cursor), on_head, stage.body_pixels)
-				else:
-					interaction.cancel()
-					interaction.manual_activity()
-				if not on_head:
-					state.cancel_pet_contact()
-				if button.double_click and interaction.accept_wave():
-					state.wave()
-					if interaction.allow_bubble():
-						ui.say("Привет-привет!")
-			elif not button.pressed and _press_active:
-				_finish_press()
-	elif event is InputEventKey:
-		var key_event: InputEventKey = event as InputEventKey
-		if not key_event.pressed or key_event.echo:
-			return
-		match key_event.physical_keycode:
-			KEY_ESCAPE:
-				if walker.active():
-					_on_action("stop")
-				elif host.preview:
-					_quit()
-			KEY_SPACE: _on_action("wave")
-			KEY_W: _on_action("walk")
-			KEY_C: _on_action("stand" if state.posture.target_seated else "sit")
-			KEY_S: _on_action("doze")
-			KEY_F: _on_action("reset_view")
-			KEY_P: _switch_mode(not host.preview)
-
-func _update_drag(delta: float) -> void:
-	if not _press_active or host.headless:
-		return
-	var cursor_now: Vector2i = host.cursor_global()
-	var movement: Vector2i = cursor_now - _press_cursor
-	var frame_move: Vector2 = Vector2(cursor_now - _last_drag_cursor)
-	_last_drag_cursor = cursor_now
-	var pointer_local: Vector2 = host.cursor_local() - stage.position
-	interaction.update(Vector2(cursor_now), delta, stage.head_stroke_zone_hit(pointer_local) if not _dragged else false)
-	var instant_velocity: Vector2 = frame_move / maxf(delta, 0.001)
-	_drag_velocity = _drag_velocity.lerp(instant_velocity, 1.0 - exp(-delta * 10.0))
-	if not _hand_side.is_empty():
-		_hand_hold_age += delta
-		if _cursor_hanging and cursor_now.y > _press_cursor.y + 24:
-			_end_cursor_hang()
-			return
-		if not _cursor_hanging and _hand_hold_age >= 0.16 and _press_cursor.y - cursor_now.y >= 12:
-			_hard_stop()
-			state.begin_cursor_hang()
-			state.posture.request_stand()
-			_cursor_hanging = true
-			places.manual_pause()
-		if (DisplayServer.mouse_get_button_state() & MOUSE_BUTTON_MASK_LEFT) == 0:
-			_finish_press()
-		return
-	if interaction.should_begin_drag():
-		if not _dragged:
-			# Carrying supersedes navigation and releases the body into a hanging pose.
-			state.cancel_pet_contact()
-			_hard_stop()
-			air.cancel(Vector2(host.window.position))
-			playground.begin_drag()
-			state.dozing = false
-			state.posture.request_stand()
-			_dragged = true
-	if not _dragged and not _double_clicked and interaction.petting_now():
-		if not state.pet_contact_active:
-			state.begin_pet_contact()
-		var head_offset: Vector2 = (pointer_local - stage.head_pixel()) / maxf(stage.body_pixels * 0.18, 1.0)
-		state.update_pet_contact(head_offset, delta)
-	elif state.pet_contact_active:
-		state.end_pet_contact()
-	if _dragged:
-		if host.preview:
-			stage.yaw = clampf(_press_yaw + float(movement.x) * 0.4, -180.0, 180.0)
-		else:
-			stage.travel_offset_px = 0.0
-			host.drag_to(_press_window + movement)
-	if (DisplayServer.mouse_get_button_state() & MOUSE_BUTTON_MASK_LEFT) == 0:
-		_finish_press()
-
-func _finish_press() -> void:
-	if not _press_active:
-		return
-	_abort_autonomous_intent("pointer")
-	if not _hand_side.is_empty():
-		if _cursor_hanging:
-			_end_cursor_hang()
-		else:
-			_press_active = false
-			_hand_side = ""
-			_hand_hold_age = 0.0
-			if interaction.accept_palm_attention():
-				state.notice()
-		director.user_interaction()
-		return
-	var was_dragged: bool = _dragged
-	var floor_goal: Vector2i = host.floor_position() if was_dragged and not host.preview else Vector2i.ZERO
-	var drop_pixels: float = maxf(0.0, float(floor_goal.y - host.window.position.y)) if was_dragged and not host.preview else 0.0
-	var release_style: String = interaction.release_style(_drag_velocity, drop_pixels) if was_dragged and not host.preview else ""
-	var gesture: String = interaction.finish(was_dragged, _double_clicked, state.dozing)
-	_press_active = false
-	_dragged = false
-	if state.pet_contact_active:
-		state.end_pet_contact()
-	if was_dragged:
-		var support_handled: bool = playground.finish_drag()
-		if not support_handled:
-			if host.preview:
-				host.finish_drag()
-			else:
-				state.dozing = false
-				state.posture.request_stand()
-				floor_goal = host.remember_floor_position()
-				interaction.record_release(release_style)
-				state.react_to_release(release_style)
-				air.begin_fall(Vector2(host.window.position), Vector2(floor_goal), float(host.body_pixels), release_style)
-		_drag_velocity = Vector2.ZERO
-		_save_settings()
-	elif gesture in ["attention", "pet", "wake", "return", "quiet"]:
-		places.manual_pause()
-		_clear_intent()
-		playground.cancel_queued_walk()
-		state.posture.keep_rest()
-		if gesture == "pet":
-			if interaction.allow_bubble():
-				ui.say("М-м…")
-		elif gesture in ["wake", "return"]:
-			state.recognize()
-		elif gesture == "attention":
-			state.notice()
-	director.user_interaction()
-
-func _end_cursor_hang() -> void:
-	var was_hanging: bool = _cursor_hanging
-	_press_active = false
-	_cursor_hanging = false
-	state.end_cursor_hang()
-	_hand_side = ""
-	_hand_hold_age = 0.0
-	_drag_velocity = Vector2.ZERO
-	interaction.cancel()
-	if not was_hanging or host.preview:
-		return
-	var floor: Vector2i = host.remember_floor_position()
-	if host.window.position.y >= floor.y:
-		host.place_at(Vector2(floor))
-	else:
-		air.begin_fall(Vector2(host.window.position), Vector2(floor), float(host.body_pixels))
-	_save_settings()
-
-func _zoom(direction: int) -> void:
-	_hard_stop()
-	if host.preview:
-		_preview_zoom = clampf(_preview_zoom + float(direction) * 0.04, 0.75, 1.10)
-		stage.travel_offset_px = clampf(stage.travel_offset_px, -130.0, 130.0)
-	else:
-		stage.travel_offset_px = 0.0
-		host.resize_body(host.body_pixels + direction * 20)
-	_layout()
-	_save_settings()
-
-func _open_menu() -> void:
-	if _cursor_hanging:
-		_end_cursor_hang()
-	_abort_autonomous_intent("menu")
-	places.manual_pause()
-	playground.cancel_queued_walk()
-	_clear_intent()
-	state.posture.keep_rest()
-	_press_active = false
-	_hand_side = ""
-	_hand_hold_age = 0.0
-	interaction.cancel()
-	interaction.manual_activity()
-	state.cancel_pet_contact()
-	_stop_walk()
-	ui.clickthrough_enabled = host.mask_enabled
-	ui.refresh(state, walker.label(), walker.active())
-	host.menu_focus(true)
-	ui.open_quick_menu(host.cursor_global())
-
 func _on_menu_hidden() -> void:
 	_finish_menu_close.call_deferred()
 
@@ -731,21 +483,6 @@ func _finish_menu_close() -> void:
 
 func _on_paper_star_completed() -> void:
 	playground.add_cozy_star()
-
-func _on_light_position_changed(position_value: Vector3) -> void:
-	_light_position = position_value
-	stage.set_light_position(position_value)
-	_light_save_delay = 0.4
-
-func _on_shading_changed(settings: Dictionary) -> void:
-	_shading_settings = settings.duplicate()
-	_apply_shading_settings()
-	_light_save_delay = 0.4
-
-func _apply_shading_settings() -> void:
-	stage.set_shading_settings(float(_shading_settings["shadow_strength"]), _shading_settings["shadow_color"],
-		float(_shading_settings["edge_strength"]), _shading_settings["edge_color"], float(_shading_settings["edge_width"]),
-		float(_shading_settings["outline_strength"]), _shading_settings["outline_color"], float(_shading_settings["outline_width"]))
 
 ## Единая точка входа для команд по имени (см. hoshi_commands.gd).
 ## Старые числовые номера пока принимаются для совместимости.
@@ -770,7 +507,7 @@ func _on_action(command: Variant) -> void:
 	if not _ready_to_run:
 		return
 	if action == "light_editor":
-		ui.show_light_editor(_light_position, _shading_settings)
+		ui.show_light_editor(settings.light_position, settings.shading)
 		return
 	if action == "talk_voice":
 		chat_voice_bridge.start()
@@ -789,12 +526,7 @@ func _on_action(command: Variant) -> void:
 			ui.show_surface_scan(surface_probe.result)
 		return
 	if action == "light_reset":
-		_on_light_position_changed(DEFAULT_LIGHT_POSITION)
-		_on_shading_changed({"shadow_strength": 1.0, "shadow_color": Color.WHITE,
-			"edge_strength": 0.16, "edge_color": DEFAULT_EDGE_COLOR, "edge_width": 0.4,
-			"outline_strength": 0.45, "outline_color": DEFAULT_OUTLINE_COLOR, "outline_width": 0.35})
-		ui.set_light_position(_light_position)
-		ui.set_shading_settings(_shading_settings)
+		settings.reset_light()
 		return
 	interaction.manual_activity()
 	if Commands.has_flag(action, "pauses_places"):
@@ -906,81 +638,6 @@ func _on_action(command: Variant) -> void:
 	ui.refresh(state, walker.label(), walker.active())
 	_save_settings()
 
-static func clickthrough_setting(config: ConfigFile) -> bool:
-	# Legacy mask_enabled=false came from an unlabeled toggle. It is deliberately
-	# not treated as an opt-out of the explicit click-through setting.
-	return bool(config.get_value("window", "clickthrough_enabled", true))
-
-func _read_settings() -> void:
-	if _test_mode or OS.get_cmdline_user_args().has("--reset"):
-		return
-	if _settings.load(SETTINGS_PATH) != OK:
-		return
-	host.body_pixels = clampi(int(_settings.get_value("window", "body_pixels", 360)), 240, 520)
-	var stored_position: Variant = _settings.get_value("window", "position", Vector2i(-99999, -99999))
-	if stored_position is Vector2i:
-		host.saved_position = stored_position
-	host.mask_enabled = clickthrough_setting(_settings)
-	state.look_enabled = bool(_settings.get_value("behavior", "look", true))
-	state.motion_enabled = bool(_settings.get_value("behavior", "motion", true))
-	state.hair_enabled = bool(_settings.get_value("behavior", "hair", true))
-	state.rest_enabled = bool(_settings.get_value("behavior", "rest", true))
-	state.walk_enabled = bool(_settings.get_value("behavior", "walk", true))
-	state.autonomy_enabled = bool(_settings.get_value("behavior", "autonomy", true))
-	var place_mode: String = str(_settings.get_value("behavior", "place_mode", "off"))
-	state.place_mode = place_mode if place_mode in ["off", "cozy", "smart"] else "off"
-	var edge_activity: String = str(_settings.get_value("behavior", "edge_activity", "auto"))
-	state.edge_activity = edge_activity if edge_activity in ["auto", "calm", "swing", "lean", "peek", "sway", "hum", "nod"] else "auto"
-	var activity: String = str(_settings.get_value("behavior", "activity", "normal"))
-	state.activity = activity if activity in ["quiet", "normal", "playful"] else "normal"
-	frame_rate = 60 if int(_settings.get_value("render", "fps", 30)) == 60 else 30
-	var stored_light: Variant = _settings.get_value("render", "light_position", DEFAULT_LIGHT_POSITION)
-	if stored_light is Vector3:
-		_light_position = Vector3(clampf(stored_light.x, -3.0, 3.0), clampf(stored_light.y, 0.2, 3.5), clampf(stored_light.z, 0.4, 4.0))
-	_shading_settings["shadow_strength"] = clampf(float(_settings.get_value("render", "shadow_strength", 1.0)), 0.0, 1.5)
-	_shading_settings["edge_strength"] = clampf(float(_settings.get_value("render", "edge_strength", 0.16)), 0.0, 0.5)
-	_shading_settings["edge_width"] = clampf(float(_settings.get_value("render", "edge_width", 0.4)), 0.0, 1.0)
-	_shading_settings["outline_strength"] = clampf(float(_settings.get_value("render", "outline_strength", 0.45)), 0.0, 1.0)
-	_shading_settings["outline_width"] = clampf(float(_settings.get_value("render", "outline_width", 0.35)), 0.0, 1.0)
-	var stored_shadow_color: Variant = _settings.get_value("render", "shadow_color", Color.WHITE)
-	if stored_shadow_color is Color:
-		_shading_settings["shadow_color"] = stored_shadow_color
-	var stored_edge_color: Variant = _settings.get_value("render", "edge_color", DEFAULT_EDGE_COLOR)
-	if stored_edge_color is Color:
-		_shading_settings["edge_color"] = stored_edge_color
-	var stored_outline_color: Variant = _settings.get_value("render", "outline_color", DEFAULT_OUTLINE_COLOR)
-	if stored_outline_color is Color:
-		_shading_settings["outline_color"] = stored_outline_color
-
-func _save_settings() -> void:
-	if host.headless or _test_mode:
-		return
-	_settings.set_value("window", "body_pixels", host.body_pixels)
-	var saved_window: Vector2i = host.saved_position if host.preview or air.active() else get_window().position
-	if playground.active():
-		saved_window = playground.saved_floor_position
-	_settings.set_value("window", "position", saved_window)
-	_settings.erase_section_key("window", "mask_enabled")
-	_settings.set_value("window", "clickthrough_enabled", host.mask_enabled)
-	_settings.set_value("behavior", "look", state.look_enabled)
-	_settings.set_value("behavior", "motion", state.motion_enabled)
-	_settings.set_value("behavior", "hair", state.hair_enabled)
-	_settings.set_value("behavior", "rest", state.rest_enabled)
-	_settings.set_value("behavior", "walk", state.walk_enabled)
-	_settings.set_value("behavior", "autonomy", state.autonomy_enabled)
-	_settings.set_value("behavior", "place_mode", state.place_mode)
-	_settings.set_value("behavior", "edge_activity", state.edge_activity)
-	_settings.set_value("behavior", "activity", state.activity)
-	_settings.set_value("behavior", "bubbles", ui.bubbles_enabled)
-	_settings.set_value("render", "fps", frame_rate)
-	_settings.set_value("render", "light_position", _light_position)
-	for key in ["shadow_strength", "shadow_color", "edge_strength", "edge_color", "edge_width",
-		"outline_strength", "outline_color", "outline_width"]:
-		_settings.set_value("render", key, _shading_settings[key])
-	var result: Error = _settings.save(SETTINGS_PATH)
-	if result != OK:
-		push_warning("Settings could not be saved: " + error_string(result))
-
 func _write_diagnostics(avatar_path: String, result: Dictionary) -> void:
 	var diagnostic: Dictionary = {"version": "0.7", "engine": Engine.get_version_info(),
 		"model_path": avatar_path, "display_server": DisplayServer.get_name(), "load": result}
@@ -997,57 +654,6 @@ func _capture_after_settling() -> void:
 	var path: String = "user://hoshi_preview.png"
 	var result: Error = image.save_png(path)
 	print("HOSHI_CAPTURE ", ProjectSettings.globalize_path(path), " result=", result)
-
-func _start_intro() -> void:
-	if stage == null or host.preview:
-		return
-	stage.start_portal_intro()
-	host.cinematic_mask(true)
-	_cinematic_mask_active = true
-
-func _quit() -> void:
-	if not _quit_phase.is_empty():
-		return
-	if _cursor_hanging:
-		_end_cursor_hang()
-	if _ready_to_run and not host.preview and not _test_mode and stage != null:
-		places.manual_pause(999.0)
-		_clear_intent()
-		_stop_walk()
-		state.dozing = false
-		if playground.active():
-			_quit_phase = "returning"
-			playground.return_home()
-		elif air.active():
-			_quit_phase = "returning"
-			air.begin_fall(Vector2(host.window.position), Vector2(host.floor_position()), float(host.body_pixels))
-		elif state.posture.mode != "standing":
-			_quit_phase = "returning"
-			state.posture.request_stand()
-		else:
-			_begin_outro()
-		return
-	_finalize_quit()
-
-func _begin_outro() -> void:
-	if _quit_phase == "outro":
-		return
-	_quit_phase = "outro"
-	state.dozing = false
-	state.posture.request_stand()
-	stage.yaw = 0.0
-	host.cinematic_mask(true)
-	_cinematic_mask_active = true
-	stage.start_portal_outro()
-	ui.say("До скорого!")
-
-func _finalize_quit() -> void:
-	playground.release_for_mode_change()
-	if _cinematic_mask_active:
-		host.cinematic_mask(false)
-		_cinematic_mask_active = false
-	_save_settings()
-	get_tree().quit()
 
 func _clear_intent() -> void:
 	_pending_action = ""
@@ -1080,7 +686,7 @@ func _request_stand() -> void:
 func _resolve_posture_intent() -> void:
 	if playground.active():
 		return
-	if _pending_action.is_empty() or walker.active() or _press_active or ui.menu_open():
+	if _pending_action.is_empty() or walker.active() or desk_input.press_active or ui.menu_open():
 		return
 	if _pending_action == "walk":
 		if state.posture.mode == "standing":
@@ -1112,3 +718,25 @@ func _exit_tree() -> void:
 	host.shutdown()
 	playground.external.close()
 	surface_probe.close()
+
+# --- Тонкие переходники: старые имена, которыми пользуются опоры и тесты ---
+
+## Нажатие мышью сейчас активно (читают shelf_playground/surface_controller).
+var _press_active: bool:
+	get:
+		return desk_input.press_active
+
+func _unhandled_input(event: InputEvent) -> void:
+	desk_input.handle(event)
+
+func _open_menu() -> void:
+	desk_input.open_menu()
+
+func _save_settings() -> void:
+	settings.save()
+
+func _quit() -> void:
+	lifecycle.request_quit()
+
+static func clickthrough_setting(config: ConfigFile) -> bool:
+	return CompanionSettings.clickthrough_setting(config)

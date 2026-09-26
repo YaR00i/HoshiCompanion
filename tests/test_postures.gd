@@ -138,6 +138,7 @@ func _run() -> void:
 	_check_timers()
 	_check_autonomous_sequence()
 	_check_commands_through_runner()
+	await _check_desktop_input()
 	metrics = {"max_foot_drift_m": max_foot_drift, "max_pelvis_frame_motion_m": max_joint_step}
 	var report: Dictionary = {"checks": checks, "failures": failures, "metrics": metrics, "engine": Engine.get_version_info()}
 	var file: FileAccess = FileAccess.open("user://posture_checks.json", FileAccess.WRITE)
@@ -265,4 +266,47 @@ func _check_commands_through_runner() -> void:
 	_check(app.state._wave_left > 0.0, "run_command('wave') waves like the menu button")
 	app.run_command("edge_sway")
 	_check(not app.stage.edge_life.forced_active(), "an autonomy-only command is refused from the menu path")
+
+## Мышь и клавиатура вынесены в desktop_input.gd: проверяем путь настоящего события.
+func _mouse(button_index: MouseButton, pressed: bool, at: Vector2, double: bool = false) -> void:
+	var event := InputEventMouseButton.new()
+	event.button_index = button_index
+	event.pressed = pressed
+	event.double_click = double
+	event.position = at
+	app._unhandled_input(event)
+
+func _key(code: Key) -> void:
+	var event := InputEventKey.new()
+	event.physical_keycode = code
+	event.pressed = true
+	app._unhandled_input(event)
+
+func _check_desktop_input() -> void:
+	app._on_action("stand")
+	_frames(150)
+	var head: Vector2 = app.stage.position + app.stage.head_pixel()
+	_check(app.stage.hit_avatar(head - app.stage.position), "test point lies on Hoshi's head")
+	_mouse(MOUSE_BUTTON_LEFT, true, head)
+	_check(app.desk_input.press_active and app._press_active, "left press on Hoshi starts a touch (and old _press_active still reads it)")
+	_mouse(MOUSE_BUTTON_LEFT, false, head)
+	_check(not app.desk_input.press_active and not app.desk_input.dragged, "release ends the touch without a drag")
+	var zoom_before: float = app._preview_zoom
+	_mouse(MOUSE_BUTTON_WHEEL_DOWN, true, head)
+	_check(app._preview_zoom < zoom_before, "mouse wheel over Hoshi zooms the fitting room")
+	_mouse(MOUSE_BUTTON_WHEEL_UP, true, head)
+	_mouse(MOUSE_BUTTON_RIGHT, true, head)
+	await process_frame
+	_check(app.ui.menu_open(), "right click opens Hoshi's menu")
+	app.ui.quick_menu.hide()
+	app.ui.menu.hide()
+	await process_frame
+	_key(KEY_W)
+	_check(app.walker.active(), "key W runs the same 'walk' command as the menu")
+	_key(KEY_ESCAPE)
+	_frames(90)
+	_check(not app.walker.active(), "Escape stops the walk (after finishing the current step)")
+	_check(not app.lifecycle.quitting(), "input never starts the closing sequence by itself")
+	app._on_action("light_reset")
+	_check(app.settings.light_position == app.settings.DEFAULT_LIGHT_POSITION and str(app.settings.shading) == str(app.settings.default_shading()), "light reset goes through companion_settings.gd")
 

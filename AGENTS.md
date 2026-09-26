@@ -17,7 +17,13 @@
 - Use bounded app-owned captures; never capture unrelated desktop windows for tests.
 
 ## Architecture
-- companion.gd coordinates state, behavior, UI and desktop-window actions.
+- companion.gd coordinates state, behavior, UI and desktop-window actions. It owns the frame
+  loop and planner orchestration; focused helpers (WeakRef back to the app) own the rest:
+  - desktop_input.gd — mouse/keyboard gestures (touch, pet, carry, cursor hang, wheel, menu, hotkeys);
+  - companion_settings.gd — user://companion.cfg read/save and light/shading values;
+  - session_lifecycle.gd — portal intro, return-then-outro close sequence, cinematic mask;
+  - command_runner.gd — starting commands and planner-step completion (see Skeleton below).
+  Keep thin compatibility wrappers (_press_active, _open_menu, _save_settings, _quit) for supports/tests.
 - avatar_stage.gd owns the 3D viewport and drivers.
 - vrm_source.gd / expression_driver.gd own the working VRM/morph binding.
 - locomotion.gd + gait_driver.gd own horizontal routes and lower-body walking IK.
