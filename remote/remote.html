@@ -73,6 +73,21 @@
   .ctl.on { background: #f7dfe7; color: #b04a6a; border-color: #f0c9d6; }
   .ctl:active { transform: scale(.92); }
   .extra { display: flex; justify-content: center; gap: 10px; margin-top: 10px; }
+  details.list { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 8px; }
+  details.list summary { list-style: none; display: flex; justify-content: space-between; align-items: center; cursor: pointer;
+    font-size: 13px; font-weight: 650; color: var(--plum); padding: 6px 2px; }
+  details.list summary::-webkit-details-marker { display: none; }
+  details.list summary::after { content: "⌄"; margin-left: 8px; color: var(--muted); transition: transform .2s; }
+  details.list[open] summary::after { transform: rotate(180deg); }
+  details.list summary .count { margin-left: auto; font-weight: 500; color: var(--muted); font-size: 12px; }
+  .item { display: flex; gap: 10px; align-items: center; width: 100%; text-align: left; padding: 6px 4px; border-radius: 12px; }
+  .item:active { background: var(--soft); }
+  .item.current { background: var(--soft); }
+  .item .mini { width: 80px; height: 45px; border-radius: 8px; flex: none; background: var(--soft) center/cover no-repeat; }
+  .item .text { min-width: 0; display: flex; flex-direction: column; }
+  .item .title { font-size: 13px; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .item .sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item.current .title::before { content: "▶ "; color: var(--gold); }
   .empty { text-align: center; color: var(--muted); font-size: 13px; padding: 18px 10px 4px; }
 
   /* вкладки */
@@ -210,44 +225,102 @@ function clock(s) {
   return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(r).padStart(2, "0");
 }
 
+// Карточки приложений. Полностью перестраиваются, только когда меняется
+// состав (видео, кнопки, списки); время, прогресс и иконки обновляются на месте,
+// чтобы раскрытые списки не сворачивались и не мигали.
+const appViews = {};      // id -> {signature, card, fill, times, buttons}
+const openLists = {};     // "app:list" -> раскрыт ли список
+
 function renderApps() {
-  const root = $("apps"); root.textContent = "";
+  const root = $("apps");
   const apps = state.apps || [];
-  if (!apps.length) { root.append(el("div", "empty", "Когда откроешь YouTube в Chrome с расширением Хоши, здесь появится пульт для видео")); return; }
+  if (!apps.length) {
+    root.textContent = ""; for (const k in appViews) delete appViews[k];
+    root.append(el("div", "empty", "Когда откроешь YouTube в Chrome с расширением Хоши, здесь появится пульт для видео"));
+    return;
+  }
+  const alive = new Set(apps.map((a) => a.id));
+  for (const id in appViews) if (!alive.has(id)) delete appViews[id];
+  root.textContent = "";
   for (const app of apps) {
-    const s = app.state || {}, icons = s.icons || {}, active = new Set(s.active || []);
-    const card = el("div", "app");
-    const head = el("div", "app-head"); head.append(el("span", "", app.title), el("span", "", s.playing ? "▶ играет" : (s.title ? "⏸ пауза" : ""))); card.append(head);
-    if (s.title) {
-      const now = el("div", "now"); const thumb = el("div", "thumb");
-      if (s.thumbnail) thumb.style.backgroundImage = `url("${String(s.thumbnail).replace(/"/g, "")}")`;
-      const text = el("div", "text"); text.append(el("div", "title", s.title)); if (s.subtitle) text.append(el("div", "sub", s.subtitle));
-      now.append(thumb, text); card.append(now);
-    } else card.append(el("div", "empty", s.hint || "Ничего не играет"));
-    const byName = {}; for (const c of app.commands) byName[c.command.split(":")[2]] = c;
-    if (s.duration > 0) {
-      const prog = el("div", "progress"); const bar = el("div", "bar"); const fill = el("i");
-      fill.style.width = Math.min(100, 100 * (s.time || 0) / s.duration) + "%"; bar.append(fill);
-      if (byName.seek_to) {
-        bar.classList.add("seekable");
-        bar.onclick = (e) => { const r = bar.getBoundingClientRect(); run(byName.seek_to.command, {time: Math.round(s.duration * (e.clientX - r.left) / r.width)}); };
-      }
-      const times = el("div", "times"); times.append(el("span", "", clock(s.time)), el("span", "", clock(s.duration)));
-      prog.append(bar, times); card.append(prog);
+    const s = app.state || {};
+    const signature = JSON.stringify([app.commands, s.title, s.subtitle, s.thumbnail, s.hint, s.lists]);
+    let view = appViews[app.id];
+    if (!view || view.signature !== signature) view = appViews[app.id] = buildApp(app, signature);
+    updateApp(view, app);
+    root.append(view.card);
+  }
+}
+
+function buildApp(app, signature) {
+  const s = app.state || {};
+  const view = {signature, buttons: {}};
+  const card = el("div", "app"); view.card = card;
+  const head = el("div", "app-head"); view.playing = el("span", "");
+  head.append(el("span", "", app.title), view.playing); card.append(head);
+  if (s.title) {
+    const now = el("div", "now"); const thumb = el("div", "thumb");
+    if (s.thumbnail) thumb.style.backgroundImage = `url("${String(s.thumbnail).replace(/"/g, "")}")`;
+    const text = el("div", "text"); text.append(el("div", "title", s.title)); if (s.subtitle) text.append(el("div", "sub", s.subtitle));
+    now.append(thumb, text); card.append(now);
+  } else card.append(el("div", "empty", s.hint || "Ничего не играет"));
+  const byName = {}; for (const c of app.commands) byName[c.command.split(":")[2]] = c;
+  if (s.title) {
+    const prog = el("div", "progress"); const bar = el("div", "bar"); view.fill = el("i"); bar.append(view.fill);
+    if (byName.seek_to) {
+      bar.classList.add("seekable");
+      bar.onclick = (e) => { const r = bar.getBoundingClientRect(); const d = view.duration || 0;
+        if (d > 0) run(byName.seek_to.command, {time: Math.round(d * (e.clientX - r.left) / r.width)}); };
     }
-    const main = el("div", "controls"), extra = el("div", "extra");
-    for (const c of app.commands) {
-      const name = c.command.split(":")[2];
-      if (name === "seek_to") continue;
-      const isMain = c.row === "main";
-      const b = el("button", "ctl " + (name === "toggle" ? "big" : (isMain ? "" : "small")), icons[name] || c.icon || "•");
-      b.title = c.title; b.setAttribute("aria-label", c.title);
-      if (active.has(name)) b.classList.add("on");
-      b.onclick = () => run(c.command, c.args);
-      (isMain || name === "toggle" ? main : extra).append(b);
+    view.times = el("div", "times"); view.times.append(el("span"), el("span"));
+    prog.append(bar, view.times); card.append(prog); view.progress = prog;
+  }
+  const main = el("div", "controls"), extra = el("div", "extra");
+  for (const c of app.commands) {
+    const name = c.command.split(":")[2];
+    if (c.row === "hidden") continue;
+    const isMain = c.row === "main";
+    const b = el("button", "ctl " + (name === "toggle" ? "big" : (isMain ? "" : "small")), c.icon || "•");
+    b.title = c.title; b.setAttribute("aria-label", c.title); b.dataset.icon = c.icon || "•";
+    b.onclick = () => run(c.command, c.args);
+    view.buttons[name] = b;
+    (isMain || name === "toggle" ? main : extra).append(b);
+  }
+  card.append(main); if (extra.children.length) card.append(extra);
+  for (const list of s.lists || []) {
+    const key = app.id + ":" + list.id;
+    const box = el("details", "list"); box.open = !!openLists[key];
+    box.addEventListener("toggle", () => { openLists[key] = box.open; });
+    const summary = el("summary", "");
+    summary.append(el("span", "", list.title), el("span", "count", list.position || String(list.items.length)));
+    box.append(summary);
+    for (const item of list.items) {
+      const row = el("button", "item" + (item.current ? " current" : ""));
+      const t = el("span", "mini"); if (item.thumbnail) t.style.backgroundImage = `url("${String(item.thumbnail).replace(/"/g, "")}")`;
+      const text = el("span", "text"); text.append(el("span", "title", item.title));
+      if (item.subtitle) text.append(el("span", "sub", item.subtitle));
+      row.append(t, text);
+      if (byName.play_item && !item.current) row.onclick = () => { run(byName.play_item.command, {id: item.id, list: item.list || ""}); toast("Включаю…"); };
+      box.append(row);
     }
-    card.append(main); if (extra.children.length) card.append(extra);
-    root.append(card);
+    card.append(box);
+  }
+  return view;
+}
+
+function updateApp(view, app) {
+  const s = app.state || {}, icons = s.icons || {}, active = new Set(s.active || []);
+  view.playing.textContent = s.playing ? "▶ играет" : (s.title ? "⏸ пауза" : "");
+  view.duration = s.duration || 0;
+  if (view.progress) {
+    view.progress.classList.toggle("hidden", !(s.duration > 0));
+    view.fill.style.width = s.duration > 0 ? Math.min(100, 100 * (s.time || 0) / s.duration) + "%" : "0";
+    view.times.children[0].textContent = clock(s.time); view.times.children[1].textContent = clock(s.duration);
+  }
+  for (const name in view.buttons) {
+    const b = view.buttons[name];
+    b.textContent = icons[name] || b.dataset.icon;
+    b.classList.toggle("on", active.has(name));
   }
 }
 

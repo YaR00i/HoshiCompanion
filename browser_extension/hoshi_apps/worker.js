@@ -18,7 +18,8 @@ const ADAPTER = {
     { name: "vol_up", title: "Громче", icon: "🔊" },
     { name: "mute", title: "Без звука", icon: "🔈" },
     { name: "like", title: "Нравится", icon: "♥" },
-    { name: "seek_to", title: "Перейти к моменту", icon: "", args: { time: 0 } },
+    { name: "seek_to", title: "Перейти к моменту", icon: "", row: "hidden", args: { time: 0 } },
+    { name: "play_item", title: "Включить видео из списка", icon: "", row: "hidden", args: { id: "" } },
   ],
 };
 

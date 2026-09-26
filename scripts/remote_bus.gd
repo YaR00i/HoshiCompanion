@@ -30,7 +30,7 @@ const PAGE_PATH: String = "res://remote/remote.html"
 const MAX_PHONES: int = 4
 const MAX_PEERS: int = 16
 const MAX_PHONE_PACKET: int = 4096
-const MAX_ADAPTER_PACKET: int = 16384
+const MAX_ADAPTER_PACKET: int = 65536
 const MAX_RUNS_PER_SECOND: float = 8.0
 
 var enabled: bool = false

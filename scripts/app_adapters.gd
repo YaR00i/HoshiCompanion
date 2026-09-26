@@ -5,7 +5,11 @@ extends RefCounted
 ## объявляет себя:
 ##   {"op": "adapter", "id": "youtube", "title": "YouTube",
 ##    "commands": [{"name": "pause", "title": "Пауза", "icon": "⏸", "row": "main", "args": {...}}],
-##   row: "main" — большие кнопки плеера, иначе маленькие во втором ряду.
+##   row: "main" — большие кнопки плеера, "hidden" — без кнопки (вызывается из
+##   списков или полосы времени), иначе маленькие кнопки во втором ряду.
+## state.lists — раскрывающиеся списки на пульте:
+##   [{"id": "next", "title": "Дальше", "items": [{"id", "title", "subtitle", "thumbnail", "current"}]}];
+##   нажатие на пункт вызывает команду "play_item" с {"id": ..., "list": ...}.
 ##    "state": {...}}
 ## Потом присылает обновления состояния {"op": "adapter_state", "state": {...}}.
 ## Его команды появляются в пульте и в списке команд под именем
@@ -42,7 +46,7 @@ func announce(peer_key: int, message: Dictionary) -> String:
 		if _id_check.search(name) == null:
 			continue
 		commands.append({"name": name, "title": str(item.get("title", name)).left(40),
-			"icon": str(item.get("icon", "")).left(4), "row": "main" if str(item.get("row", "")) == "main" else "extra", "args": item.get("args", {}) if item.get("args", {}) is Dictionary else {}})
+			"icon": str(item.get("icon", "")).left(4), "row": str(item.get("row", "")) if str(item.get("row", "")) in ["main", "hidden"] else "extra", "args": item.get("args", {}) if item.get("args", {}) is Dictionary else {}})
 	adapters[id] = {"title": str(message.get("title", id)).left(40), "commands": commands,
 		"state": _clean_state(message.get("state", {})), "peer": peer_key}
 	return id
@@ -88,7 +92,7 @@ func _clean_state(state: Variant) -> Dictionary:
 	if not state is Dictionary:
 		return {}
 	var text: String = JSON.stringify(state)
-	if text.length() > 12000:
+	if text.length() > 48000:
 		return {"error": "state_too_large"}
 	var parsed: Variant = JSON.parse_string(text)
 	return parsed if parsed is Dictionary else {}

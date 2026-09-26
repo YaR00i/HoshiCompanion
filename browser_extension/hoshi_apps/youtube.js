@@ -48,6 +48,85 @@
     return !!button && button.getAttribute("aria-pressed") === "true";
   }
 
+  // --- списки: «Дальше» (колонка справа) и плейлист --------------------------
+  const idFromHref = (href) => {
+    try {
+      const url = new URL(href, location.origin);
+      if (url.pathname === "/watch") return url.searchParams.get("v") || "";
+      const shorts = url.pathname.match(/^\/shorts\/([\w-]{6,})/);
+      return shorts ? shorts[1] : "";
+    } catch (e) { return ""; }
+  };
+  const thumb = (id) => `https://i.ytimg.com/vi/${encodeURIComponent(id)}/mqdefault.jpg`;
+  const firstText = (root, selectors) => {
+    for (const selector of selectors) {
+      const value = text(root.querySelector(selector));
+      if (value) return value;
+    }
+    return "";
+  };
+
+  // Рекомендации: любые ссылки на видео в правой колонке, по одной на видео.
+  function nextVideos(currentId) {
+    const column = pick(["#secondary #related", "#related", "#secondary"]);
+    if (!column) return [];
+    const found = new Map();
+    for (const link of column.querySelectorAll('a[href*="/watch?v="]')) {
+      const id = idFromHref(link.getAttribute("href"));
+      if (!id || id === currentId) continue;
+      const card = link.closest("ytd-compact-video-renderer, yt-lockup-view-model, ytd-rich-item-renderer") || link.parentElement;
+      const title = (link.getAttribute("title") || "").trim() ||
+        firstText(card, ["#video-title", "h3", ".yt-lockup-metadata-view-model-wiz__title", "[title]"]) || text(link);
+      const channel = firstText(card, ["ytd-channel-name", "#channel-name", ".yt-content-metadata-view-model-wiz__metadata-text"]);
+      const known = found.get(id);
+      if (!known || (title.length > known.title.length)) {
+        found.set(id, { id, title: title.slice(0, 160), subtitle: channel.slice(0, 80), thumbnail: thumb(id) });
+      }
+      if (found.size >= 12 && !known) break;
+    }
+    return [...found.values()].filter((item) => item.title).slice(0, 12);
+  }
+
+  // Плейлист справа от видео: все видео, текущее отмечено. До 60 вокруг текущего.
+  function playlist(currentId) {
+    const panel = pick(["ytd-playlist-panel-renderer#playlist", "ytd-playlist-panel-renderer"]);
+    const listId = new URL(location.href).searchParams.get("list") || "";
+    if (!panel || !listId) return null;
+    const items = [];
+    for (const row of panel.querySelectorAll("ytd-playlist-panel-video-renderer")) {
+      const link = row.querySelector('a[href*="/watch?v="]');
+      const id = link ? idFromHref(link.getAttribute("href")) : "";
+      if (!id) continue;
+      items.push({
+        id, list: listId,
+        title: firstText(row, ["#video-title", "h4"]).slice(0, 160),
+        subtitle: firstText(row, ["#byline", "#channel-name"]).slice(0, 80),
+        thumbnail: thumb(id),
+        current: row.hasAttribute("selected") || id === currentId,
+      });
+    }
+    if (!items.length) return null;
+    const at = Math.max(0, items.findIndex((item) => item.current));
+    const start = Math.max(0, Math.min(at - 20, items.length - 60));
+    const title = firstText(panel, ["#header-description h3", ".title", "h3"]) || "Плейлист";
+    return { id: "playlist", title: "Плейлист · " + title.slice(0, 60), position: `${at + 1} / ${items.length}`,
+      items: items.slice(start, start + 60) };
+  }
+
+  let listsCache = [];
+  let listsAt = 0;
+  function lists(currentId) {
+    if (Date.now() - listsAt < 3000) return listsCache;
+    listsAt = Date.now();
+    const result = [];
+    const pl = playlist(currentId);
+    if (pl) result.push(pl);
+    const next = nextVideos(currentId);
+    if (next.length) result.push({ id: "next", title: "Дальше", items: next });
+    listsCache = result;
+    return result;
+  }
+
   api.collect = function collect() {
     const id = videoId();
     const v = video();
@@ -75,6 +154,7 @@
       volume: Math.round((v.volume || 0) * 100),
       active,
       icons: { toggle: playing ? "⏸" : "▶", mute: muted ? "🔇" : "🔈" },
+      lists: lists(id),
     };
   };
 
@@ -116,6 +196,19 @@
         return false;
       case "next":
         return click([".ytp-next-button"]) || (videoId() && location.pathname.startsWith("/shorts/") && click(["#navigation-button-down button"]));
+      case "play_item": {
+        // Нажимаем ссылку на странице (быстрый переход YouTube без перезагрузки);
+        // если её уже нет — открываем видео обычным адресом.
+        const id = String(args.id || "");
+        if (!/^[\w-]{6,20}$/.test(id)) return false;
+        const list = /^[\w-]{2,64}$/.test(String(args.list || "")) ? String(args.list) : "";
+        const link = [...document.querySelectorAll('a[href*="/watch?v="]')].find((a) => idFromHref(a.getAttribute("href")) === id &&
+          (!list || (a.getAttribute("href") || "").includes("list=" + list)));
+        listsAt = 0;
+        if (link) { link.click(); return true; }
+        location.href = `/watch?v=${encodeURIComponent(id)}` + (list ? `&list=${encodeURIComponent(list)}` : "");
+        return true;
+      }
       case "like": {
         const button = likeButton();
         if (!button) return false;

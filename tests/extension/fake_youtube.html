@@ -13,7 +13,24 @@
   <like-button-view-model><button aria-pressed="false"
     onclick="this.setAttribute('aria-pressed', this.getAttribute('aria-pressed') === 'true' ? 'false' : 'true')">like</button></like-button-view-model>
 </ytd-watch-metadata>
+<div id="secondary"><div id="related">
+  <ytd-compact-video-renderer><a id="thumbnail" href="/watch?v=nextAAA1111"></a>
+    <span id="video-title" title="Дождь за окном и джаз">Дождь за окном и джаз</span><ytd-channel-name>Cozy Sounds</ytd-channel-name></ytd-compact-video-renderer>
+  <yt-lockup-view-model><a class="thumb" href="/watch?v=nextBBB2222&amp;pp=x"></a>
+    <a href="/watch?v=nextBBB2222" title="Как рисовать аниме-глаза">Как рисовать аниме-глаза</a>
+    <span class="yt-content-metadata-view-model-wiz__metadata-text">Art School</span></yt-lockup-view-model>
+  <ytd-compact-video-renderer><a id="thumbnail" href="/watch?v=abcDEF12345"></a><span id="video-title">то же самое видео</span></ytd-compact-video-renderer>
+</div></div>
+<ytd-playlist-panel-renderer id="playlist">
+  <div id="header-description"><h3>Музыка для работы</h3></div>
+  <ytd-playlist-panel-video-renderer><a href="/watch?v=listAAA0001&amp;list=PLhoshi"></a><span id="video-title">Первое</span><span id="byline">Hoshi Radio</span></ytd-playlist-panel-video-renderer>
+  <ytd-playlist-panel-video-renderer selected><a href="/watch?v=abcDEF12345&amp;list=PLhoshi"></a><span id="video-title">Lo-fi для рисования — 1 час</span><span id="byline">Hoshi Radio</span></ytd-playlist-panel-video-renderer>
+  <ytd-playlist-panel-video-renderer><a id="third" href="/watch?v=listCCC0003&amp;list=PLhoshi"></a><span id="video-title">Третье</span><span id="byline">Hoshi Radio</span></ytd-playlist-panel-video-renderer>
+</ytd-playlist-panel-renderer>
 <script>
+  // Переходы по ссылкам в тесте не выполняем, а запоминаем.
+  window.__clicked = [];
+  document.addEventListener("click", (e) => { const a = e.target.closest("a"); if (a) { e.preventDefault(); window.__clicked.push(a.getAttribute("href")); } });
   // Настоящее видео не нужно: подменяем свойства плеера управляемыми значениями.
   const v = document.querySelector("video");
   window.__v = v;
