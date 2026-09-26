@@ -23,6 +23,10 @@
   - companion_settings.gd — user://companion.cfg read/save and light/shading values;
   - session_lifecycle.gd — portal intro, return-then-outro close sequence, cinematic mask;
   - command_runner.gd — starting commands and planner-step completion (see Skeleton below).
+  - support_port.gd — the only requests shelf_playground.gd / surface_controller.gd may make to the app
+    (say, stop walking, switch to desktop, save settings, user_busy...). Supports may read shared body
+    services (host, state, stage, air, walker) directly but must not call app private members, ui,
+    director, places, planner or runner; test_commands.gd enforces this boundary.
   Keep thin compatibility wrappers (_press_active, _open_menu, _save_settings, _quit) for supports/tests.
 - avatar_stage.gd owns the 3D viewport and drivers.
 - vrm_source.gd / expression_driver.gd own the working VRM/morph binding.

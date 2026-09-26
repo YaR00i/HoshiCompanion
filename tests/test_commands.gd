@@ -29,6 +29,7 @@ func _run() -> void:
 	_check_registry()
 	_check_library()
 	_check_autonomy_vocabulary()
+	_check_support_boundary()
 	await _check_menus()
 	_finish()
 
@@ -127,6 +128,18 @@ func _check_autonomy_vocabulary() -> void:
 	for command in CommandRunner.USER_SUPPORT_COMMANDS:
 		runner_known = runner_known and Commands.allows(command, "user")
 	_check(runner_known, "runner only executes registered commands")
+
+## Опоры просят Хоши только через support_port.gd и не лезут во внутренности.
+func _check_support_boundary() -> void:
+	var forbidden := RegEx.new()
+	forbidden.compile("(\\bapp|_app\\(\\))\\.(_\\w+|ui\\b|director\\b|places\\b|intent_planner\\b|runner\\b|add_child\\b)")
+	for path in ["res://scripts/shelf_playground.gd", "res://scripts/surface_controller.gd"]:
+		var leaks: Array[String] = []
+		for found in forbidden.search_all(FileAccess.get_file_as_string(path)):
+			leaks.append(found.get_string())
+		if not leaks.is_empty():
+			push_error("%s bypasses support_port.gd: %s" % [path, ", ".join(leaks)])
+		_check(leaks.is_empty(), "%s talks to Hoshi only through support_port.gd" % path.get_file())
 
 func _check_menus() -> void:
 	var user_interface = UI.new()

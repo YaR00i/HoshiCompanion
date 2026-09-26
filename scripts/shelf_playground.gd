@@ -29,23 +29,25 @@ var _age: float = 0.0
 var _walk_after: bool = false
 const TRAVEL_TIME: float = 0.85
 
+## Короткий список просьб к Хоши (support_port.gd). Внутрь companion.gd опора не лезет.
+var port
+
 func setup(companion) -> void:
 	app = companion
+	port = companion.support_port
 	surface.setup(app, self)
 
 func active() -> bool:
 	return phase != "off"
 
 func show_demo(use_cozy: bool = false) -> bool:
-	app._abort_autonomous_intent("support_enter")
+	port.interrupt_autonomy("support_enter")
 	if external_mode or (is_instance_valid(shelf) and cozy_mode != use_cozy):
 		release_for_mode_change()
 	if app.host.headless or not app.stage.is_loaded or not app.stage.edge_pose.available:
 		return false
-	if app.host.preview:
-		app._switch_mode(false)
-	if app.host.preview:
-		app.ui.say("Для полочки нужен настольный режим")
+	if not port.switch_to_desktop():
+		port.say("Для полочки нужен настольный режим")
 		return false
 	if phase in ["preparing", "boarding", "attached"] and is_instance_valid(shelf) and not shelf.is_queued_for_deletion():
 		_present_shelf()
@@ -57,8 +59,7 @@ func show_demo(use_cozy: bool = false) -> bool:
 	_present_shelf()
 	if not active():
 		saved_floor_position = app.host.floor_position()
-	app._clear_intent()
-	app._stop_walk()
+	port.cancel_plans_and_walk()
 	app.state.dozing = false
 	app.state.posture.request_stand()
 	_walk_after = false
@@ -97,16 +98,15 @@ func _create_shelf() -> void:
 	shelf.name = "HoshiShelf"
 	shelf.visible = false
 	shelf.size = Vector2i(460, 170) if cozy_mode else Vector2i(600, 285)
-	shelf.theme = app.ui.theme
-	app.add_child(shelf)
+	port.add_support_window(shelf)
 	if cozy_mode:
 		shelf.set_star_count(mini(3, cozy_stars_made), cozy_stars_made)
 	shelf.close_requested.connect(close_shelf)
 	shelf.sit_requested.connect(show_demo.bind(cozy_mode))
 	if cozy_mode:
-		shelf.activity_requested.connect(app._on_action)
+		shelf.activity_requested.connect(port.run_command)
 	shelf.leave_requested.connect(return_home)
-	shelf.preview_requested.connect(app._switch_mode.bind(true))
+	shelf.preview_requested.connect(port.open_fitting_room)
 	_place_shelf_near_companion()
 
 func add_cozy_star() -> void:
@@ -124,7 +124,7 @@ func before_tick(delta: float) -> void:
 			elif _auto_choice:
 				_fallback_cozy()
 			else:
-				app.ui.say(external.message())
+				port.say(external.message())
 				return_home()
 	if external_mode:
 		external.tick(delta)
@@ -134,13 +134,13 @@ func before_tick(delta: float) -> void:
 				return
 			if _retry_explicit_bind():
 				return
-			app.ui.say(external.message())
+			port.say(external.message())
 			return_home()
 	if phase == "selecting" and external.status == "selecting":
 		var seconds: int = maxi(1, int(ceil(external.seconds_left)))
 		if seconds != _countdown_number:
 			_countdown_number = seconds
-			app.ui.say("Наведи на окно · %d" % seconds)
+			port.say("Наведи на окно · %d" % seconds)
 	if phase in ["selecting", "auto_selecting"] and external.status == "following":
 		anchor_u = float(external.snapshot.get("fraction", 0.60))
 		_choice_request = {}
@@ -153,7 +153,7 @@ func before_tick(delta: float) -> void:
 			var planned_seat: Vector2 = app.stage.camera.unproject_position(app.stage.edge_pose.planned_anchor_world())
 			var planned: Dictionary = solve_placement(support_rect(), anchor_u, planned_seat, app.host.window.size, support_area())
 			if not bool(planned.get("ok", false)):
-				if app._test_mode:
+				if port.test_mode():
 					print("PREPARE_REJECT rect=", support_rect(), " area=", support_area(), " seat=", planned_seat, " viewport=", app.host.window.size, " anchor_u=", anchor_u, " phase=", phase)
 				return_home()
 			else:
@@ -196,19 +196,19 @@ func _retry_explicit_bind() -> bool:
 	external.close()
 	phase = "selection_start"
 	_start_wait = 0.12 + float(_explicit_bind_retries - 1) * 0.10
-	if app._test_mode:
+	if port.test_mode():
 		print("EXPLICIT_BIND_RETRY attempt=", _explicit_bind_retries, " reason=", retry_reason, " hwnd=", _start_handle)
 	return true
 
 func _fallback_cozy() -> void:
-	if app._test_mode:
+	if port.test_mode():
 		print("AUTO_FALLBACK reason=", external.reason, " status=", external.status)
 	external.close()
 	external_mode = false
 	_choice_request = {}
 	_auto_choice = false
 	phase = "off"
-	app.ui.say("Не нашла свободный край — посижу здесь")
+	port.say("Не нашла свободный край — посижу здесь")
 	show_demo(true)
 
 func _finish_return() -> void:
@@ -219,12 +219,12 @@ func _finish_return() -> void:
 	app.host.saved_position = app.host.window.position
 	saved_floor_position = app.host.window.position
 	phase = "off"
-	app.director.user_interaction()
-	app._save_settings()
+	port.note_user_interaction()
+	port.save_settings()
 	if _walk_after:
 		_walk_after = false
-		if not app.ui.menu.visible and not app._press_active:
-			app._start_walk(false)
+		if not port.user_busy():
+			port.start_floor_walk()
 
 func after_tick() -> void:
 	if phase == "attached" and surface.owns_placement() and _shelf_usable():
@@ -238,9 +238,9 @@ func after_tick() -> void:
 		var area: Rect2i = support_area()
 		var placement: Dictionary = solve_placement(support_rect(), anchor_u, anchor, app.host.window.size, area)
 		if not bool(placement.get("ok", false)):
-			if app._test_mode:
+			if port.test_mode():
 				print("SUPPORT_REJECT rect=", support_rect(), " area=", area, " seat=", anchor, " viewport=", app.host.window.size, " phase=", phase)
-			app.ui.say("Здесь тесно — вернусь вниз")
+			port.say("Здесь тесно — вернусь вниз")
 			return_home()
 		else:
 			var goal: Vector2 = placement["position"]
@@ -276,8 +276,7 @@ func return_home(walk_after: bool = false) -> void:
 	if not active() or phase in ["returning", "settling"]:
 		return
 	external.close()
-	app._clear_intent()
-	app._stop_walk()
+	port.cancel_plans_and_walk()
 	app.state.dozing = false
 	app.state.posture.request_stand()
 	_from = Vector2(app.host.window.position)
@@ -285,7 +284,7 @@ func return_home(walk_after: bool = false) -> void:
 	_age = 0.0
 	app.air.begin_fall(_from, _return_goal, float(app.host.body_pixels))
 	phase = "returning"
-	app.director.user_interaction()
+	port.note_user_interaction()
 
 func begin_drag() -> void:
 	surface.reset()
@@ -343,7 +342,7 @@ func release_for_mode_change() -> void:
 		shelf = null
 
 func close_shelf() -> void:
-	app.places.manual_pause(180.0)
+	port.pause_autonomous_places(180.0)
 	return_home()
 	if is_instance_valid(shelf):
 		shelf.hide()
@@ -378,7 +377,7 @@ func handle_action(action: String) -> bool:
 		return true
 	if action == "toggle_motion":
 		app.state.motion_enabled = not app.state.motion_enabled
-		app._save_settings()
+		port.save_settings()
 		return true
 	cancel_queued_walk()
 	return false
@@ -413,13 +412,10 @@ func select_window(explicit_handle: int = 0) -> bool:
 	if app.host.headless or not app.stage.edge_pose.available:
 		return false
 	release_for_mode_change()
-	if app.host.preview:
-		app._switch_mode(false)
-	if app.host.preview:
+	if not port.switch_to_desktop():
 		return false
 	saved_floor_position = app.host.floor_position()
-	app._clear_intent()
-	app._stop_walk()
+	port.cancel_plans_and_walk()
 	app.state.dozing = false
 	app.state.posture.request_stand()
 	_walk_after = false
@@ -431,21 +427,17 @@ func select_window(explicit_handle: int = 0) -> bool:
 	_explicit_bind_retries = 0
 	_start_wait = 0.20
 	phase = "selection_start"
-	app.ui.say("Наведи на нужное окно · 4")
-	app.ui._bubble_left = 5.0
+	port.say("Наведи на нужное окно · 4", 5.0)
 	return true
 
 func auto_choose_window(fixture_pid: int = 0) -> bool:
 	if app.host.headless or not app.stage.edge_pose.available:
 		return false
 	release_for_mode_change()
-	if app.host.preview:
-		app._switch_mode(false)
-	if app.host.preview:
+	if not port.switch_to_desktop():
 		return false
 	saved_floor_position = app.host.floor_position()
-	app._clear_intent()
-	app._stop_walk()
+	port.cancel_plans_and_walk()
 	app.state.dozing = false
 	app.state.posture.request_stand()
 	_walk_after = false
@@ -465,7 +457,7 @@ func auto_choose_window(fixture_pid: int = 0) -> bool:
 	if fixture_pid > 0:
 		_choice_request["fixture_pid"] = fixture_pid
 	phase = "auto_selection_start"
-	app.ui.say("Ищу уютный край…")
+	port.say("Ищу уютный край…")
 	return true
 
 func surface_walking() -> bool:

@@ -3,6 +3,8 @@ extends RefCounted
 ## Gait owns leg stepping; this controller only maps its local route onto the support.
 var app_ref: WeakRef
 var owner_ref: WeakRef
+## Просьбы к Хоши — только через support_port.gd (сам порт хранит WeakRef).
+var port
 var mode: String = "sit"
 var side: String = ""
 var _auto_wait: float = 24.0
@@ -20,6 +22,7 @@ const SCOOT_DURATION: float = 1.65
 func setup(companion, playground) -> void:
 	app_ref = weakref(companion)
 	owner_ref = weakref(playground)
+	port = companion.support_port
 	_rng.seed = 70421 if OS.get_cmdline_user_args().has("--test-mode") else int(Time.get_ticks_usec())
 	reset()
 
@@ -121,7 +124,7 @@ func request_walk() -> bool:
 	_app().state.dozing = false
 	_app().state.posture.kind = "edge"
 	_app().state.posture.request_stand()
-	_app()._rest_after_walk = false
+	port.cancel_rest_after_walk()
 	mode = "rise"
 	_walk_started = false
 	return true
@@ -135,7 +138,7 @@ func request_side(window_side: String, automatic: bool = false) -> bool:
 	if not bool(_side_placement(window_side).get("ok", false)):
 		return false
 	_app().state.dozing = false
-	_app()._stop_walk(true)
+	port.stop_walking(true)
 	_app().state.posture.kind = "edge"
 	_app().state.posture.request_stand()
 	side = window_side
@@ -248,7 +251,7 @@ func after_tick() -> void:
 func _tick_autonomy(delta: float) -> void:
 	if _app().state.edge_activity != "auto" or not _app().state.autonomy_enabled or not _app().state.motion_enabled or _app().state.dozing:
 		return
-	if _app()._press_active or _app().ui.menu.visible or _app().state.notice_weight > 0.1 or _app().state.wave_weight > 0.1 or _app().state.pet_weight > 0.1:
+	if port.user_busy() or _app().state.notice_weight > 0.1 or _app().state.wave_weight > 0.1 or _app().state.pet_weight > 0.1:
 		return
 	_auto_wait = maxf(0.0, _auto_wait - delta)
 	if _auto_wait > 0.0:
@@ -303,12 +306,11 @@ func _start_route() -> void:
 	if not _app().walker.request(float(plan["start"]), float(plan["target"]), Vector2(plan["lane"]), _app().stage.meters_per_pixel(), _app().stage.model_height, _app().stage.yaw, _app().state.activity == "playful"):
 		_resit()
 		return
-	_app()._walk_area = _app().host.walking_area()
-	_app()._rest_after_walk = false
+	port.mark_support_walk()
 	mode = "walk"
 
 func _resit() -> void:
-	_app()._stop_walk()
+	port.stop_walking()
 	_app().state.posture.kind = "edge"
 	_app().state.posture.request_sit(false)
 	_app().stage.yaw = 0.0

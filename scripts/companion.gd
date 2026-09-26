@@ -18,6 +18,7 @@ const CommandRunner = preload("res://scripts/command_runner.gd")
 const DesktopInput = preload("res://scripts/desktop_input.gd")
 const CompanionSettings = preload("res://scripts/companion_settings.gd")
 const SessionLifecycle = preload("res://scripts/session_lifecycle.gd")
+const SupportPort = preload("res://scripts/support_port.gd")
 const DEFAULT_AVATAR: String = "res://assets/Hoshi_v1.vrm"
 
 var host = Host.new()
@@ -36,6 +37,7 @@ var runner = CommandRunner.new()
 var desk_input = DesktopInput.new()        # мышь и клавиатура
 var settings = CompanionSettings.new()     # сохранение настроек, свет
 var lifecycle = SessionLifecycle.new()     # вход и уход через звёздную дверь
+var support_port = SupportPort.new()       # что опорам можно попросить у Хоши
 var stage
 var ui
 var background: ColorRect
@@ -62,6 +64,7 @@ func _ready() -> void:
 	desk_input.setup(self)
 	settings.setup(self)
 	lifecycle.setup(self)
+	support_port.setup(self)
 	host.setup(get_window())
 	var seed_value: int = 70420 if OS.get_cmdline_user_args().has("--test-mode") else int(Time.get_ticks_usec())
 	state.seed_random(seed_value)
