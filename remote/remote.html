@@ -110,6 +110,7 @@
   .appicon .mark { position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px;
     font-size: 11px; line-height: 18px; color: #fff; background: var(--gold); }
   .appicon .mark.done { background: #4caf7a; } .appicon .mark.waiting { background: #e0a33a; }
+  .appicon.closed .face { opacity: .5; filter: grayscale(.6); }
   .appicon .name { max-width: 58px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .reply { display: flex; gap: 8px; align-items: flex-end; margin-top: 10px; }
   .reply textarea { flex: 1; min-height: 44px; max-height: 30vh; resize: vertical; padding: 10px 12px; border-radius: 14px;
@@ -133,6 +134,22 @@
   .sheet-buttons button { flex: 1; padding: 13px; border-radius: 14px; background: var(--soft); }
   .sheet-buttons .danger { background: #8c3c52; color: #fff; }
   .tile.system .icon { filter: saturate(.6); }
+  /* схема экранов, как в «Параметры → Дисплей» */
+  .screens { position: relative; height: 130px; margin: 6px 0 4px; }
+  .screens button { position: absolute; border: 2px solid #cdbdd6; background: var(--card); border-radius: 6px;
+    font-weight: 700; color: var(--ink); display: grid; place-items: center; font-size: 15px; }
+  .screens button.on { background: var(--plum); border-color: var(--plum); color: #fff; }
+  /* «Окна» на главной: сетка иконок программ с подписями, листается */
+  .wingrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px 6px; max-height: 52vh; overflow-y: auto; padding: 4px 2px 2px; }
+  .winicon { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; color: var(--ink); min-width: 0; }
+  .winicon .face { width: 50px; height: 50px; border-radius: 15px; display: grid; place-items: center; font-size: 24px; position: relative;
+    background: var(--card); border: 1px solid var(--line); box-shadow: 0 2px 6px rgba(80, 60, 100, .08); }
+  .winicon .face.letter { font-size: 20px; font-weight: 700; color: #fff; }
+  .winicon .screen { position: absolute; bottom: -5px; right: -5px; min-width: 17px; height: 17px; border-radius: 9px; padding: 0 3px;
+    background: var(--plum); color: #fff; font-size: 10px; line-height: 17px; font-weight: 700; }
+  .winicon .name { max-width: 100%; text-align: center; overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
+    -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.2; }
+  .winicon .sub { color: var(--muted); font-size: 10px; }
   nav button { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--muted); padding: 2px 10px; border-radius: 12px; }
   nav button .icon { font-size: 19px; }
   nav button.active { color: var(--plum); background: var(--soft); }
@@ -172,6 +189,7 @@
       <div class="quick" id="quick"></div>
       <div class="appbar" id="appbar"></div>
       <div id="sound"></div>
+      <div class="app hidden" id="windowsPanel"></div>
       <div id="apps"></div>
     </section>
     <section class="tab" data-tab="play" id="playTab"></section>
@@ -265,19 +283,21 @@ function connect() {
     let m; try { m = JSON.parse(event.data); } catch (e) { return; }
     if (m.op === "paired") { token = m.token; try { localStorage.setItem("hoshi-token", token); } catch (e) {} }
     else if (m.op === "welcome" || m.op === "catalog") {
-      catalog = m.catalog || catalog; showRemote(); renderHoshi(); renderPc(); renderSound();
+      catalog = m.catalog || catalog; showRemote(); renderHoshi(); renderPc(); renderSound(); renderBar();
       if (m.op === "welcome") {
         welcomed = true;
         // Нажатие, сделанное пока связь восстанавливалась, уходит сразу (если ему < 5 с).
         if (queued && Date.now() - queued.at < 5000) send(queued.message);
         queued = null;
+        if (openApp === "windows") send({op: "run", command: "pc:windows", args: {}}); // «Окна» открыты — свежий список
       }
     }
-    else if (m.op === "state") { state = m; online(true, (m.hoshi && m.hoshi.status) || "На связи"); renderHoshi(); renderSound(); renderApps(); renderPending(); }
+    else if (m.op === "state") { state = m; online(true, (m.hoshi && m.hoshi.status) || "На связи"); renderHoshi(); renderSound(); renderApps(); renderPending(); renderWindows(); }
     else if (m.op === "ran" && !m.ok) toast({not_allowed: "С телефона так нельзя", missing: "Не нашла этот файл на компьютере",
       nothing_to_cancel: "Нечего отменять", need_confirm: "Нужно подтвердить",
       not_available: "Это устройство сейчас не на связи",
-      not_waiting: "Claude сейчас не ждёт ответа — напиши, когда он закончит", unknown_session: "Эта сессия Claude уже закрыта"}[m.reason] || "Сейчас не получилось");
+      not_waiting: "Claude сейчас не ждёт ответа — напиши, когда он закончит", unknown_session: "Эта сессия Claude уже закрыта",
+      unknown_window: "Этого окна уже нет — обнови список", bad_screen: "Выбери экран"}[m.reason] || "Сейчас не получилось");
     else if (m.op === "error") {
       if (m.reason === "need_pairing") {
         token = null; try { localStorage.removeItem("hoshi-token"); } catch (e) {}
@@ -372,10 +392,117 @@ function tiles(items) {
   for (const item of items) {
     const b = el("button", "tile" + (item.system ? " system" : ""));
     b.append(el("span", "icon", item.icon || "🚀"), el("span", "", item.title));
-    b.onclick = () => item.confirm ? confirmThen(item) : run(item.command);
+    b.onclick = () => launchAction(item);
     box.append(b);
   }
   return box;
+}
+// Нажатие на «Моё действие»: спросить «Точно?» / «Где открыть?» или сразу выполнить.
+function launchAction(item) {
+  if (item.confirm) confirmThen(item);
+  else if (item.ask_place) placeThen(item);
+  else run(item.command);
+}
+// Схема экранов: прямоугольники в раскладке Windows (x, y, ширина, высота), с номерами.
+function screenMap(monitors, selected, onPick) {
+  const map = el("div", "screens");
+  if (!monitors.length) return map;
+  const left = Math.min(...monitors.map((m) => m.x)), top = Math.min(...monitors.map((m) => m.y));
+  const right = Math.max(...monitors.map((m) => m.x + m.width)), bottom = Math.max(...monitors.map((m) => m.y + m.height));
+  const width = right - left, height = bottom - top;
+  // Та же пропорция, что у настоящей раскладки: сузить по ширине или по высоте.
+  const box = Math.min(1, (height / width) / (130 / 300));
+  for (const m of monitors) {
+    const b = el("button", m.index === selected ? "on" : "", m.index + (m.primary ? " ★" : ""));
+    b.style.left = (50 - 50 * box + 100 * box * (m.x - left) / width) + "%";
+    b.style.width = "calc(" + (100 * box * m.width / width) + "% - 4px)";
+    b.style.top = (100 * (m.y - top) / height) + "%";
+    b.style.height = "calc(" + (100 * m.height / height) + "% - 4px)";
+    b.onclick = () => { for (const other of map.children) other.classList.toggle("on", other === b); onPick(m.index); };
+    map.append(b);
+  }
+  return map;
+}
+// Выбор «экран + положение» в листке снизу; done(monitor, mode, front) — по кнопке.
+// extra — {front: true} (показать переключатель «Поверх других окон»), onFront() — «Показать поверх».
+function placeSheet(icon, question, monitors, modesList, monitor, mode, allowAsIs, button, done, extra) {
+  extra = extra || {};
+  let front = true; try { front = localStorage.getItem("hoshi-front") !== "0"; } catch (e) {}
+  const sheet = el("div", "sheet"); const box = el("div", "sheet-box");
+  box.append(el("div", "sheet-icon", icon), el("div", "sheet-text", question));
+  const asIs = el("div", "chips"); asIs.style.justifyContent = "center";
+  const map = screenMap(monitors, monitor, (index) => { monitor = index; redraw(); });
+  const modes = el("div", "chips"); modes.style.justifyContent = "center"; modes.style.margin = "10px 0 16px";
+  const redraw = () => {
+    for (const c of asIs.children) c.classList.toggle("on", monitor === 0);
+    for (const c of map.children) c.classList.toggle("on", c.textContent.split(" ")[0] === String(monitor));
+    for (const c of modes.children) c.classList.toggle("on", c.dataset.value === mode);
+  };
+  if (allowAsIs) { const c = el("button", "chip", "Как само откроется"); c.onclick = () => { monitor = 0; redraw(); }; asIs.append(c); }
+  for (const [value, label] of Object.entries(modesList || {})) {
+    const c = el("button", "chip", label); c.dataset.value = value; c.onclick = () => { mode = value; redraw(); }; modes.append(c);
+  }
+  const extras = el("div", "chips"); extras.style.justifyContent = "center"; extras.style.marginBottom = "14px";
+  if (extra.front) {
+    const toggle = el("button", "chip" + (front ? " on" : ""), "⬆ Поверх других окон");
+    toggle.onclick = () => { front = !front; toggle.classList.toggle("on", front); try { localStorage.setItem("hoshi-front", front ? "1" : "0"); } catch (e) {} };
+    extras.append(toggle);
+  }
+  if (extra.onFront) {
+    const show = el("button", "chip", "👁 Показать поверх, не двигая");
+    show.onclick = () => { sheet.remove(); extra.onFront(); };
+    extras.append(show);
+  }
+  const buttons = el("div", "sheet-buttons"); const no = el("button", "", "Отмена"); const yes = el("button", "danger", button);
+  no.onclick = () => sheet.remove();
+  yes.onclick = () => { if (!allowAsIs && !monitor) { toast("Выбери экран"); return; } sheet.remove(); done(monitor, mode, front); };
+  sheet.onclick = (e) => { if (e.target === sheet) sheet.remove(); };
+  buttons.append(no, yes); box.append(asIs, map, modes);
+  if (extras.children.length) box.append(extras);
+  box.append(buttons); sheet.append(box); document.body.append(sheet); redraw();
+}
+// «Где открыть?»: экран и положение — только из списка, который прислал ПК.
+function placeThen(item) {
+  const ask = item.ask_place;
+  placeSheet(item.icon || "🚀", item.title + " — где открыть?", ask.monitors || [], ask.modes, ask.monitor || 0, ask.mode || "center",
+    true, "Открыть", (monitor, mode) => run(item.command, {monitor, mode}));
+}
+// Раздел «Окна»: открытые окна ПК (имя программы, экран) — переставить на другой экран.
+const WIN_ICONS = {chrome: "🌐", msedge: "🌐", firefox: "🦊", "mpc-be64": "🎬", claude: "✳️", chatgpt: "💬", explorer: "📁", notepad: "📝", steamwebhelper: "🎮", telegram: "✈️", discord: "🎧"};
+// Цвет «буквы» для программ без своей иконки — всегда один и тот же для имени.
+function letterColor(name) {
+  const colors = ["#7a6590", "#c07a5a", "#5a8fa8", "#6aa27a", "#b56a8f", "#8a7ac0", "#c29a4a"];
+  let sum = 0; for (const ch of name) sum += ch.charCodeAt(0);
+  return colors[sum % colors.length];
+}
+// Панель «Окна» на главной (иконка 🖥️ в ряду приложений): открытые окна ПК иконками
+// с подписями; нажал — выбрать экран на схеме и положение.
+function renderWindows() {
+  const box = $("windowsPanel"); if (!box) return;
+  const w = state.windows || {};
+  const key = JSON.stringify(w);
+  if (renderWindows.key === key) return;
+  renderWindows.key = key; box.textContent = "";
+  const head = el("div", "app-head"); head.append(el("span", "", "Окна"));
+  const refresh = el("button", "chip", "↻"); refresh.title = "Обновить"; refresh.onclick = () => { run("pc:windows"); toast("Смотрю окна…"); };
+  head.append(refresh); box.append(head);
+  if (!(w.list || []).length) { box.append(el("div", "empty", "Смотрю, какие окна открыты…")); return; }
+  const grid = el("div", "wingrid");
+  const states = {maximized: "развёрнуто", minimized: "свёрнуто"};
+  for (const win of w.list) {
+    const b = el("button", "winicon");
+    const emoji = WIN_ICONS[win.app.replace(/\.exe$/, "")];
+    const face = el("span", "face" + (emoji ? "" : " letter"), emoji || win.name.slice(0, 1).toUpperCase());
+    if (!emoji) face.style.background = letterColor(win.name);
+    face.append(el("span", "screen", String(win.monitor)));
+    b.append(face, el("span", "name", win.name));
+    if (states[win.state]) b.append(el("span", "sub", states[win.state]));
+    b.onclick = () => placeSheet(emoji || "🖥️", win.name + " — куда переставить?", w.monitors || [], w.modes, win.monitor, "center", false, "Переставить",
+      (monitor, mode, front) => run("pc:move", {hwnd: win.hwnd, monitor, mode, front}),
+      {front: true, onFront: () => { run("pc:front", {hwnd: win.hwnd}); toast("Показываю " + win.name); }});
+    grid.append(b);
+  }
+  box.append(grid);
 }
 function confirmThen(item) {
   $("sheetIcon").textContent = item.icon || "⚠️";
@@ -425,12 +552,14 @@ function renderSound() {
 
 // Ряд иконок: Звук и приложения (YouTube, MPC-BE, Claude…). Нажал — раскрылась
 // только его карточка; ещё раз — свернулась. Выбор помнит телефон.
-const APP_ICONS = {sound: "🔊", youtube: "▶️", mpc: "🎬", claude: "✳️", codex: "⌨️"};
+const APP_ICONS = {sound: "🔊", windows: "🖥️", youtube: "▶️", mpc: "🎬", claude: "✳️", codex: "⌨️"};
+const APP_TITLES = {youtube: "YouTube", mpc: "MPC-BE", claude: "Claude", codex: "Codex"};
 let openApp = null;
 try { openApp = localStorage.getItem("hoshi-open-app"); } catch (e) {}
 function barItems() {
   const items = [];
   if ((catalog.sound || []).length) items.push({id: "sound", title: "Звук"});
+  items.push({id: "windows", title: "Окна"});
   for (const app of state.apps || []) {
     const s = app.state || {}; let mark = "", kind = "";
     if (app.id === "claude") {
@@ -440,23 +569,39 @@ function barItems() {
     } else if (s.playing) mark = "▶";
     items.push({id: app.id, title: app.title, mark, kind});
   }
+  // Закрытые приложения, у которых есть запуск в «Моих действиях», — серые иконки.
+  const running = new Set(items.map((i) => i.id));
+  for (const action of catalog.pc || []) {
+    if (!action.app || running.has(action.app)) continue;
+    running.add(action.app);
+    items.push({id: action.app, title: APP_TITLES[action.app] || action.title, launch: action, closed: true});
+  }
   return items;
 }
 function renderBar() {
   const bar = $("appbar"); const items = barItems();
   const ids = items.map((i) => i.id);
   // Открытое приложение закрылось — открыть то, где что-то происходит, иначе первое.
-  if (openApp !== "" && !ids.includes(openApp)) openApp = (items.find((i) => i.mark) || items[0] || {}).id || null;
+  const open = items.filter((i) => !i.closed);
+  // Открытое приложение закрылось — открыть то, где что-то происходит, иначе первое.
+  // Только что запущенное (серое) ждём: его карточка откроется, когда оно появится.
+  if (openApp !== "" && !ids.includes(openApp)) openApp = (open.find((i) => i.mark) || open[0] || {}).id || null;
   const key = JSON.stringify([items, openApp]);
   if (renderBar.key !== key) {
     renderBar.key = key; bar.textContent = "";
     for (const item of items) {
-      const b = el("button", "appicon" + (item.id === openApp ? " open" : ""));
+      const b = el("button", "appicon" + (item.id === openApp && !item.closed ? " open" : "") + (item.closed ? " closed" : ""));
       const face = el("span", "face", APP_ICONS[item.id] || "▣");
       if (item.mark) face.append(el("span", "mark " + item.kind, item.mark));
       b.append(face, el("span", "name", item.title));
       b.onclick = () => {
+        if (item.closed) { // закрыто — запустить; когда появится, откроется его карточка
+          launchAction(item.launch); if (!item.launch.ask_place) toast("Запускаю " + item.title + "…"); openApp = item.id;
+          try { localStorage.setItem("hoshi-open-app", openApp); } catch (e) {}
+          return;
+        }
         openApp = openApp === item.id ? "" : item.id; // ещё раз — свернуть
+        if (openApp === "windows") run("pc:windows"); // открыли «Окна» — свежий список
         try { localStorage.setItem("hoshi-open-app", openApp); } catch (e) {}
         renderBar();
       };
@@ -464,6 +609,7 @@ function renderBar() {
     }
   }
   $("sound").classList.toggle("hidden", openApp !== "sound");
+  $("windowsPanel").classList.toggle("hidden", openApp !== "windows");
   for (const card of $("apps").querySelectorAll(".app")) card.classList.toggle("hidden", card.dataset.app !== openApp);
 }
 
@@ -560,7 +706,7 @@ function buildApp(app, signature) {
       const chip = el("button", "chip", label); chip.disabled = true; chip.style.opacity = ".45"; quick.append(chip);
     }
     card.append(quick);
-    card.append(el("div", "empty", s.subtitle === "работает…" ? "Claude работает — кнопки оживут, когда закончит"
+    if (!s.hint) card.append(el("div", "empty", s.subtitle === "работает…" ? "Claude работает — кнопки оживут, когда закончит"
       : "Claude не ждёт ответа — напиши ему в сессии на ПК, потом кнопки оживут"));
   }
   // Ответ Claude с телефона: поле есть, только пока Claude ждёт (его хук на связи).

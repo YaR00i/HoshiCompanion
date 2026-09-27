@@ -148,6 +148,20 @@
   "pc:<id>" of saved actions and can never supply a path, program or arguments. Shutdown/restart need
   {"confirm": true} and use a 60 s delay with pc:cancel; system buttons are off by default.
   test_pc_actions.gd runs everything in dry_run.
+  Kind "startapp" (added on the PC from Get-StartApps): target is a validated AppID, launched only as
+  explorer.exe "shell:AppsFolder\<AppID>". pc_actions.app_for() maps actions to remote apps
+  (mpc/youtube/claude) so the phone's app bar shows closed apps as launch icons (still "pc:<id>" only).
+  Window placement (user-approved 2026-09-27): an action may have place {monitor, mode center|left|
+  right|max, ask}. tools/window_place.py snapshots existing top-level windows (geometry/visibility/exe
+  file name only, never titles/pixels), prints ready, Hoshi launches, then it moves only the NEW window
+  of the expected exe (or that exe's foreground window for single-instance apps) once, re-checking once.
+  The phone may pass {monitor, mode} only for actions with ask=true; values are clamped/enumerated.
+  Moving open windows (user-approved 2026-09-27): "pc:windows" refreshes a list via window_place.py
+  list (exe file name, monitor, normal/maximized/minimized; never titles), sent to paired phones in
+  state.windows; "pc:move" {hwnd, monitor, mode, front} and "pc:front" {hwnd} accept only an hwnd from
+  that last list (front = topmost then not-topmost + SetForegroundWindow attempt; no input simulation). Monitors carry
+  x/y/width/height for the screen map (monitor_map.gd on the PC, screenMap() on the phone).
+  Quick menu has a «Пульт и компьютер» section (remote toggle, QR, my actions, sound, move window, restart).
 - scripts/sound_outputs.gd ("Звук на пульте", card «Звук» on the main tab): which output devices the
   phone may switch to is chosen only on the PC (menu → Пульт с телефона → Звук на пульте), stored in
   user://sound_outputs.json. Phones send only "sound:<id>" of saved buttons, never a device id.

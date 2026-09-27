@@ -290,7 +290,7 @@ func announcement() -> Dictionary:
 func card_state() -> Dictionary:
 	var id: String = latest()
 	if id.is_empty():
-		return {"hint": "Claude пока не работал"}
+		return {"hint": "Claude пока молчит — напиши ему в сессии на ПК, и здесь появится его ответ"}
 	var session: Dictionary = sessions[id]
 	var state: Dictionary = {"title": session["folder"] if not str(session["folder"]).is_empty() else "Claude",
 		"subtitle": STATUS_TEXT.get(session["status"], ""), "badge": STATUS_TEXT.get(session["status"], ""),

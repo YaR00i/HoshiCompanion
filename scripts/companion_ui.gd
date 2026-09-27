@@ -4,6 +4,8 @@ const QuickMenu = preload("res://scripts/hoshi_quick_menu.gd")
 const QRCode = preload("res://scripts/qr_code.gd")
 const Commands = preload("res://scripts/hoshi_commands.gd")
 const AssistantClouds = preload("res://scripts/assistant_clouds.gd")
+const PcActions = preload("res://scripts/pc_actions.gd")
+const MonitorMap = preload("res://scripts/monitor_map.gd")
 
 signal action_requested(command: String)
 signal light_position_changed(position: Vector3)
@@ -40,6 +42,28 @@ var _pc_url: LineEdit
 var _pc_source
 var _pc_changed: Callable
 var _pc_dialog: FileDialog
+## Выбор приложения из меню «Пуск» для «Моих действий» (список собирается в фоне).
+var _start_window: Window
+## «Где откроется окно» для одного действия.
+var _place_window: Window
+var _place_monitor: OptionButton
+var _place_mode: OptionButton
+var _place_ask: CheckBox
+var _place_id: String = ""
+var _place_map: Control
+## «Переставить окно»: открытые окна, схема экранов, положение.
+var move_window: Window
+var _move_source
+var _move_list: ItemList
+var _move_map: Control
+var _move_version: int = -1
+var _move_front: CheckBox
+var _start_filter: LineEdit
+var _start_list: ItemList
+var _start_apps: Array = []   # [{name, id}]
+var _start_io: FileAccess
+var _start_pid: int = 0
+var _start_buffer: String = ""
 var sound_window: Window
 var _sound_list: VBoxContainer
 var _sound_status: Label
@@ -294,6 +318,8 @@ func say(text: String) -> void:
 	bubble.show()
 
 func tick(delta: float, head_point: Vector2, frame_size: Vector2) -> void:
+	_poll_start_apps()
+	_poll_move_window()
 	_bubble_left = maxf(0.0, _bubble_left - delta)
 	bubble.visible = _bubble_left > 0.0 and bubbles_enabled
 	clouds.items = cloud_items if clouds_enabled else []
@@ -363,7 +389,7 @@ func refresh(state, status_override: String = "", walking: bool = false) -> void
 	for pair in [["toggle_auto_rest", state.rest_enabled], ["toggle_auto_walk", state.walk_enabled], ["toggle_autonomy", state.autonomy_enabled], ["toggle_look", state.look_enabled], ["toggle_motion", state.motion_enabled], ["toggle_hair", state.hair_enabled], ["toggle_bubbles", bubbles_enabled], ["toggle_assistant_clouds", clouds_enabled], ["toggle_clickthrough", clickthrough_enabled], ["toggle_remote", remote_enabled]]:
 		_set_action_checked(str(pair[0]), bool(pair[1]))
 	_set_action_text("doze", "Разбудить" if state.dozing or state.sleep_requested else "Подремать сидя")
-	quick_menu.set_snapshot(state, status.text, not walk_button.disabled, not stop_button.disabled)
+	quick_menu.set_snapshot(state, status.text, not walk_button.disabled, not stop_button.disabled, remote_enabled)
 
 func menu_open() -> bool:
 	return quick_menu.visible or menu.visible
@@ -426,6 +452,7 @@ func _set_action_text(action: String, title_value: String) -> void:
 func show_pc_actions(pc, on_changed: Callable) -> void:
 	_pc_source = pc
 	_pc_changed = on_changed
+	pc.refresh_monitors() # экраны ПК — для кнопки ⚙ «где откроется окно»
 	if pc_window == null:
 		_build_pc_window()
 	_refresh_pc_actions()
@@ -462,6 +489,11 @@ func _build_pc_window() -> void:
 	add_folder.text = "＋ Папка"
 	add_folder.pressed.connect(_pick_pc_path.bind(true))
 	add_row.add_child(add_folder)
+	var add_start := Button.new()
+	add_start.text = "＋ Из меню «Пуск»"
+	add_start.tooltip_text = "Приложения Microsoft Store, Chrome и обычные программы — как в меню «Пуск»"
+	add_start.pressed.connect(_show_start_apps)
+	add_row.add_child(add_start)
 	var url_row := HBoxContainer.new()
 	column.add_child(url_row)
 	_pc_url = LineEdit.new()
@@ -494,6 +526,29 @@ func _build_pc_window() -> void:
 	_pc_dialog.dir_selected.connect(_on_pc_path_chosen)
 	pc_window.add_child(_pc_dialog)
 
+## Светлый список в стиле Хоши (стандартный ItemList Godot — тёмный).
+func _style_item_list(list: ItemList) -> void:
+	var panel := StyleBoxFlat.new()
+	panel.bg_color = Color("fffaf6")
+	panel.border_color = Color("dfd0d5")
+	panel.set_border_width_all(1)
+	panel.set_corner_radius_all(10)
+	panel.set_content_margin_all(6)
+	list.add_theme_stylebox_override("panel", panel)
+	var chosen := StyleBoxFlat.new()
+	chosen.bg_color = Color("eadff0")
+	chosen.set_corner_radius_all(7)
+	for kind in ["selected", "selected_focus", "cursor", "cursor_unfocused"]:
+		list.add_theme_stylebox_override(kind, chosen)
+	var hover := StyleBoxFlat.new()
+	hover.bg_color = Color("f4eef6")
+	hover.set_corner_radius_all(7)
+	list.add_theme_stylebox_override("hovered", hover)
+	list.add_theme_color_override("font_color", INK)
+	list.add_theme_color_override("font_selected_color", PLUM)
+	list.add_theme_color_override("font_hovered_color", PLUM)
+	list.add_theme_constant_override("v_separation", 6)
+
 func _style_line_edit(edit: LineEdit) -> void:
 	for kind in ["normal", "focus", "read_only"]:
 		var box := StyleBoxFlat.new()
@@ -509,6 +564,264 @@ func _style_line_edit(edit: LineEdit) -> void:
 	edit.add_theme_color_override("font_color", INK)
 	edit.add_theme_color_override("font_placeholder_color", MUTED)
 	edit.add_theme_color_override("caret_color", PLUM)
+
+## Окно «Переставить окно»: выбрать открытое окно, экран на схеме и положение.
+## Окна — только имя программы, экран и развёрнуто ли (заголовки не читаем).
+func show_move_window(pc) -> void:
+	_move_source = pc
+	if move_window == null:
+		move_window = Window.new()
+		move_window.title = "Переставить окно"
+		move_window.size = Vector2i(480, 600)
+		move_window.min_size = Vector2i(420, 460)
+		move_window.always_on_top = true
+		move_window.theme = theme
+		add_child(move_window)
+		move_window.close_requested.connect(move_window.hide)
+		var panel_bg := PanelContainer.new()
+		panel_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color("fffdfb")
+		style.set_content_margin_all(16)
+		panel_bg.add_theme_stylebox_override("panel", style)
+		move_window.add_child(panel_bg)
+		var column := VBoxContainer.new()
+		column.add_theme_constant_override("separation", 8)
+		panel_bg.add_child(column)
+		var head := HBoxContainer.new()
+		column.add_child(head)
+		var hint := _label("1. Какое окно", 12, MUTED)
+		hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		head.add_child(hint)
+		var refresh := Button.new()
+		refresh.text = "↻ Обновить"
+		refresh.pressed.connect(func(): _move_source.refresh_windows())
+		head.add_child(refresh)
+		_move_list = ItemList.new()
+		_move_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		_style_item_list(_move_list)
+		column.add_child(_move_list)
+		column.add_child(_label("2. На какой экран — нажми на схеме", 12, MUTED))
+		_move_map = MonitorMap.new()
+		_move_map.custom_minimum_size = Vector2(0, 130)
+		column.add_child(_move_map)
+		column.add_child(_label("3. Как поставить", 12, MUTED))
+		var modes := GridContainer.new()
+		modes.columns = 2
+		modes.add_theme_constant_override("h_separation", 6)
+		modes.add_theme_constant_override("v_separation", 6)
+		column.add_child(modes)
+		for mode in PcActions.PLACE_MODES:
+			var button := Button.new()
+			button.text = PcActions.PLACE_MODES[mode]
+			button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			button.pressed.connect(_move_selected.bind(mode))
+			modes.add_child(button)
+		var front_row := HBoxContainer.new()
+		column.add_child(front_row)
+		_move_front = CheckBox.new()
+		_move_front.text = "Поверх других окон"
+		_move_front.button_pressed = true
+		_move_front.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		front_row.add_child(_move_front)
+		var show_front := Button.new()
+		show_front.text = "Показать поверх, не двигая"
+		show_front.pressed.connect(func():
+			var picked: PackedInt32Array = _move_list.get_selected_items()
+			if not picked.is_empty() and _move_list.get_item_metadata(picked[0]) is Dictionary:
+				_move_source.run("pc:front", {"hwnd": _move_list.get_item_metadata(picked[0])["hwnd"]}))
+		front_row.add_child(show_front)
+	_move_version = -1
+	pc.refresh_windows()
+	move_window.popup_centered()
+
+func _move_selected(mode: String) -> void:
+	var picked: PackedInt32Array = _move_list.get_selected_items()
+	if picked.is_empty() or _move_map.selected <= 0:
+		say("Выбери окно и экран")
+		return
+	var w: Variant = _move_list.get_item_metadata(picked[0])
+	if w is Dictionary:
+		_move_source.run("pc:move", {"hwnd": w["hwnd"], "monitor": _move_map.selected, "mode": mode, "front": _move_front.button_pressed})
+
+func _poll_move_window() -> void:
+	if move_window == null or not move_window.visible or _move_source == null or _move_source.windows_version == _move_version:
+		return
+	_move_version = _move_source.windows_version
+	var keep: String = ""
+	var picked: PackedInt32Array = _move_list.get_selected_items()
+	if not picked.is_empty() and _move_list.get_item_metadata(picked[0]) is Dictionary:
+		keep = str(_move_list.get_item_metadata(picked[0])["hwnd"])
+	_move_list.clear()
+	var states := {"maximized": " · развёрнуто", "minimized": " · свёрнуто", "normal": ""}
+	for w in _move_source.open_windows:
+		var index: int = _move_list.add_item("%s  ·  экран %d%s" % [w["name"], int(w["monitor"]), states.get(w["state"], "")])
+		_move_list.set_item_metadata(index, w)
+		if w["hwnd"] == keep:
+			_move_list.select(index)
+	if _move_source.open_windows.is_empty():
+		_move_list.add_item("Смотрю окна…")
+		_move_list.set_item_disabled(0, true)
+	_move_map.monitors = _move_source.monitors
+
+## Окно ⚙ «Где откроется окно»: экран, положение и «спрашивать на телефоне».
+func _show_place_window(id: String) -> void:
+	_place_id = id
+	if _place_window == null:
+		_place_window = Window.new()
+		_place_window.title = "Где откроется окно"
+		_place_window.size = Vector2i(440, 380)
+		_place_window.unresizable = true
+		_place_window.always_on_top = true
+		_place_window.theme = theme
+		pc_window.add_child(_place_window)
+		_place_window.close_requested.connect(_place_window.hide)
+		var panel_bg := PanelContainer.new()
+		panel_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color("fffdfb")
+		style.set_content_margin_all(16)
+		panel_bg.add_theme_stylebox_override("panel", style)
+		_place_window.add_child(panel_bg)
+		var column := VBoxContainer.new()
+		column.add_theme_constant_override("separation", 8)
+		panel_bg.add_child(column)
+		column.add_child(_label("Экран — как в «Параметры → Дисплей»", 12, MUTED))
+		_place_map = MonitorMap.new()
+		_place_map.custom_minimum_size = Vector2(0, 110)
+		_place_map.picked.connect(func(index: int):
+			for i in range(_place_monitor.item_count):
+				if int(_place_monitor.get_item_metadata(i)) == index:
+					_place_monitor.select(i))
+		column.add_child(_place_map)
+		_place_monitor = OptionButton.new()
+		_place_monitor.item_selected.connect(func(i: int): _place_map.selected = int(_place_monitor.get_item_metadata(i)))
+		column.add_child(_place_monitor)
+		column.add_child(_label("Положение", 12, MUTED))
+		_place_mode = OptionButton.new()
+		for mode in PcActions.PLACE_MODES:
+			_place_mode.add_item(PcActions.PLACE_MODES[mode])
+			_place_mode.set_item_metadata(_place_mode.item_count - 1, mode)
+		column.add_child(_place_mode)
+		_place_ask = CheckBox.new()
+		_place_ask.text = "Спрашивать на телефоне при каждом запуске"
+		column.add_child(_place_ask)
+		var save := Button.new()
+		save.text = "Сохранить"
+		save.pressed.connect(func():
+			var mode: String = str(_place_mode.get_item_metadata(maxi(0, _place_mode.selected)))
+			_pc_source.set_place(_place_id, int(_place_monitor.get_item_metadata(maxi(0, _place_monitor.selected))), mode, _place_ask.button_pressed)
+			_place_window.hide()
+			_after_pc_change())
+		column.add_child(save)
+	var place: Dictionary = {}
+	for item in _pc_source.actions:
+		if item["id"] == id:
+			place = item.get("place", {})
+	_place_monitor.clear()
+	_place_monitor.add_item("Не трогать — где откроется само")
+	_place_monitor.set_item_metadata(0, 0)
+	for m in _pc_source.monitors:
+		_place_monitor.add_item(str(m["label"]))
+		_place_monitor.set_item_metadata(_place_monitor.item_count - 1, int(m["index"]))
+		if int(m["index"]) == int(place.get("monitor", 0)):
+			_place_monitor.select(_place_monitor.item_count - 1)
+	if int(place.get("monitor", 0)) == 0:
+		_place_monitor.select(0)
+	for index in range(_place_mode.item_count):
+		if _place_mode.get_item_metadata(index) == str(place.get("mode", "center")):
+			_place_mode.select(index)
+	_place_ask.button_pressed = bool(place.get("ask", false))
+	_place_map.monitors = _pc_source.monitors
+	_place_map.selected = int(place.get("monitor", 0))
+	_place_window.popup_centered()
+
+## Окно «Из меню «Пуск»»: список приложений (только названия и AppID, только на ПК).
+func _show_start_apps() -> void:
+	if _start_window == null:
+		_start_window = Window.new()
+		_start_window.title = "Приложение из меню «Пуск»"
+		_start_window.size = Vector2i(460, 520)
+		_start_window.always_on_top = true
+		_start_window.theme = theme
+		pc_window.add_child(_start_window)
+		_start_window.close_requested.connect(_start_window.hide)
+		var panel_bg := PanelContainer.new()
+		panel_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color("fffdfb")
+		style.set_content_margin_all(14)
+		panel_bg.add_theme_stylebox_override("panel", style)
+		_start_window.add_child(panel_bg)
+		var column := VBoxContainer.new()
+		column.add_theme_constant_override("separation", 8)
+		panel_bg.add_child(column)
+		_start_filter = LineEdit.new()
+		_start_filter.placeholder_text = "Поиск: Claude, MPC-BE, YouTube…"
+		_style_line_edit(_start_filter)
+		_start_filter.text_changed.connect(func(_text: String): _fill_start_list())
+		column.add_child(_start_filter)
+		_start_list = ItemList.new()
+		_start_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		_style_item_list(_start_list)
+		_start_list.item_activated.connect(_on_start_app_chosen)
+		column.add_child(_start_list)
+		var add := Button.new()
+		add.text = "Добавить на пульт"
+		add.pressed.connect(func():
+			var selected: PackedInt32Array = _start_list.get_selected_items()
+			if not selected.is_empty():
+				_on_start_app_chosen(selected[0]))
+		column.add_child(add)
+	_start_apps = []
+	_start_filter.text = ""
+	_fill_start_list()
+	_start_window.popup_centered()
+	if OS.get_name() == "Windows" and _start_io == null:
+		var process: Dictionary = OS.execute_with_pipe("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+			"[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-StartApps | Select-Object Name, AppID | ConvertTo-Json -Compress"], false)
+		if not process.is_empty():
+			_start_io = process["stdio"]
+			_start_pid = int(process["pid"])
+			_start_buffer = ""
+
+func _poll_start_apps() -> void:
+	if _start_io == null:
+		return
+	_start_buffer += _start_io.get_buffer(65536).get_string_from_utf8()
+	if OS.is_process_running(_start_pid) and _start_buffer.length() < 2000000:
+		return
+	_start_buffer += _start_io.get_buffer(1000000).get_string_from_utf8()
+	_start_io = null
+	var parsed: Variant = JSON.parse_string(_start_buffer.strip_edges())
+	_start_buffer = ""
+	_start_apps = []
+	for entry in (parsed if parsed is Array else ([parsed] if parsed is Dictionary else [])):
+		if entry is Dictionary and PcActions.is_app_id(str(entry.get("AppID", ""))):
+			_start_apps.append({"name": str(entry.get("Name", "")).left(60), "id": str(entry["AppID"])})
+	_start_apps.sort_custom(func(a, b): return a["name"].naturalnocasecmp_to(b["name"]) < 0)
+	_fill_start_list()
+
+func _fill_start_list() -> void:
+	if _start_list == null:
+		return
+	_start_list.clear()
+	var needle: String = _start_filter.text.strip_edges().to_lower()
+	for app in _start_apps:
+		if needle.is_empty() or str(app["name"]).to_lower().contains(needle):
+			var index: int = _start_list.add_item(str(app["name"]))
+			_start_list.set_item_metadata(index, app)
+	if _start_apps.is_empty():
+		_start_list.add_item("Собираю список…" if _start_io != null else "Список пуст")
+		_start_list.set_item_disabled(0, true)
+
+func _on_start_app_chosen(index: int) -> void:
+	var app: Variant = _start_list.get_item_metadata(index)
+	if not app is Dictionary:
+		return
+	_pc_source.add("startapp", str(app["name"]), str(app["id"]))
+	_start_window.hide()
+	_after_pc_change()
 
 func _pick_pc_path(folder: bool) -> void:
 	_pc_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR if folder else FileDialog.FILE_MODE_OPEN_FILE
@@ -574,6 +887,13 @@ func _refresh_pc_actions() -> void:
 				_pc_source.move(item["id"], pair[1])
 				_after_pc_change())
 			row.add_child(move)
+		if item["kind"] != "url":
+			var place: Dictionary = item.get("place", {})
+			var gear := Button.new()
+			gear.text = "⚙" if int(place.get("monitor", 0)) == 0 and not bool(place.get("ask", false)) else "🖥"
+			gear.tooltip_text = "Где откроется окно: экран и положение"
+			gear.pressed.connect(_show_place_window.bind(item["id"]))
+			row.add_child(gear)
 		var remove := Button.new()
 		remove.text = "✕"
 		remove.tooltip_text = "Убрать с пульта"
@@ -978,6 +1298,7 @@ func _build_menu() -> void:
 	_add_menu_item(remote_menu, "Адрес и код для телефона…", "remote_info")
 	_add_menu_item(remote_menu, "Мои действия для пульта…", "pc_actions_editor")
 	_add_menu_item(remote_menu, "Звук на пульте…", "sound_outputs_editor")
+	_add_menu_item(remote_menu, "Переставить окно…", "move_window_editor")
 	_add_menu_item(remote_menu, "Забыть все телефоны", "remote_forget")
 	var appearance := _submenu(menu, "Внешний вид  ›", "AppearanceMenu", [])
 	_add_menu_item(appearance, "Настроить свет, тени и обводку…", "light_editor")

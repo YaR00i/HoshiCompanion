@@ -99,6 +99,7 @@ func start() -> bool:
 	enabled = true
 	last_error = ""
 	new_pairing_code()
+	pc.refresh_monitors() # экраны ПК для «где открыть окно»
 	return true
 
 func stop() -> void:
@@ -510,10 +511,11 @@ func _sync_mpc() -> void:
 	else:
 		adapters.update_state(MpcAdapter.PEER, mpc.card_state())
 
-## Claude работал — его карточка на пульте; сессий нет — карточки нет.
+## Карточка Claude на пульте всегда (просьба 27.09): нет сессий — подсказка,
+## как его «разбудить» (написать на ПК), и серые кнопки.
 func _sync_assistants() -> void:
-	if not assistants.active():
-		adapters.drop_peer(AssistantWatch.PEER)
+	if not assistants.listening and not assistants.active():
+		adapters.drop_peer(AssistantWatch.PEER) # приёмник записок не запущен (тесты, другой режим)
 	elif not adapters.adapters.has(AssistantWatch.ID):
 		adapters.announce(AssistantWatch.PEER, assistants.announcement())
 	else:
@@ -574,7 +576,7 @@ func _item(command: String) -> Dictionary:
 func _state_message() -> Dictionary:
 	var app = _app()
 	var hoshi: Dictionary = app.remote_snapshot() if app != null and app.has_method("remote_snapshot") else {}
-	return {"op": "state", "hoshi": hoshi, "apps": adapters.catalog(), "pc_pending": pc.pending_state(), "sound": sound.state()}
+	return {"op": "state", "hoshi": hoshi, "apps": adapters.catalog(), "pc_pending": pc.pending_state(), "sound": sound.state(), "windows": pc.windows_state()}
 
 func _broadcast_state(force: bool) -> void:
 	var message: Dictionary = _state_message()

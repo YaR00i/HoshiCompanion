@@ -72,6 +72,67 @@ func _run() -> void:
 	_check(pc.run("pc:system_lock", {}) == "" and pc.executed[-1] == ["rundll32.exe", "user32.dll,LockWorkStation"], "lock needs no confirmation")
 	_check(PcActions._split_args('--factory-startup "D:/my files/scene.blend" -b') == ["--factory-startup", "D:/my files/scene.blend", "-b"], "program parameters keep quoted paths together")
 
+	# Приложения из меню «Пуск» и какие из них — приложения пульта.
+	var claude_app: String = pc.add("startapp", "Claude", "Claude_pzs8sxrjxfjjc!Claude")
+	var mpc_app: String = pc.add("startapp", "MPC-BE x64", "{6D809377-6AF0-444B-8957-A3773F02200E}\\MPC-BE\\mpc-be64.exe")
+	var youtube_app: String = pc.add("startapp", "YouTube", "Chrome._crx_agimnkijcamfeangaknmldooml")
+	_check(claude_app != "" and mpc_app != "" and youtube_app != "", "apps from the Start menu can be added")
+	_check(pc.add("startapp", "x", "Claude\" & calc") == "" and pc.add("startapp", "x", "\\\\server\\share") == "" and pc.add("startapp", "x", "..\\..\\x") == "", "start-menu ids with quotes, network paths or .. are refused")
+	out = {}
+	_check(pc.run("pc:" + claude_app, {}, out) == "" and pc.executed[-1] == ["explorer.exe", "shell:AppsFolder\\Claude_pzs8sxrjxfjjc!Claude"] and out["say"] == "Открываю: Claude", "a Start-menu app starts through explorer.exe shell:AppsFolder")
+	var apps: Dictionary = {}
+	for item in pc.catalog():
+		if item.has("app") and not str(item["app"]).is_empty():
+			apps[item["app"]] = item["command"]
+	_check(apps.get("claude", "") == "pc:" + claude_app and apps.get("mpc", "") == "pc:" + mpc_app and apps.get("youtube", "") == "pc:" + youtube_app, "Hoshi knows which action starts Claude, MPC-BE and YouTube")
+	_check(PcActions.app_for({"kind": "url", "target": "https://www.youtube.com/feed/subscriptions"}) == "youtube" and PcActions.app_for({"kind": "url", "target": "https://notyoutube.com.evil.io/"}) == "" and PcActions.app_for({"kind": "open", "target": "C:/Program Files/MPC-BE/mpc-be64.exe"}) == "mpc" and PcActions.app_for({"kind": "folder", "target": "D:/projects"}) == "", "links and programs are matched by site and file name only")
+
+	# Где откроется окно: экран и положение у действия; с телефона — только если «спрашивать».
+	pc.monitors = [{"index": 1, "label": "Экран 1 (основной) · 2560×1440"}, {"index": 2, "label": "Экран 2 · 1920×1080"}]
+	pc.set_place(mpc_app, 2, "right", false)
+	out = {}
+	_check(pc.run("pc:" + mpc_app, {"monitor": 1, "mode": "max"}, out) == "" and pc.executed[-2] == ["place", str(OS.get_process_id()), "2", "right", "mpc-be64.exe"] and pc.executed[-1][0] == "explorer.exe", "the window goes where the PC settings say; the phone cannot change it without «ask»")
+	pc.set_place(mpc_app, 2, "right", true)
+	pc.run("pc:" + mpc_app, {"monitor": 1, "mode": "max"})
+	_check(pc.executed[-2] == ["place", str(OS.get_process_id()), "1", "max", "mpc-be64.exe"], "with «ask» the phone chooses the screen and the position")
+	pc.run("pc:" + mpc_app, {"monitor": 99, "mode": "rm -rf"})
+	_check(pc.executed[-2][2] == "16" and pc.executed[-2][3] == "center", "the phone can pass only a screen number and one of four positions")
+	var before_count: int = pc.executed.size()
+	pc.run("pc:" + mpc_app, {"monitor": 0, "mode": "left"})
+	_check(pc.executed.size() == before_count + 1 and pc.executed[-1][0] == "explorer.exe", "«as it opens» on the phone launches without moving anything")
+	var ask_item: Dictionary = {}
+	for item in pc.catalog():
+		if item["command"] == "pc:" + mpc_app:
+			ask_item = item
+	_check(ask_item.has("ask_place") and ask_item["ask_place"]["monitors"].size() == 2 and ask_item["ask_place"]["modes"].has("left"), "the phone gets the screens and positions to choose from")
+	_check(PcActions.window_exe({"kind": "startapp", "target": "Claude_pzs8sxrjxfjjc!Claude"}) == "claude.exe" and PcActions.window_exe({"kind": "folder", "target": "D:/x"}) == "explorer.exe" and PcActions.window_exe({"kind": "open", "target": "D:/a.lnk"}) == "", "Hoshi knows whose window to wait for")
+	var reloaded = PcActions.new()
+	reloaded.path = pc.path
+	reloaded.load_actions()
+	var saved_place: Dictionary = {}
+	for item in reloaded.actions:
+		if item["id"] == mpc_app:
+			saved_place = item.get("place", {})
+	_check(saved_place == {"monitor": 2, "mode": "right", "ask": true} and reloaded.monitors.size() == 2, "window settings and the screen list are saved")
+
+	# Переставить уже открытое окно: только из последнего списка, экран и положение — из списков.
+	_check(pc.windows_state().is_empty() and pc.run("pc:move", {"hwnd": "123", "monitor": 1, "mode": "left"}) == "unknown_window", "no window list yet — nothing to move")
+	pc.apply_windows({"windows": [{"hwnd": "132456", "app": "CHROME.EXE", "monitor": 2, "state": "maximized", "title": "Секретная переписка"},
+		{"hwnd": "not-a-number", "app": "x.exe"}, {"hwnd": "777", "app": "mpc-be64.exe", "monitor": 1, "state": "hacked"}]})
+	_check(pc.open_windows.size() == 2 and pc.open_windows[0]["name"] == "Chrome" and pc.open_windows[1]["name"] == "MPC-BE" and pc.open_windows[1]["state"] == "normal", "open windows: program names only, bad entries dropped")
+	_check(not JSON.stringify(pc.windows_state()).contains("Секретная") and pc.windows_state()["monitors"].size() == 2, "window titles never reach the phone; the screen map does")
+	out = {}
+	_check(pc.run("pc:move", {"hwnd": "132456", "monitor": 1, "mode": "left"}, out) == "" and pc.executed[-1] == ["move", str(OS.get_process_id()), "132456", "1", "left"] and out["say"] == "Переставляю: Chrome", "a listed window moves to the chosen screen and half")
+	_check(pc.run("pc:move", {"hwnd": "999", "monitor": 1, "mode": "left"}) == "unknown_window" and pc.run("pc:move", {"hwnd": "777", "monitor": 0, "mode": "max"}) == "bad_screen", "unknown windows and «no screen» are refused")
+	pc.run("pc:move", {"hwnd": "777", "monitor": 3, "mode": "evil"})
+	_check(pc.executed[-1][4] == "center", "unknown positions become «centre»")
+	_check(PcActions.pretty_app("blender.exe") == "Blender" and PcActions.pretty_app("someapp.exe") == "Someapp", "friendly program names")
+	pc.run("pc:move", {"hwnd": "132456", "monitor": 2, "mode": "right", "front": true})
+	_check(pc.executed[-1] == ["move", str(OS.get_process_id()), "132456", "2", "right", "front"], "«over other windows» brings the moved window to the top")
+	out = {}
+	_check(pc.run("pc:front", {"hwnd": "777"}, out) == "" and pc.executed[-1] == ["front", str(OS.get_process_id()), "777"] and out["say"] == "Показываю: MPC-BE", "«show on top» without moving")
+	_check(pc.run("pc:front", {"hwnd": "31337"}) == "unknown_window", "only listed windows can be brought to the top")
+
 	# Через шину: телефон нажимает кнопку — действие выполняется, Хоши говорит.
 	var app := StubApp.new()
 	var bus = RemoteBus.new()

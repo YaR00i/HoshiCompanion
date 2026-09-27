@@ -160,7 +160,12 @@ func _run() -> void:
 	_check(claude.get("title", "") == "Claude" and claude["state"].has("badge"), "phone sees the Claude card")
 	watch.sessions.clear()
 	bus._sync_assistants()
-	_check(bus._state_message()["apps"].is_empty(), "no sessions — the card disappears")
+	_check(bus._state_message()["apps"].is_empty(), "no sessions and no note box — no card")
+	watch.listening = true
+	bus._sync_assistants()
+	var always: Array = bus._state_message()["apps"]
+	_check(always.size() == 1 and always[0]["id"] == "claude" and str(always[0]["state"].get("hint", "")).contains("напиши"), "with the note box on, the Claude card is always there, with a hint")
+	watch.listening = false
 	print("HOSHI_ASSISTANTS_RESULT checks=%d failures=%d" % [checks, failures])
 	quit(1 if failures > 0 else 0)
 

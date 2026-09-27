@@ -12,7 +12,7 @@ const MUTED: Color = Color("82798f")
 const PLUM: Color = Color("665479")
 const GOLD: Color = Color("c4a36e")
 const WIDTH: int = 390
-const HEIGHT: int = 622
+const HEIGHT: int = 706
 
 var status_label: Label
 var voice_button: Button
@@ -21,6 +21,7 @@ var stop_button: Button
 var activity_pick: OptionButton
 var autonomy_check: CheckButton
 var rest_check: CheckButton
+var remote_check: CheckButton
 
 func _ready() -> void:
 	name = "HoshiQuickMenu"
@@ -68,13 +69,17 @@ func _ready() -> void:
 	column.add_theme_constant_override("separation", 9)
 	margin.add_child(column)
 
-	voice_button = _button("♪  Поговорить через ChatGPT  ↗", "talk_voice", Color("f5e5ec"), 53)
+	var chat_row := HBoxContainer.new()
+	chat_row.add_theme_constant_override("separation", 7)
+	column.add_child(chat_row)
+	voice_button = _button("♪  ChatGPT голосом  ↗", "talk_voice", Color("f5e5ec"), 44)
 	voice_button.tooltip_text = "Открыть ChatGPT в браузере. В ChatGPT нажми Voice, затем включи расширение Хоши на этой вкладке."
-	column.add_child(voice_button)
-	var text_chat := _button("Открыть текстовый чат  ↗", "talk_text", Color("fffdfb"), 36)
+	voice_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	chat_row.add_child(voice_button)
+	var text_chat := _button("Текстовый чат  ↗", "talk_text", Color("fffdfb"), 44)
 	text_chat.tooltip_text = "Открыть ChatGPT в браузере без запуска голосовой связи Хоши."
-	column.add_child(text_chat)
-	column.add_child(_label("Голос включается на открытой вкладке ChatGPT", 11, MUTED))
+	text_chat.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	chat_row.add_child(text_chat)
 	status_label = _label("", 12, PLUM)
 	status_label.custom_minimum_size.y = 22
 	status_label.clip_text = true
@@ -105,6 +110,28 @@ func _ready() -> void:
 		activity_pick.add_item(option)
 	activity_pick.item_selected.connect(func(index: int): action_requested.emit(Commands.ACTIVITY_CHOICES[index]))
 	activity_row.add_child(activity_pick)
+
+	# Пульт с телефона и компьютер: всё новое — здесь, а не в глубине меню.
+	column.add_child(_label("ПУЛЬТ И КОМПЬЮТЕР", 11, MUTED))
+	var remote_row := HBoxContainer.new()
+	remote_row.add_theme_constant_override("separation", 7)
+	column.add_child(remote_row)
+	remote_check = _toggle("Пульт с телефона", "toggle_remote")
+	remote_check.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	remote_row.add_child(remote_check)
+	var qr := _button("QR и адрес", "remote_info", Color("fffdfb"), 32)
+	qr.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	remote_row.add_child(qr)
+	var pc_grid := GridContainer.new()
+	pc_grid.columns = 2
+	pc_grid.add_theme_constant_override("h_separation", 7)
+	pc_grid.add_theme_constant_override("v_separation", 7)
+	column.add_child(pc_grid)
+	for item in [["🚀  Мои действия", "pc_actions_editor"], ["🔊  Звук на пульте", "sound_outputs_editor"],
+			["⧉  Переставить окно", "move_window_editor"], ["🔄  Перезапустить", "restart"]]:
+		var button := _button(str(item[0]), str(item[1]), Color("fffdfb"), 40)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		pc_grid.add_child(button)
 	var divider := HSeparator.new()
 	divider.modulate = GOLD.lightened(0.35)
 	column.add_child(divider)
@@ -162,7 +189,8 @@ func _toggle(value: String, action: String) -> CheckButton:
 	item.toggled.connect(func(_enabled: bool): action_requested.emit(action))
 	return item
 
-func set_snapshot(state, label_text: String, can_walk: bool, can_stop: bool) -> void:
+func set_snapshot(state, label_text: String, can_walk: bool, can_stop: bool, remote_on: bool = false) -> void:
+	remote_check.set_pressed_no_signal(remote_on)
 	status_label.text = "✦  " + (label_text if not label_text.is_empty() else state.state_label())
 	walk_button.disabled = not can_walk
 	stop_button.disabled = not can_stop

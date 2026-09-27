@@ -246,6 +246,7 @@ func _process(delta: float) -> void:
 	remote.tick(dt)
 	# Звуковой помощник отвечает не сразу; работает и при выключенном пульте (окно на ПК).
 	remote.sound.tick(dt, remote.phone_count() > 0)
+	remote.pc.tick(dt) # запуск с расстановкой окна и список экранов (работает и без пульта)
 	_tick_restart(dt)
 	remote.assistants.tick(dt)
 	ui.cloud_items = remote.assistants.clouds()
@@ -659,6 +660,9 @@ func _on_action(command: Variant) -> void:
 		return
 	if action == "sound_outputs_editor":
 		ui.show_sound_outputs(remote.sound, remote.refresh_catalog)
+		return
+	if action == "move_window_editor":
+		ui.show_move_window(remote.pc)
 		return
 	if action == "remote_forget":
 		remote.forget_phones()
