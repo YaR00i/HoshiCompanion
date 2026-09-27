@@ -58,6 +58,24 @@ func _run() -> void:
 	_check(watch.sessions.size() == 2, "unknown apps and notes without a session are ignored")
 	_note(watch, "SessionEnd", "s2")
 	_check(watch.latest() == "s1" and watch.sessions.size() == 1, "a closed session leaves the card")
+	# Облачко над Хоши: одно на помощника; «ждёт» важнее «работает»; ✓ тает.
+	var clouds = AssistantWatch.new()
+	_check(clouds.clouds().is_empty(), "no sessions — no cloud")
+	_note(clouds, "UserPromptSubmit", "a")
+	_note(clouds, "Stop", "b", {"text": "готово"})
+	_check(clouds.clouds() == [{"app": "claude", "status": "working"}], "one cloud per assistant: working wins over done")
+	_note(clouds, "Notification", "b", {"kind": "permission_prompt"})
+	_check(clouds.clouds()[0]["status"] == "waiting", "waiting for permission wins over working")
+	_note(clouds, "Stop", "a", {"text": "ok"})
+	_note(clouds, "Stop", "b", {"text": "ok"})
+	_check(clouds.clouds()[0]["status"] == "done", "finished — a cloud with a check mark")
+	clouds.mark_seen()
+	_check(clouds.clouds().is_empty(), "petting Hoshi melts the check-mark cloud")
+	_note(clouds, "Stop", "a", {"text": "ещё"})
+	clouds.tick(AssistantWatch.DONE_CLOUD_SECONDS) # tick clamps delta: move the clock directly
+	clouds._clock += AssistantWatch.DONE_CLOUD_SECONDS
+	_check(clouds.clouds().is_empty() and clouds.sessions.has("a"), "the check mark melts by itself after 10 minutes; the card stays")
+
 	for index in range(12):
 		_note(watch, "UserPromptSubmit", "many%d" % index)
 	_check(watch.sessions.size() == AssistantWatch.MAX_SESSIONS, "at most %d sessions are kept" % AssistantWatch.MAX_SESSIONS)
@@ -93,7 +111,10 @@ func _run() -> void:
 	live.handle_event({"app": "claude", "event": "UserPromptSubmit", "session": "live"})
 	got = await _read_all(live, waiter)
 	_check(got.begins_with("HTTP/1.1 204") and not live.can_reply("live"), "typing on the PC lets the waiting hook go without a reply")
+	waiter = await _open_waiter(live, "live")
 	live.stop()
+	got = await _read_all(live, waiter)
+	_check(got.is_empty(), "closing Hoshi just drops the waiting hook (no «let go»), so it knocks again after a restart")
 
 	# Через шину: карточка «Claude» у телефона, исчезает без сессий.
 	var bus = RemoteBus.new()

@@ -28,7 +28,7 @@ PATH = '/assistant'
 URL = 'http://%s:%d%s' % (HOST, PORT, PATH)
 # --wait: Hoshi went away while we waited (restart) -> knock every few seconds, for a while.
 RETRY_EVERY = 3.0
-RETRY_AFTER_LOSS = 180.0
+RETRY_AFTER_LOSS = 12 * 3600.0  # Hoshi closed for the night -> the card comes back in the morning
 MAX_TEXT = 6000
 EVENTS = {'SessionStart', 'UserPromptSubmit', 'Notification', 'Stop', 'SessionEnd'}
 
@@ -59,9 +59,10 @@ def wait_for_phone(event: dict) -> int:
     Hoshi keeps this request open. A reply arrives -> print it and exit 2, so
     Claude Code wakes Claude with it. The user typed on the PC or the session
     ended -> exit 0 quietly. Hoshi is not running -> exit 0 at once.
-    Hoshi was running and went away (restart) -> knock again for a few
-    minutes; each knock also brings back the last answer, so the phone card
-    reappears after a restart without Hoshi writing anything to disk.
+    Hoshi was running and went away (restart, closed for the night) -> knock
+    again every few seconds for up to 12 hours; each knock also brings back
+    the last answer, so the phone card reappears without Hoshi writing
+    anything to disk.
     """
     session = str(event.get('session_id', ''))[:64]
     if not session:

@@ -464,6 +464,16 @@ function buildApp(app, signature) {
   } else card.append(el("div", "empty", s.hint || "Ничего не играет"));
   const byName = {}; for (const c of app.commands) byName[c.command.split(":")[2]] = c;
   if (s.text) card.append(el("div", "answer", s.text));
+  // Быстрые кнопки Claude видны всегда; живые — только пока Claude ждёт ответа.
+  if (byName.reply && !s.can_reply) {
+    const quick = el("div", "chips quick-replies");
+    for (const label of ["👋 Ты тут?", "▶ Продолжай", "✓ Ок", "💾 Коммить"]) {
+      const chip = el("button", "chip", label); chip.disabled = true; chip.style.opacity = ".45"; quick.append(chip);
+    }
+    card.append(quick);
+    card.append(el("div", "empty", s.subtitle === "работает…" ? "Claude работает — кнопки оживут, когда закончит"
+      : "Claude не ждёт ответа — напиши ему в сессии на ПК, потом кнопки оживут"));
+  }
   // Ответ Claude с телефона: поле есть, только пока Claude ждёт (его хук на связи).
   if (s.can_reply && byName.reply) {
     const box = el("div", "reply"); const input = el("textarea"); const send = el("button", "", "Отправить");

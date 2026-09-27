@@ -215,6 +215,7 @@ func finish_press() -> void:
 		app.playground.cancel_queued_walk()
 		app.state.posture.keep_rest()
 		if gesture == "pet":
+			app.remote.assistants.mark_seen() # погладили — облачко с ✓ тает
 			if app.interaction.allow_bubble():
 				app.ui.say("М-м…")
 		elif gesture in ["wake", "return"]:

@@ -41,6 +41,9 @@ static func clickthrough_setting(config: ConfigFile) -> bool:
 func bubbles_enabled() -> bool:
 	return bool(config.get_value("behavior", "bubbles", true))
 
+func assistant_clouds_enabled() -> bool:
+	return bool(config.get_value("behavior", "assistant_clouds", true))
+
 ## Каждый кадр: отложенное сохранение после правки света.
 func tick(dt: float) -> void:
 	if save_delay >= 0.0:
@@ -128,6 +131,7 @@ func save() -> void:
 	config.set_value("behavior", "edge_activity", app.state.edge_activity)
 	config.set_value("behavior", "activity", app.state.activity)
 	config.set_value("behavior", "bubbles", app.ui.bubbles_enabled)
+	config.set_value("behavior", "assistant_clouds", app.ui.clouds_enabled)
 	config.set_value("render", "fps", app.frame_rate)
 	config.set_value("remote", "enabled", app.remote.enabled)
 	config.set_value("remote", "tokens", app.remote.tokens)

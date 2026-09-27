@@ -26,6 +26,8 @@ const MAX_TEXT: int = 6000
 const MAX_REPLY: int = 2000
 ## Закончившие сессии без новостей дольше этого — убрать с пульта.
 const FORGET_AFTER: float = 3.0 * 3600.0
+## Облачко «✓ закончил» над Хоши держится не дольше этого.
+const DONE_CLOUD_SECONDS: float = 600.0
 
 const STATUS_TEXT := {"working": "работает…", "done": "✓ закончил", "waiting": "? ждёт разрешения", "idle": "на связи"}
 
@@ -49,8 +51,11 @@ func stop() -> void:
 	for client in _clients:
 		client["stream"].disconnect_from_host()
 	_clients.clear()
+	# Хоши закрывается: просто обрываем связь (не «отпускаем»), чтобы ждуны
+	# постучались снова, когда она вернётся (перезапуск), и принесли карточку.
 	for id in _waiters.keys():
-		_release(id, "")
+		(_waiters[id] as StreamPeerTCP).disconnect_from_host()
+	_waiters.clear()
 	_server.stop()
 	listening = false
 
@@ -201,6 +206,28 @@ func _release(id: String, text: String) -> void:
 			stream.put_data(("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % body.size()).to_utf8_buffer())
 			stream.put_data(body)
 	stream.disconnect_from_host()
+
+## Облачка над Хоши: по одному на помощника — [{app, status}]. Ждёт разрешения
+## важнее, чем работает; «закончил» — пока не погладили Хоши и не дольше 10 минут.
+func clouds() -> Array:
+	var status: String = ""
+	for id in sessions:
+		var session: Dictionary = sessions[id]
+		match str(session["status"]):
+			"waiting":
+				status = "waiting"
+			"working":
+				if status != "waiting":
+					status = "working"
+			"done":
+				if status.is_empty() and not bool(session["seen"]) and _clock - float(session["at"]) < DONE_CLOUD_SECONDS:
+					status = "done"
+	return [] if status.is_empty() else [{"app": "claude", "status": status}]
+
+## Погладили Хоши — «видела»: облачка с ✓ тают.
+func mark_seen() -> void:
+	for id in sessions:
+		sessions[id]["seen"] = true
 
 ## Самая свежая сессия (её показывает карточка). Пусто — сессий нет.
 func latest() -> String:

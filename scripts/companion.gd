@@ -109,6 +109,7 @@ func _ready() -> void:
 	ui.menu.popup_hide.connect(_on_menu_hidden)
 	ui.quick_menu.popup_hide.connect(_on_menu_hidden)
 	ui.bubbles_enabled = settings.bubbles_enabled()
+	ui.clouds_enabled = settings.assistant_clouds_enabled()
 	get_window().close_requested.connect(_quit)
 	var args: PackedStringArray = OS.get_cmdline_user_args()
 	var wants_preview: bool = not args.has("--desktop") or args.has("--preview")
@@ -247,6 +248,7 @@ func _process(delta: float) -> void:
 	remote.sound.tick(dt, remote.phone_count() > 0)
 	_tick_restart(dt)
 	remote.assistants.tick(dt)
+	ui.cloud_items = remote.assistants.clouds()
 	# Код одноразовый: после привязки телефона окно сразу показывает новый QR.
 	if ui.remote_window != null and ui.remote_window.visible and ui.remote_code_version != remote.code_version:
 		_show_remote_info()
@@ -705,6 +707,7 @@ func _on_action(command: Variant) -> void:
 	match action:
 		"wave": runner.start("wave", "user")
 		"pet":
+			remote.assistants.mark_seen() # погладили — «видела»: облачко с ✓ тает
 			if interaction.accept_button_pet():
 				state.pet()
 				if interaction.allow_bubble():
@@ -745,6 +748,7 @@ func _on_action(command: Variant) -> void:
 					state.posture.request_stand()
 		"toggle_hair": state.hair_enabled = not state.hair_enabled
 		"toggle_bubbles": ui.bubbles_enabled = not ui.bubbles_enabled
+		"toggle_assistant_clouds": ui.clouds_enabled = not ui.clouds_enabled
 		"toggle_clickthrough":
 			host.mask_enabled = not host.mask_enabled
 			host.apply_mask()

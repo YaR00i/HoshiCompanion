@@ -3,6 +3,7 @@ const SurfaceMap = preload("res://scripts/window_surface_map.gd")
 const QuickMenu = preload("res://scripts/hoshi_quick_menu.gd")
 const QRCode = preload("res://scripts/qr_code.gd")
 const Commands = preload("res://scripts/hoshi_commands.gd")
+const AssistantClouds = preload("res://scripts/assistant_clouds.gd")
 
 signal action_requested(command: String)
 signal light_position_changed(position: Vector3)
@@ -77,6 +78,10 @@ var bubble: PanelContainer
 var bubble_label: Label
 var _bubble_left: float = 0.0
 var bubbles_enabled: bool = true
+## Облачка ИИ-помощников над Хоши (assistant_clouds.gd) и что в них показать.
+var clouds: Control
+var clouds_enabled: bool = true
+var cloud_items: Array = []
 var _preview: bool = true
 var shelf_active: bool = false
 var clickthrough_enabled: bool = true
@@ -276,6 +281,9 @@ func _build_bubble() -> void:
 	bubble.add_child(bubble_label)
 	add_child(bubble)
 	bubble.hide()
+	clouds = AssistantClouds.new()
+	add_child(clouds)
+	clouds.hide()
 
 func say(text: String) -> void:
 	if not bubbles_enabled:
@@ -288,6 +296,8 @@ func say(text: String) -> void:
 func tick(delta: float, head_point: Vector2, frame_size: Vector2) -> void:
 	_bubble_left = maxf(0.0, _bubble_left - delta)
 	bubble.visible = _bubble_left > 0.0 and bubbles_enabled
+	clouds.items = cloud_items if clouds_enabled else []
+	clouds.place(delta, head_point, frame_size)
 	if bubble.visible:
 		# Keep desktop text inside the stable native window region.
 		bubble.position = Vector2(
@@ -350,7 +360,7 @@ func refresh(state, status_override: String = "", walking: bool = false) -> void
 	_set_action_disabled("walk", not _walk_available or walking or not state.motion_enabled)
 	_set_action_disabled("stop", stop_button.disabled)
 	sleep_button.text = "Разбудить" if state.dozing or state.sleep_requested else "Дремать"
-	for pair in [["toggle_auto_rest", state.rest_enabled], ["toggle_auto_walk", state.walk_enabled], ["toggle_autonomy", state.autonomy_enabled], ["toggle_look", state.look_enabled], ["toggle_motion", state.motion_enabled], ["toggle_hair", state.hair_enabled], ["toggle_bubbles", bubbles_enabled], ["toggle_clickthrough", clickthrough_enabled], ["toggle_remote", remote_enabled]]:
+	for pair in [["toggle_auto_rest", state.rest_enabled], ["toggle_auto_walk", state.walk_enabled], ["toggle_autonomy", state.autonomy_enabled], ["toggle_look", state.look_enabled], ["toggle_motion", state.motion_enabled], ["toggle_hair", state.hair_enabled], ["toggle_bubbles", bubbles_enabled], ["toggle_assistant_clouds", clouds_enabled], ["toggle_clickthrough", clickthrough_enabled], ["toggle_remote", remote_enabled]]:
 		_set_action_checked(str(pair[0]), bool(pair[1]))
 	_set_action_text("doze", "Разбудить" if state.dozing or state.sleep_requested else "Подремать сидя")
 	quick_menu.set_snapshot(state, status.text, not walk_button.disabled, not stop_button.disabled)
@@ -959,6 +969,7 @@ func _build_menu() -> void:
 	_add_menu_item(autonomy, "Самостоятельный отдых", "toggle_auto_rest", true)
 	_add_menu_item(autonomy, "Внимание к курсору", "toggle_look", true)
 	_add_menu_item(autonomy, "Короткие реплики", "toggle_bubbles", true)
+	_add_menu_item(autonomy, "Облачка помощников", "toggle_assistant_clouds", true)
 	autonomy.add_separator()
 	_submenu(autonomy, "Активность  ›", "ActivityMenu", [["Тихая · без прогулок", "activity_quiet"], ["Обычная", "activity_normal"], ["Игривая", "activity_playful"]])
 	_submenu(autonomy, "Где отдыхать  ›", "PlaceMenu", [["Только вручную", "place_manual"], ["Свой уголок", "place_cozy"], ["Окна → уголок", "place_smart"], ["Моё окно → уголок", "place_focus"]])

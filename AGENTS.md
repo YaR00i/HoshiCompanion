@@ -170,6 +170,8 @@
   buttons"): a second Stop hook `claude_hook.py --wait` with asyncRewake holds POST {"event":"Wait"}
   open; "app:claude:reply" {text<=2000, session} releases it with the text, the hook exits 2 and
   Claude Code wakes Claude with it. UserPromptSubmit/SessionEnd/Hoshi exit release it empty.
+  Clouds over Hoshi: assistant_watch.clouds() -> companion_ui -> assistant_clouds.gd (draw only,
+  mouse-transparent, menu toggle "toggle_assistant_clouds", saved in companion.cfg); petting marks seen.
   Phone packets may be up to 8 KB for this. Never change Claude's permission mode from the phone.
 - Command "restart" (menu + phone, flag "confirm"): scripts/hoshi_restart.gd runs
   tools/restart_hoshi.py check (headless import like launch.cmd); only on success it starts the

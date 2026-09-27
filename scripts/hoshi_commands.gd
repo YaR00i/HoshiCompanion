@@ -122,6 +122,7 @@ const LIST := {
 	"toggle_motion": {"title": "Мягкие движения", "group": "look", "menu_id": 121, "sources": ["user"]},
 	"toggle_hair": {"title": "Движение волос", "group": "look", "menu_id": 122, "sources": ["user"]},
 	"toggle_bubbles": {"title": "Короткие реплики", "group": "look", "menu_id": 123, "sources": ["user"]},
+	"toggle_assistant_clouds": {"title": "Облачка помощников", "group": "look", "menu_id": 128, "sources": ["user"]},
 	"toggle_clickthrough": {"title": "Клики только по Хоши", "group": "tools", "menu_id": 124, "sources": ["user"]},
 	"toggle_auto_walk": {"title": "Самостоятельные прогулки", "group": "autonomy", "menu_id": 125, "sources": ["user", "remote"]},
 	"toggle_autonomy": {"title": "Самостоятельность", "group": "autonomy", "menu_id": 126, "sources": ["user", "remote"]},
