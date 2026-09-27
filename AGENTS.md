@@ -148,4 +148,11 @@
   "pc:<id>" of saved actions and can never supply a path, program or arguments. Shutdown/restart need
   {"confirm": true} and use a 60 s delay with pc:cancel; system buttons are off by default.
   test_pc_actions.gd runs everything in dry_run.
+- scripts/sound_outputs.gd ("Звук на пульте", card «Звук» on the main tab): which output devices the
+  phone may switch to is chosen only on the PC (menu → Пульт с телефона → Звук на пульте), stored in
+  user://sound_outputs.json. Phones send only "sound:<id>" of saved buttons, never a device id.
+  tools/audio_devices.py (list / set) runs as a separate process; it switches only the console +
+  multimedia default and never the communications default. Privacy (user-approved 2026-09-27):
+  output device friendly names and which one is default only; never playing programs, sessions,
+  volume or media. test_sound_outputs.gd runs in dry_run.
 

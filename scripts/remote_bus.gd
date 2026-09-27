@@ -22,6 +22,7 @@ extends RefCounted
 const Commands = preload("res://scripts/hoshi_commands.gd")
 const Adapters = preload("res://scripts/app_adapters.gd")
 const PcActions = preload("res://scripts/pc_actions.gd")
+const SoundOutputs = preload("res://scripts/sound_outputs.gd")
 
 const HTTP_PORT: int = 18770
 const WS_PORT: int = 18771
@@ -46,6 +47,8 @@ var tokens: PackedStringArray = []
 var adapters = Adapters.new()
 ## «Мои действия» для вкладки «Компьютер» (задаются только на ПК).
 var pc = PcActions.new()
+## «Звук на пульте»: куда идёт звук ПК (устройства выбираются только на ПК).
+var sound = SoundOutputs.new()
 var last_error: String = ""
 ## Для тестов: слушать только 127.0.0.1 и на других портах.
 var loopback_only: bool = false
@@ -150,6 +153,9 @@ func tick(delta: float) -> void:
 		# A reconnecting phone may have closed another peer earlier in this loop.
 		if _peers.has(key):
 			_poll_peer(key, dt)
+	if not sound.notice.is_empty():
+		_say(sound.notice)
+		sound.notice = ""
 	_state_clock += dt
 	if _state_clock >= 0.5:
 		_state_clock = 0.0
@@ -372,12 +378,11 @@ func _handle_adapter(key: int, op: String, message: Dictionary) -> void:
 
 ## Выполнить команду с телефона. Пусто — выполнено, иначе причина отказа.
 func run(command: String, args: Variant = {}) -> String:
-	if command.begins_with("pc:"):
+	if command.begins_with("pc:") or command.begins_with("sound:"):
 		var out: Dictionary = {}
-		var reason: String = pc.run(command, args if args is Dictionary else {}, out)
-		var app_for_say = _app()
-		if out.has("say") and app_for_say != null and app_for_say.has_method("remote_say"):
-			app_for_say.remote_say(str(out["say"]))
+		var reason: String = pc.run(command, args if args is Dictionary else {}, out) if command.begins_with("pc:") else sound.run(command, out)
+		if out.has("say"):
+			_say(str(out["say"]))
 		return reason
 	if command.begins_with("app:"):
 		var target: Dictionary = adapters.resolve(command)
@@ -392,6 +397,11 @@ func run(command: String, args: Variant = {}) -> String:
 		return "no_app"
 	app.run_command(command)
 	return ""
+
+func _say(text: String) -> void:
+	var app = _app()
+	if app != null and app.has_method("remote_say"):
+		app.remote_say(text)
 
 func _clean_args(args: Variant) -> Dictionary:
 	var result: Dictionary = {}
@@ -409,6 +419,7 @@ func _clean_args(args: Variant) -> Dictionary:
 
 func _welcome(key: int) -> void:
 	_send(key, {"op": "welcome", "catalog": remote_catalog()})
+	sound.request_refresh()
 	_send(key, _state_message())
 
 ## Команды Хоши для пульта: быстрые кнопки и разделы по вкладкам.
@@ -425,9 +436,9 @@ func remote_catalog() -> Dictionary:
 				items.append(_item(command))
 		if not items.is_empty():
 			groups.append({"id": group[0], "title": group[1], "tab": group[2], "commands": items})
-	return {"quick": quick, "groups": groups, "pc": pc.catalog()}
+	return {"quick": quick, "groups": groups, "pc": pc.catalog(), "sound": sound.catalog()}
 
-## Список «Моих действий» изменили на ПК — обновить пульты.
+## Список «Моих действий» или «Звука на пульте» изменили на ПК — обновить пульты.
 func refresh_catalog() -> void:
 	for key in _peers:
 		if _peers[key]["role"] == "phone" and _peers[key]["authed"]:
@@ -439,7 +450,7 @@ func _item(command: String) -> Dictionary:
 func _state_message() -> Dictionary:
 	var app = _app()
 	var hoshi: Dictionary = app.remote_snapshot() if app != null and app.has_method("remote_snapshot") else {}
-	return {"op": "state", "hoshi": hoshi, "apps": adapters.catalog(), "pc_pending": pc.pending_state()}
+	return {"op": "state", "hoshi": hoshi, "apps": adapters.catalog(), "pc_pending": pc.pending_state(), "sound": sound.state()}
 
 func _broadcast_state(force: bool) -> void:
 	var message: Dictionary = _state_message()

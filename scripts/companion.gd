@@ -71,6 +71,7 @@ func _ready() -> void:
 	support_port.setup(self)
 	remote.setup(self)
 	remote.pc.load_actions()
+	remote.sound.load_outputs()
 	host.setup(get_window())
 	var seed_value: int = 70420 if OS.get_cmdline_user_args().has("--test-mode") else int(Time.get_ticks_usec())
 	state.seed_random(seed_value)
@@ -234,6 +235,8 @@ func _process(delta: float) -> void:
 	focus.ensure(_ready_to_run and state.place_mode == "focus" and not host.preview and not host.headless)
 	focus.tick(dt)
 	remote.tick(dt)
+	# Звуковой помощник отвечает не сразу; работает и при выключенном пульте (окно на ПК).
+	remote.sound.tick(dt, remote.phone_count() > 0)
 	# Код одноразовый: после привязки телефона окно сразу показывает новый QR.
 	if ui.remote_window != null and ui.remote_window.visible and ui.remote_code_version != remote.code_version:
 		_show_remote_info()
@@ -603,6 +606,9 @@ func _on_action(command: Variant) -> void:
 		return
 	if action == "pc_actions_editor":
 		ui.show_pc_actions(remote.pc, remote.refresh_catalog)
+		return
+	if action == "sound_outputs_editor":
+		ui.show_sound_outputs(remote.sound, remote.refresh_catalog)
 		return
 	if action == "remote_forget":
 		remote.forget_phones()

@@ -43,6 +43,8 @@
   .tile .icon { font-size: 24px; line-height: 28px; }
   .tile:active { transform: scale(.95); background: var(--soft); }
   .tile.on { background: var(--plum); border-color: var(--plum); color: #fff; }
+  .tile.off { opacity: .45; }
+  .tile .note { font-size: 10px; color: var(--muted); }
 
   /* чипы режимов */
   .chips { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -143,6 +145,7 @@
   <div id="remote" class="hidden">
     <section class="tab active" data-tab="main">
       <div class="quick" id="quick"></div>
+      <div id="sound"></div>
       <div id="apps"></div>
     </section>
     <section class="tab" data-tab="play" id="playTab"></section>
@@ -236,7 +239,7 @@ function connect() {
     let m; try { m = JSON.parse(event.data); } catch (e) { return; }
     if (m.op === "paired") { token = m.token; try { localStorage.setItem("hoshi-token", token); } catch (e) {} }
     else if (m.op === "welcome" || m.op === "catalog") {
-      catalog = m.catalog || catalog; showRemote(); renderHoshi(); renderPc();
+      catalog = m.catalog || catalog; showRemote(); renderHoshi(); renderPc(); renderSound();
       if (m.op === "welcome") {
         welcomed = true;
         // Нажатие, сделанное пока связь восстанавливалась, уходит сразу (если ему < 5 с).
@@ -244,9 +247,10 @@ function connect() {
         queued = null;
       }
     }
-    else if (m.op === "state") { state = m; online(true, (m.hoshi && m.hoshi.status) || "На связи"); renderHoshi(); renderApps(); renderPending(); }
+    else if (m.op === "state") { state = m; online(true, (m.hoshi && m.hoshi.status) || "На связи"); renderHoshi(); renderSound(); renderApps(); renderPending(); }
     else if (m.op === "ran" && !m.ok) toast({not_allowed: "С телефона так нельзя", missing: "Не нашла этот файл на компьютере",
-      nothing_to_cancel: "Нечего отменять", need_confirm: "Нужно подтвердить"}[m.reason] || "Сейчас не получилось");
+      nothing_to_cancel: "Нечего отменять", need_confirm: "Нужно подтвердить",
+      not_available: "Это устройство сейчас не на связи"}[m.reason] || "Сейчас не получилось");
     else if (m.op === "error") {
       if (m.reason === "need_pairing") {
         token = null; try { localStorage.removeItem("hoshi-token"); } catch (e) {}
@@ -360,6 +364,29 @@ function renderPending() {
   const text = el("span", ""); text.append((p.kind === "restart" ? "Перезагрузка" : "Выключение") + " через ", el("b", "", clock(p.seconds)));
   const cancel = el("button", "", "Отменить"); cancel.onclick = () => run(p.cancel);
   box.append(text, cancel);
+}
+
+// Карточка «Звук»: куда идёт звук компьютера. Кнопки задаются на ПК
+// (меню Хоши → Пульт с телефона → Звук на пульте); выключенное устройство — серое.
+function renderSound() {
+  const root = $("sound"); root.textContent = "";
+  const items = catalog.sound || [];
+  if (!items.length) return;
+  const s = state.sound || {};
+  const available = new Set(s.available || []);
+  const card = el("div", "app");
+  card.append(el("div", "app-head", "Звук"));
+  const box = el("div", "tiles");
+  for (const item of items) {
+    const off = s.known && !available.has(item.command);
+    const b = el("button", "tile" + (s.current === item.command ? " on" : "") + (off ? " off" : ""));
+    b.append(el("span", "icon", item.icon || "🔊"), el("span", "", item.title));
+    if (off) b.append(el("span", "note", "нет на связи"));
+    b.onclick = () => run(item.command);
+    box.append(b);
+  }
+  card.append(box);
+  root.append(card);
 }
 
 function clock(s) {

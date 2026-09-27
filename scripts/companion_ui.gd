@@ -39,6 +39,11 @@ var _pc_url: LineEdit
 var _pc_source
 var _pc_changed: Callable
 var _pc_dialog: FileDialog
+var sound_window: Window
+var _sound_list: VBoxContainer
+var _sound_status: Label
+var _sound_source
+var _sound_changed: Callable
 var _remote_text: Label
 var _remote_qr: TextureRect
 ## Какой код сейчас показан в окне (remote_bus.code_version).
@@ -566,6 +571,143 @@ func _refresh_pc_actions() -> void:
 		row.add_child(remove)
 		_pc_list.add_child(row)
 
+## Окно «Звук на пульте»: какие устройства вывода показать на телефоне и как их назвать.
+## sound — sound_outputs.gd; on_changed — сообщить пультам, что список изменился.
+func show_sound_outputs(sound, on_changed: Callable) -> void:
+	_sound_source = sound
+	_sound_changed = on_changed
+	if sound_window == null:
+		_build_sound_window()
+	if not sound.devices_changed.is_connected(_refresh_sound_outputs):
+		sound.devices_changed.connect(_refresh_sound_outputs)
+	sound.request_refresh()
+	_refresh_sound_outputs()
+	sound_window.popup_centered()
+
+func _build_sound_window() -> void:
+	sound_window = Window.new()
+	sound_window.title = "Звук на пульте"
+	sound_window.size = Vector2i(500, 460)
+	sound_window.min_size = Vector2i(440, 340)
+	sound_window.always_on_top = true
+	sound_window.theme = theme
+	add_child(sound_window)
+	sound_window.close_requested.connect(sound_window.hide)
+	var panel_bg := PanelContainer.new()
+	panel_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("fffdfb")
+	style.set_content_margin_all(16)
+	panel_bg.add_theme_stylebox_override("panel", style)
+	sound_window.add_child(panel_bg)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 8)
+	panel_bg.add_child(column)
+	column.add_child(_label("Отметь, куда переключать звук с телефона, и дай кнопкам имена.", 13, MUTED))
+	var status_row := HBoxContainer.new()
+	column.add_child(status_row)
+	_sound_status = _label("", 13, INK)
+	_sound_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	status_row.add_child(_sound_status)
+	var refresh := Button.new()
+	refresh.text = "↻ Обновить"
+	refresh.pressed.connect(func(): _sound_source.request_refresh())
+	status_row.add_child(refresh)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	column.add_child(scroll)
+	_sound_list = VBoxContainer.new()
+	_sound_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_sound_list.add_theme_constant_override("separation", 4)
+	scroll.add_child(_sound_list)
+	column.add_child(_label("«Связь» (Discord, звонки) не переключается. Выключенный телевизор на пульте будет серым.", 11, MUTED))
+
+func _after_sound_change() -> void:
+	_refresh_sound_outputs()
+	if _sound_changed.is_valid():
+		_sound_changed.call()
+
+func _refresh_sound_outputs() -> void:
+	if sound_window == null or _sound_source == null:
+		return
+	var sound = _sound_source
+	var now: String = sound.current_device()
+	var now_name: String = ""
+	for entry in sound.devices:
+		if entry["device"] == now:
+			now_name = str(entry["name"])
+	if not sound.known:
+		_sound_status.text = "Смотрю устройства…"
+	else:
+		_sound_status.text = "Сейчас звук: " + (now_name if not now_name.is_empty() else "—")
+	# Не перестраивать список, пока в нём печатают имя.
+	var focus: Control = sound_window.gui_get_focus_owner()
+	if focus != null and _sound_list.is_ancestor_of(focus):
+		return
+	for child in _sound_list.get_children():
+		child.queue_free()
+	# Сначала кнопки пульта (в их порядке), потом остальные активные устройства.
+	var rows: Array = []
+	for item in sound.outputs:
+		var dev_name: String = ""
+		for entry in sound.devices:
+			if entry["device"] == item["device"]:
+				dev_name = str(entry["name"])
+		rows.append({"device": item["device"], "name": dev_name, "item": item})
+	for entry in sound.devices:
+		if sound.index_of_device(entry["device"]) < 0:
+			rows.append({"device": entry["device"], "name": str(entry["name"]), "item": {}})
+	if rows.is_empty():
+		_sound_list.add_child(_label("Устройств пока не видно." if sound.known else "", 12, MUTED))
+	for row_data in rows:
+		var item: Dictionary = row_data["item"]
+		var device: String = row_data["device"]
+		var dev_name: String = row_data["name"]
+		var active: bool = sound.is_active(device)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		var check := CheckBox.new()
+		check.button_pressed = not item.is_empty()
+		check.tooltip_text = "Показывать на пульте"
+		check.toggled.connect(func(on: bool):
+			sound.set_shown(device, dev_name, on)
+			_after_sound_change())
+		row.add_child(check)
+		if item.is_empty():
+			var title := _label(dev_name, 13, INK)
+			title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			row.add_child(title)
+		else:
+			row.add_child(_label(str(item["icon"]), 18, INK))
+			var name_edit := LineEdit.new()
+			name_edit.text = str(item["title"])
+			name_edit.tooltip_text = dev_name if not dev_name.is_empty() else "Сейчас не подключено"
+			name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			name_edit.custom_minimum_size.x = 120
+			_style_line_edit(name_edit)
+			name_edit.text_submitted.connect(func(value: String):
+				sound.rename(item["id"], value)
+				name_edit.release_focus()
+				_after_sound_change())
+			name_edit.focus_exited.connect(func():
+				if name_edit.text != str(item["title"]):
+					sound.rename(item["id"], name_edit.text)
+					_after_sound_change())
+			row.add_child(name_edit)
+			if sound.known and not active:
+				row.add_child(_label("нет на связи", 11, MUTED))
+			elif device == now:
+				row.add_child(_label("♪ сейчас", 11, PLUM))
+			for pair in [["▲", -1], ["▼", 1]]:
+				var move := Button.new()
+				move.text = pair[0]
+				move.pressed.connect(func():
+					sound.move(item["id"], pair[1])
+					_after_sound_change())
+				row.add_child(move)
+		_sound_list.add_child(row)
+
 ## Окно «Пульт с телефона»: адрес страницы и код привязки крупно.
 func show_remote_info(enabled: bool, addresses: PackedStringArray, code: String, phones: int, error: String = "", qr_text: String = "", code_version: int = -1) -> void:
 	remote_code_version = code_version
@@ -794,6 +936,7 @@ func _build_menu() -> void:
 	_add_menu_item(remote_menu, "Пульт включён", "toggle_remote", true)
 	_add_menu_item(remote_menu, "Адрес и код для телефона…", "remote_info")
 	_add_menu_item(remote_menu, "Мои действия для пульта…", "pc_actions_editor")
+	_add_menu_item(remote_menu, "Звук на пульте…", "sound_outputs_editor")
 	_add_menu_item(remote_menu, "Забыть все телефоны", "remote_forget")
 	var appearance := _submenu(menu, "Внешний вид  ›", "AppearanceMenu", [])
 	_add_menu_item(appearance, "Настроить свет, тени и обводку…", "light_editor")
