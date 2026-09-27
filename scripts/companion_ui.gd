@@ -457,7 +457,19 @@ func show_pc_actions(pc, on_changed: Callable) -> void:
 	if pc_window == null:
 		_build_pc_window()
 	_refresh_pc_actions()
-	pc_window.popup_centered()
+	_open_on_top(pc_window)
+
+## Открыть окно «поверх других» по центру (родительского окна или экрана).
+## Не popup_centered(): он делает окно «привязанным» (transient), а Windows
+## не даёт так окнам поверх других — в журнале сыпались ошибки.
+func _open_on_top(target: Window) -> void:
+	var area := Rect2i(DisplayServer.screen_get_usable_rect(get_window().current_screen))
+	var parent := target.get_parent() as Window
+	if parent != null and parent.visible and parent != get_tree().root:
+		area = Rect2i(parent.position, parent.size)
+	target.position = area.position + (area.size - target.size) / 2
+	target.show()
+	target.grab_focus()
 
 func _build_pc_window() -> void:
 	pc_window = Window.new()
@@ -634,7 +646,7 @@ func show_move_window(pc) -> void:
 		front_row.add_child(show_front)
 	_move_version = -1
 	pc.refresh_windows()
-	move_window.popup_centered()
+	_open_on_top(move_window)
 
 func _move_selected(mode: String) -> void:
 	var picked: PackedInt32Array = _move_list.get_selected_items()
@@ -744,7 +756,7 @@ func _show_place_window(id: String) -> void:
 	_place_reuse.disabled = PcActions.window_exe(action_item).is_empty() # неизвестно, чьё окно искать
 	_place_map.monitors = _pc_source.monitors
 	_place_map.selected = int(place.get("monitor", 0))
-	_place_window.popup_centered()
+	_open_on_top(_place_window)
 
 ## Окно «Из меню «Пуск»»: список приложений (только названия и AppID, только на ПК).
 func _show_start_apps() -> void:
@@ -786,7 +798,7 @@ func _show_start_apps() -> void:
 	_start_apps = []
 	_start_filter.text = ""
 	_fill_start_list()
-	_start_window.popup_centered()
+	_open_on_top(_start_window)
 	if OS.get_name() == "Windows" and _start_io == null:
 		var process: Dictionary = OS.execute_with_pipe("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
 			"[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-StartApps | Select-Object Name, AppID | ConvertTo-Json -Compress"], false)
@@ -924,7 +936,7 @@ func show_sound_outputs(sound, on_changed: Callable) -> void:
 		sound.devices_changed.connect(_refresh_sound_outputs)
 	sound.request_refresh()
 	_refresh_sound_outputs()
-	sound_window.popup_centered()
+	_open_on_top(sound_window)
 
 func _build_sound_window() -> void:
 	sound_window = Window.new()
@@ -1130,7 +1142,7 @@ func show_remote_info(enabled: bool, choices: Array, chosen_ip: String, code: St
 	_remote_text_after.text = "\n".join(after)
 	_remote_text_after.visible = not after.is_empty()
 	if not remote_window.visible:
-		remote_window.popup_centered()
+		_open_on_top(remote_window)
 
 func _build_light_window() -> void:
 	light_window = Window.new()
@@ -1237,7 +1249,7 @@ func _shading_color_row(column: VBoxContainer, caption: String) -> ColorPickerBu
 func show_light_editor(position_value: Vector3, shading: Dictionary) -> void:
 	set_light_position(position_value)
 	set_shading_settings(shading)
-	light_window.popup_centered()
+	_open_on_top(light_window)
 
 func set_light_position(position_value: Vector3) -> void:
 	var values: Array[float] = [position_value.x, position_value.y, position_value.z]
@@ -1428,7 +1440,7 @@ func show_surface_scan(data: Dictionary) -> void:
 			_: surface_summary.text = "Не удалось проверить окно (%s)" % reason
 		surface_detail.text = "Можно навести курсор на другое окно и повторить."
 		surface_map.show_result({"window": [1, 1], "candidates": []})
-	surface_window.popup_centered()
+	_open_on_top(surface_window)
 
 func _on_surface_candidate_selected(index: int) -> void:
 	if index < 0 or index >= _surface_candidates.size():

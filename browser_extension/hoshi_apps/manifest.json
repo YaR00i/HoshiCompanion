@@ -1,8 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Hoshi Apps",
-  "version": "0.1.0",
-  "description": "Connects YouTube in Chrome to Hoshi on this PC: now playing and player buttons for Hoshi's phone remote.",
+  "version": "0.2.0",
+  "description": "Connects Chrome to Hoshi on this PC: YouTube player, open tabs and video buttons for Hoshi's phone remote.",
+  "permissions": ["tabs", "scripting", "alarms"],
+  "host_permissions": ["<all_urls>"],
   "minimum_chrome_version": "116",
   "background": { "service_worker": "worker.js" },
   "content_scripts": [
@@ -12,5 +14,5 @@
       "run_at": "document_idle"
     }
   ],
-  "action": { "default_title": "Hoshi Apps — YouTube для пульта Хоши" }
+  "action": { "default_title": "Hoshi Apps — YouTube и вкладки для пульта Хоши" }
 }

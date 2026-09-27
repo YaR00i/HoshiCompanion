@@ -4,6 +4,8 @@
 // Nothing leaves this computer.
 "use strict";
 
+importScripts("tabs.js"); // раздел «Вкладки Chrome» — своё соединение с Хоши
+
 const HOSHI_URL = "ws://127.0.0.1:18771/hoshi-adapter-v1";
 const ADAPTER = {
   op: "adapter",

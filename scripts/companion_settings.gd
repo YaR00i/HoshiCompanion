@@ -119,7 +119,8 @@ func save() -> void:
 	if app.playground.active():
 		saved_window = app.playground.saved_floor_position
 	config.set_value("window", "position", saved_window)
-	config.erase_section_key("window", "mask_enabled")
+	if config.has_section_key("window", "mask_enabled"):
+		config.erase_section_key("window", "mask_enabled") # старое имя настройки
 	config.set_value("window", "clickthrough_enabled", app.host.mask_enabled)
 	config.set_value("behavior", "look", app.state.look_enabled)
 	config.set_value("behavior", "motion", app.state.motion_enabled)

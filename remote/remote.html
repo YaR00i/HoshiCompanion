@@ -87,7 +87,12 @@
   .item:active { background: var(--soft); }
   .item.current { background: var(--soft); }
   .item .mini { width: 80px; height: 45px; border-radius: 8px; flex: none; background: var(--soft) center/cover no-repeat; }
-  .item .text { min-width: 0; display: flex; flex-direction: column; }
+  .item .text { min-width: 0; display: flex; flex-direction: column; flex: 1; }
+  .item .mini.fav { width: 28px; height: 28px; margin: 0 6px; background-size: contain; background-color: transparent;
+    display: flex; align-items: center; justify-content: center; font-size: 20px; }
+  .item .acts { display: flex; gap: 4px; flex: none; }
+  .item .acts button { width: 36px; height: 36px; border-radius: 50%; background: var(--soft); font-size: 15px; }
+  .list .more { width: 100%; margin-top: 6px; padding: 9px; border-radius: 12px; background: var(--soft); color: var(--plum); font-weight: 600; }
   .item .title { font-size: 13px; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .item .sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .item.current .title::before { content: "▶ "; color: var(--gold); }
@@ -184,6 +189,18 @@
   .winicon .name { max-width: 100%; text-align: center; overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
     -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.2; }
   .winicon .sub { color: var(--muted); font-size: 10px; }
+  /* мини-плеер: над меню разделов, во всех разделах, пока что-то играет */
+  .miniplayer { position: fixed; left: 8px; right: 8px; z-index: 3; max-width: 504px; margin: 0 auto; display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px 8px; border-radius: 16px; background: var(--card); border: 1px solid var(--line); box-shadow: 0 4px 16px rgba(80, 60, 100, .16); overflow: hidden; }
+  .miniplayer .cover { width: 44px; height: 44px; border-radius: 10px; flex: none; background: var(--soft) center/cover no-repeat;
+    display: grid; place-items: center; font-size: 22px; }
+  .miniplayer .text { flex: 1; min-width: 0; display: flex; flex-direction: column; text-align: left; }
+  .miniplayer .title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .miniplayer .sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .miniplayer .btn { width: 38px; height: 38px; border-radius: 50%; flex: none; font-size: 16px; background: var(--soft); }
+  .miniplayer .btn.main { background: var(--plum); color: #fff; width: 42px; height: 42px; }
+  .miniplayer .line { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--gold); }
+  body.with-mini { padding-bottom: calc(144px + env(safe-area-inset-bottom)); }
   nav button { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--muted); padding: 2px 10px; border-radius: 12px; }
   nav button .icon { font-size: 19px; }
   nav button.active { color: var(--plum); background: var(--soft); }
@@ -233,6 +250,7 @@
   </div>
 </main>
 
+<div id="miniPlayer" class="miniplayer hidden"></div>
 <nav id="nav" class="hidden">
   <button data-tab="main" class="active"><span class="icon">✦</span>Главное</button>
   <button data-tab="play"><span class="icon">☁️</span>Хоши</button>
@@ -303,7 +321,7 @@ function softOffline() {
   offlineTimer = setTimeout(() => { $("status").textContent = "Хоши не на связи — жду…"; }, 4000);
 }
 function showPair(error) {
-  $("remote").classList.add("hidden"); $("nav").classList.add("hidden");
+  $("remote").classList.add("hidden"); $("nav").classList.add("hidden"); $("miniPlayer").classList.add("hidden");
   $("pair").classList.remove("hidden"); $("pairError").textContent = error || "";
 }
 function showRemote() { $("pair").classList.add("hidden"); $("remote").classList.remove("hidden"); $("nav").classList.remove("hidden"); }
@@ -312,6 +330,7 @@ for (const tabButton of document.querySelectorAll("nav button")) {
   tabButton.addEventListener("click", () => {
     for (const b of document.querySelectorAll("nav button")) b.classList.toggle("active", b === tabButton);
     for (const t of document.querySelectorAll(".tab")) t.classList.toggle("active", t.dataset.tab === tabButton.dataset.tab);
+    renderMini();
     window.scrollTo({top: 0});
   });
 }
@@ -348,7 +367,7 @@ function connect() {
         if (openApp === "windows") send({op: "run", command: "pc:windows", args: {}}); // «Окна» открыты — свежий список
       }
     }
-    else if (m.op === "state") { state = m; online(true, (m.hoshi && m.hoshi.status) || "На связи"); renderHoshi(); renderSound(); renderApps(); renderPending(); renderWindows();
+    else if (m.op === "state") { state = m; online(true, (m.hoshi && m.hoshi.status) || "На связи"); renderHoshi(); renderSound(); renderApps(); renderPending(); renderWindows(); renderMini();
       // Приложению — что сейчас включено (звук, режимы), чтобы плитки и кнопки горели правильно.
       if (window.HoshiApp && window.HoshiApp.onState) { try { window.HoshiApp.onState(JSON.stringify({sound: (m.sound || {}).current || "", selected: (m.hoshi || {}).selected || []})); } catch (e) {} } }
     else if (m.op === "history") showHistory(m);
@@ -662,8 +681,8 @@ function renderSound() {
 
 // Ряд иконок: Звук и приложения (YouTube, MPC-BE, Claude…). Нажал — раскрылась
 // только его карточка; ещё раз — свернулась. Выбор помнит телефон.
-const APP_ICONS = {sound: "🔊", windows: "🖥️", youtube: "▶️", mpc: "🎬", claude: "✳️", codex: "⌨️"};
-const APP_TITLES = {youtube: "YouTube", mpc: "MPC-BE", claude: "Claude", codex: "Codex"};
+const APP_ICONS = {sound: "🔊", windows: "🖥️", youtube: "▶️", mpc: "🎬", claude: "✳️", codex: "⌨️", tabs: "📑"};
+const APP_TITLES = {tabs: "Вкладки", youtube: "YouTube", mpc: "MPC-BE", claude: "Claude", codex: "Codex"};
 let openApp = null;
 try { openApp = localStorage.getItem("hoshi-open-app"); } catch (e) {}
 function barItems() {
@@ -717,7 +736,7 @@ function renderBar() {
         openApp = openApp === item.id ? "" : item.id; // ещё раз — свернуть
         if (openApp === "windows") run("pc:windows"); // открыли «Окна» — свежий список
         try { localStorage.setItem("hoshi-open-app", openApp); } catch (e) {}
-        renderBar();
+        renderBar(); renderMini();
       };
       bar.append(b);
     }
@@ -725,6 +744,73 @@ function renderBar() {
   $("sound").classList.toggle("hidden", openApp !== "sound");
   $("windowsPanel").classList.toggle("hidden", openApp !== "windows");
   for (const card of $("apps").querySelectorAll(".app")) card.classList.toggle("hidden", card.dataset.app !== openApp);
+}
+
+// Мини-плеер внизу (в любом разделе): что играет — YouTube, MPC-BE, видео во вкладке.
+// Поставил на паузу — остаётся ещё 10 минут, чтобы можно было продолжить.
+// Несколько играют — ⇄ переключает. Нажал на название — открывается полная карточка.
+const MINI_KEEP_MS = 10 * 60 * 1000;
+const miniSeen = {};      // id -> {since: когда заиграло, last: когда последний раз играло}
+let miniChoice = null;    // выбранный кнопкой ⇄
+function miniCandidates() {
+  const apps = (state.apps || []).filter((a) => a.id !== "claude" && (a.commands || []).some((c) => c.command.endsWith(":toggle")) && (a.state || {}).title);
+  const youtube = apps.find((a) => a.id === "youtube" && a.state.playing);
+  const now = Date.now();
+  const list = [];
+  for (const app of apps) {
+    const s = app.state;
+    // YouTube уже есть своей карточкой — та же вкладка в «Вкладках Chrome» не дублируется.
+    if (app.id === "tabs" && youtube && String(s.subtitle || "").startsWith("youtube.com")) continue;
+    const seen = miniSeen[app.id] = miniSeen[app.id] || {since: 0, last: 0};
+    if (s.playing) { if (!seen.playing) seen.since = now; seen.last = now; }
+    seen.playing = !!s.playing;
+    if (s.playing || now - seen.last < MINI_KEEP_MS) list.push(app);
+  }
+  return list.sort((a, b) => (b.state.playing - a.state.playing) || miniSeen[b.id].since - miniSeen[a.id].since);
+}
+function miniCommand(app, name) { return (app.commands || []).find((c) => c.command.endsWith(":" + name)); }
+function renderMini() {
+  const box = $("miniPlayer");
+  const mainTab = document.querySelector("nav button.active");
+  const onMain = mainTab && mainTab.dataset.tab === "main";
+  const list = miniCandidates().filter((a) => !(onMain && openApp === a.id)); // открытая карточка и так на виду
+  const app = list.find((a) => a.id === miniChoice) || list[0];
+  const show = !!app && !$("remote").classList.contains("hidden");
+  box.classList.toggle("hidden", !show);
+  document.body.classList.toggle("with-mini", show);
+  if (!show) return;
+  box.style.bottom = ($("nav").offsetHeight + 8) + "px";
+  const s = app.state;
+  const key = JSON.stringify([app.id, s.title, s.subtitle, s.thumbnail, list.length, app.commands.map((c) => c.command)]);
+  if (box.dataset.key !== key) {
+    box.dataset.key = key; box.textContent = "";
+    const cover = el("span", "cover", s.thumbnail ? "" : (APP_ICONS[app.id] || "▶️"));
+    if (s.thumbnail) cover.style.backgroundImage = `url("${String(s.thumbnail).replace(/"/g, "")}")`;
+    const text = el("button", "text");
+    text.append(el("span", "title", s.title), el("span", "sub", (APP_TITLES[app.id] || app.title) + (s.subtitle ? " · " + s.subtitle : "")));
+    text.onclick = () => {
+      document.querySelector('nav button[data-tab="main"]').click();
+      openApp = app.id; try { localStorage.setItem("hoshi-open-app", openApp); } catch (e) {}
+      renderBar(); renderMini();
+    };
+    box.append(cover, text);
+    for (const name of ["back", "toggle", "forward"]) {
+      const c = miniCommand(app, name); if (!c) continue;
+      const b = el("button", "btn" + (name === "toggle" ? " main" : ""), c.icon || "•");
+      b.dataset.name = name; b.dataset.icon = c.icon || "•"; b.setAttribute("aria-label", c.title);
+      b.onclick = () => run(c.command, c.args);
+      box.append(b);
+    }
+    if (list.length > 1) {
+      const swap = el("button", "btn", "⇄"); swap.setAttribute("aria-label", "Другой плеер");
+      swap.onclick = () => { const at = list.findIndex((a) => a.id === app.id); miniChoice = list[(at + 1) % list.length].id; renderMini(); };
+      box.append(swap);
+    }
+    box.append(el("span", "line"));
+  }
+  const toggle = box.querySelector('[data-name="toggle"]');
+  if (toggle) toggle.textContent = (s.icons || {}).toggle || (s.playing ? "⏸" : "▶");
+  box.querySelector(".line").style.width = s.duration > 0 ? Math.min(100, 100 * (s.time || 0) / s.duration) + "%" : "0";
 }
 
 // Ссылки http(s) в тексте — нажимаются и открываются в браузере телефона.
@@ -878,18 +964,45 @@ function buildApp(app, signature) {
   for (const list of s.lists || []) {
     const key = app.id + ":" + list.id;
     const box = el("details", "list"); box.open = !!openLists[key];
-    box.addEventListener("toggle", () => { openLists[key] = box.open; });
+    // list.request — список приходит только по нажатию (вкладки браузера): открыл — попросили.
+    const ask = list.request && byName[list.request];
+    box.addEventListener("toggle", () => {
+      openLists[key] = box.open;
+      if (box.open && ask && !list.items.length) run(ask.command, {});
+    });
     const summary = el("summary", "");
     summary.append(el("span", "", list.title), el("span", "count", list.position || String(list.items.length)));
     box.append(summary);
     for (const item of list.items) {
-      const row = el("button", "item" + (item.current ? " current" : ""));
-      const t = el("span", "mini"); if (item.thumbnail) t.style.backgroundImage = `url("${String(item.thumbnail).replace(/"/g, "")}")`;
+      // С кнопками в строке (item.actions) строка — не <button>: кнопка в кнопке не работает.
+      const acts = (Array.isArray(item.actions) ? item.actions : Array.isArray(list.actions) ? list.actions : []).filter((a) => a && byName[a.name]);
+      const row = el(acts.length ? "div" : "button", "item" + (item.current ? " current" : ""));
+      const t = el("span", "mini" + (list.small_icons ? " fav" : ""), list.small_icons && !item.thumbnail ? "🌐" : ""); if (item.thumbnail) t.style.backgroundImage = `url("${String(item.thumbnail).replace(/"/g, "")}")`;
       const text = el("span", "text"); text.append(el("span", "title", item.title));
       if (item.subtitle) text.append(el("span", "sub", item.subtitle));
       row.append(t, text);
-      if (byName.play_item && !item.current) row.onclick = () => { run(byName.play_item.command, {id: item.id, list: item.list || ""}); toast("Включаю…"); };
+      if (byName.play_item && !item.current) {
+        row.onclick = () => { run(byName.play_item.command, {id: item.id, list: item.list || ""}); toast(list.open_text || "Включаю…"); };
+        if (acts.length) row.setAttribute("role", "button");
+      }
+      if (acts.length) {
+        const bar = el("span", "acts");
+        for (const a of acts) {
+          const b = el("button", "", a.icon || "•"); b.title = a.title || a.name; b.setAttribute("aria-label", b.title);
+          b.onclick = (event) => {
+            event.stopPropagation();
+            if (a.confirm && !confirm(a.confirm)) return;
+            run(byName[a.name].command, {id: item.id});
+          };
+          bar.append(b);
+        }
+        row.append(bar);
+      }
       box.append(row);
+    }
+    if (ask && !list.items.length) {
+      const more = el("button", "more", list.request_title || "Показать"); more.onclick = () => run(ask.command, {});
+      box.append(more);
     }
     card.append(box);
   }
