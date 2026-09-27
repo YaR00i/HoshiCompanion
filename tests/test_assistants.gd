@@ -116,6 +116,37 @@ func _run() -> void:
 	got = await _read_all(live, waiter)
 	_check(got.is_empty(), "closing Hoshi just drops the waiting hook (no «let go»), so it knocks again after a restart")
 
+	# Картинки из ответа: только медиа-файлы с локальным путём, случайный адрес, путь не на телефон.
+	var picture: String = ProjectSettings.globalize_path("user://test_media_probe.png")
+	var image := Image.create(4, 4, false, Image.FORMAT_RGBA8)
+	image.fill(Color.ORANGE)
+	image.save_png(picture)
+	var media_watch = AssistantWatch.new()
+	_note(media_watch, "Stop", "m", {"text": "Вот картинка", "media": [{"path": picture}, {"path": "\\\\server\\share\\x.png"},
+		{"path": "C:/Windows/notepad.exe"}, {"path": "relative/x.gif"}, {"path": "//host/y.png"}]})
+	var shown: Array = media_watch.card_state()["media"]
+	_check(shown.size() == 1 and shown[0]["name"] == "test_media_probe.png" and shown[0]["kind"] == "image" and str(shown[0]["id"]).length() == 32, "only local media files are kept, each with a random address")
+	_check(not JSON.stringify(media_watch.card_state()).contains(picture.get_base_dir()), "the phone never sees the path of the file")
+	var first_id: String = shown[0]["id"]
+	_check(media_watch.media_file(first_id)["path"] == picture and media_watch.media_file("nope").is_empty(), "the address leads to the file; unknown addresses lead nowhere")
+	_note(media_watch, "Stop", "m", {"text": "Новый ответ", "media": [{"path": picture}]})
+	_check(media_watch.media_file(first_id).is_empty() and not media_watch.card_state()["media"].is_empty(), "a new answer gives new addresses; old ones stop working")
+	var media_bus = RemoteBus.new()
+	media_bus.setup(StubApp.new())
+	media_bus.loopback_only = true
+	media_bus.http_port = 18880
+	media_bus.ws_port = 18881
+	media_bus.assistants = media_watch
+	media_bus.mpc.dry_run = true
+	media_bus.sound.dry_run = true
+	_check(media_bus.start(), "remote starts on test ports")
+	var served: String = await _http_get(media_bus, "/media/" + str(media_watch.card_state()["media"][0]["id"]))
+	_check(served.begins_with("HTTP/1.1 200") and served.contains("Content-Type: image/png") and served.contains("PNG"), "the phone page gets the picture by its address")
+	served = await _http_get(media_bus, "/media/" + first_id)
+	_check(served.begins_with("HTTP/1.1 404"), "an old or made-up address gets nothing")
+	media_bus.stop()
+	DirAccess.remove_absolute(picture)
+
 	# Через шину: карточка «Claude» у телефона, исчезает без сессий.
 	var bus = RemoteBus.new()
 	bus.setup(StubApp.new())
@@ -163,6 +194,24 @@ func _read_all(watch, peer: StreamPeerTCP) -> String:
 			break
 		await process_frame
 	return reply.get_string_from_utf8()
+
+func _http_get(bus, path: String) -> String:
+	var peer := StreamPeerTCP.new()
+	peer.connect_to_host("127.0.0.1", bus.http_port)
+	var sent: bool = false
+	var reply := PackedByteArray()
+	for frame in range(180):
+		peer.poll()
+		bus.tick(0.016)
+		if peer.get_status() == StreamPeerTCP.STATUS_CONNECTED and not sent:
+			peer.put_data(("GET %s HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n" % path).to_utf8_buffer())
+			sent = true
+		if sent and peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:
+			break
+		if sent and peer.get_available_bytes() > 0:
+			reply.append_array(peer.get_partial_data(peer.get_available_bytes())[1])
+		await process_frame
+	return reply.get_string_from_ascii()
 
 func _post(watch, head: String, body: PackedByteArray) -> String:
 	var peer := StreamPeerTCP.new()

@@ -39,6 +39,8 @@ const MAX_PEERS: int = 16
 ## Ответ Claude с телефона — до 2000 символов (кириллица — по 2 байта).
 const MAX_PHONE_PACKET: int = 8192
 const MAX_ADAPTER_PACKET: int = 65536
+## Ответ страницы/картинки уходит кусками такого размера за кадр.
+const HTTP_CHUNK: int = 262144
 const MAX_RUNS_PER_SECOND: float = 8.0
 ## A visible remote page pings every 5 s. A phone that says nothing for this long (its
 ## screen locked and the connection died silently) is dropped to free its place.
@@ -239,6 +241,9 @@ func _serve_http(dt: float) -> void:
 		var stream: StreamPeerTCP = client["stream"]
 		stream.poll()
 		client["age"] += dt
+		if client.has("out"):
+			_send_more(client)
+			continue
 		var available: int = stream.get_available_bytes()
 		if available > 0:
 			var chunk: Array = stream.get_partial_data(mini(available, 4096))
@@ -246,17 +251,38 @@ func _serve_http(dt: float) -> void:
 				client["buffer"] += (chunk[1] as PackedByteArray).get_string_from_utf8()
 		var request: String = client["buffer"]
 		if request.contains("\r\n\r\n") or request.length() > 4096 or client["age"] > 3.0 or stream.get_status() != StreamPeerTCP.STATUS_CONNECTED:
-			if request.contains("\r\n\r\n"):
-				_respond(stream, request.get_slice("\r\n", 0))
+			if request.contains("\r\n\r\n") and stream.get_status() == StreamPeerTCP.STATUS_CONNECTED:
+				# Ответ уходит по кусочкам в следующих кадрах: большая гифка не держит Хоши.
+				client["out"] = _respond(request.get_slice("\r\n", 0))
+				client["sent"] = 0
+				client["age"] = 0.0
+				_send_more(client)
+				continue
 			stream.disconnect_from_host()
 			_http_clients.erase(client)
 
-func _respond(stream: StreamPeerTCP, request_line: String) -> void:
+## Отправить следующий кусок ответа; всё ушло (или 60 с прошло) — закрыть.
+func _send_more(client: Dictionary) -> void:
+	var stream: StreamPeerTCP = client["stream"]
+	var out: PackedByteArray = client["out"]
+	var sent: int = client["sent"]
+	if stream.get_status() == StreamPeerTCP.STATUS_CONNECTED and sent < out.size() and client["age"] < 60.0:
+		var result: Array = stream.put_partial_data(out.slice(sent, mini(out.size(), sent + HTTP_CHUNK)))
+		if result[0] == OK:
+			client["sent"] = sent + int(result[1])
+		if int(client["sent"]) < out.size():
+			return
+	stream.disconnect_from_host()
+	_http_clients.erase(client)
+
+## Ответ на GET целиком (заголовок + тело).
+func _respond(request_line: String) -> PackedByteArray:
 	var parts: PackedStringArray = request_line.split(" ")
 	var path: String = parts[1].get_slice("?", 0) if parts.size() >= 2 else ""
 	var body := PackedByteArray()
 	var kind: String = "text/plain; charset=utf-8"
 	var status: String = "200 OK"
+	var cache: String = "no-store"
 	if parts.size() < 2 or parts[0] != "GET":
 		status = "405 Method Not Allowed"
 		body = "Only GET".to_utf8_buffer()
@@ -270,12 +296,27 @@ func _respond(stream: StreamPeerTCP, request_line: String) -> void:
 		kind = "application/manifest+json"
 		body = JSON.stringify({"name": "Хоши", "short_name": "Хоши", "start_url": "/", "display": "standalone",
 			"background_color": "#fff8f1", "theme_color": "#665479"}).to_utf8_buffer()
+	elif path.begins_with("/media/"):
+		# Картинка/гифка/видео из ответа Claude: только по случайному адресу, который
+		# знают привязанные телефоны; сам путь к файлу телефон не видит.
+		var item: Dictionary = assistants.media_file(path.trim_prefix("/media/"))
+		var file_path: String = str(item.get("path", ""))
+		if not item.is_empty() and FileAccess.file_exists(file_path):
+			var file := FileAccess.open(file_path, FileAccess.READ)
+			if file != null and file.get_length() <= AssistantWatch.MAX_MEDIA_BYTES:
+				body = file.get_buffer(file.get_length())
+				kind = str(item["type"])
+				cache = "private, max-age=3600"
+		if body.is_empty():
+			status = "404 Not Found"
+			body = "Not found".to_utf8_buffer()
 	else:
 		status = "404 Not Found"
 		body = "Not found".to_utf8_buffer()
-	var head: String = "HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n" % [status, kind, body.size()]
-	stream.put_data(head.to_utf8_buffer())
-	stream.put_data(body)
+	var head: String = "HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\nCache-Control: %s\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n" % [status, kind, body.size(), cache]
+	var response: PackedByteArray = head.to_utf8_buffer()
+	response.append_array(body)
+	return response
 
 # ---------------------------------------------------------------- соединения
 

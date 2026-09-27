@@ -170,6 +170,10 @@
   buttons"): a second Stop hook `claude_hook.py --wait` with asyncRewake holds POST {"event":"Wait"}
   open; "app:claude:reply" {text<=2000, session} releases it with the text, the hook exits 2 and
   Claude Code wakes Claude with it. UserPromptSubmit/SessionEnd/Hoshi exit release it empty.
+  Media (user request 2026-09-27): claude_hook.media_in() lists existing media files (png/jpg/gif/
+  webp/mp4/webm <=16 MB, max 8) that the answer itself names, never UNC/network paths; Hoshi maps them
+  to random 32-hex ids served at GET /media/<id> on the remote HTTP port (streamed in chunks). The
+  phone gets id/name/kind only, never paths; a new answer invalidates old ids.
   Clouds over Hoshi: assistant_watch.clouds() -> companion_ui -> assistant_clouds.gd (draw only,
   mouse-transparent, menu toggle "toggle_assistant_clouds", saved in companion.cfg); petting marks seen.
   Phone packets may be up to 8 KB for this. Never change Claude's permission mode from the phone.

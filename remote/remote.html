@@ -93,6 +93,24 @@
   .answer { margin-top: 10px; padding: 10px 12px; border-radius: 14px; background: var(--paper); border: 1px solid var(--line);
     font-size: 13px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 45vh; overflow-y: auto; }
   .quick-replies { margin-top: 10px; }
+  .answer a { color: var(--plum); text-decoration: underline; overflow-wrap: anywhere; }
+  .media-grid { display: grid; gap: 8px; margin-top: 10px; }
+  .media-grid figure { margin: 0; }
+  .media-grid img, .media-grid video { display: block; width: 100%; max-height: 50vh; object-fit: contain; border-radius: 12px;
+    background: var(--soft); border: 1px solid var(--line); }
+  .media-grid figcaption { font-size: 11px; color: var(--muted); margin-top: 3px; overflow-wrap: anywhere; }
+  /* ряд иконок приложений: открыта одна карточка за раз */
+  .appbar { display: flex; gap: 12px; overflow-x: auto; margin: 16px 2px 0; padding: 4px 2px; scrollbar-width: none; }
+  .appbar:empty { display: none; }
+  .appicon { flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); width: 58px; }
+  .appicon .face { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; font-size: 24px; position: relative;
+    background: var(--card); border: 1px solid var(--line); box-shadow: 0 2px 6px rgba(80, 60, 100, .08); }
+  .appicon.open .face { border-color: var(--plum); box-shadow: 0 0 0 2px var(--plum); }
+  .appicon.open { color: var(--plum); font-weight: 600; }
+  .appicon .mark { position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px;
+    font-size: 11px; line-height: 18px; color: #fff; background: var(--gold); }
+  .appicon .mark.done { background: #4caf7a; } .appicon .mark.waiting { background: #e0a33a; }
+  .appicon .name { max-width: 58px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .reply { display: flex; gap: 8px; align-items: flex-end; margin-top: 10px; }
   .reply textarea { flex: 1; min-height: 44px; max-height: 30vh; resize: vertical; padding: 10px 12px; border-radius: 14px;
     border: 1px solid var(--line); background: #fff; color: var(--ink); font: inherit; font-size: 14px; }
@@ -152,6 +170,7 @@
   <div id="remote" class="hidden">
     <section class="tab active" data-tab="main">
       <div class="quick" id="quick"></div>
+      <div class="appbar" id="appbar"></div>
       <div id="sound"></div>
       <div id="apps"></div>
     </section>
@@ -401,6 +420,60 @@ function renderSound() {
   }
   card.append(box);
   root.append(card);
+  renderBar();
+}
+
+// Ряд иконок: Звук и приложения (YouTube, MPC-BE, Claude…). Нажал — раскрылась
+// только его карточка; ещё раз — свернулась. Выбор помнит телефон.
+const APP_ICONS = {sound: "🔊", youtube: "▶️", mpc: "🎬", claude: "✳️", codex: "⌨️"};
+let openApp = null;
+try { openApp = localStorage.getItem("hoshi-open-app"); } catch (e) {}
+function barItems() {
+  const items = [];
+  if ((catalog.sound || []).length) items.push({id: "sound", title: "Звук"});
+  for (const app of state.apps || []) {
+    const s = app.state || {}; let mark = "", kind = "";
+    if (app.id === "claude") {
+      if (s.subtitle === "работает…") mark = "…";
+      else if (String(s.subtitle || "").startsWith("?")) { mark = "?"; kind = "waiting"; }
+      else if (s.can_reply) { mark = "✓"; kind = "done"; }
+    } else if (s.playing) mark = "▶";
+    items.push({id: app.id, title: app.title, mark, kind});
+  }
+  return items;
+}
+function renderBar() {
+  const bar = $("appbar"); const items = barItems();
+  const ids = items.map((i) => i.id);
+  // Открытое приложение закрылось — открыть то, где что-то происходит, иначе первое.
+  if (openApp !== "" && !ids.includes(openApp)) openApp = (items.find((i) => i.mark) || items[0] || {}).id || null;
+  const key = JSON.stringify([items, openApp]);
+  if (renderBar.key !== key) {
+    renderBar.key = key; bar.textContent = "";
+    for (const item of items) {
+      const b = el("button", "appicon" + (item.id === openApp ? " open" : ""));
+      const face = el("span", "face", APP_ICONS[item.id] || "▣");
+      if (item.mark) face.append(el("span", "mark " + item.kind, item.mark));
+      b.append(face, el("span", "name", item.title));
+      b.onclick = () => {
+        openApp = openApp === item.id ? "" : item.id; // ещё раз — свернуть
+        try { localStorage.setItem("hoshi-open-app", openApp); } catch (e) {}
+        renderBar();
+      };
+      bar.append(b);
+    }
+  }
+  $("sound").classList.toggle("hidden", openApp !== "sound");
+  for (const card of $("apps").querySelectorAll(".app")) card.classList.toggle("hidden", card.dataset.app !== openApp);
+}
+
+// Ссылки http(s) в тексте — нажимаются и открываются в браузере телефона.
+function linkify(node, text) {
+  const parts = String(text).split(/(https?:\/\/[^\s<>"'`)\]]+)/g);
+  parts.forEach((part, i) => {
+    if (i % 2) { const a = el("a", "", part); a.href = part; a.target = "_blank"; a.rel = "noopener noreferrer"; node.append(a); }
+    else if (part) node.append(document.createTextNode(part));
+  });
 }
 
 function clock(s) {
@@ -421,7 +494,9 @@ function renderApps() {
   const apps = state.apps || [];
   if (!apps.length) {
     root.textContent = ""; for (const k in appViews) delete appViews[k];
-    root.append(el("div", "empty", "Когда откроешь YouTube в Chrome с расширением Хоши или плеер MPC-BE, здесь появится пульт для видео"));
+    if (!(catalog.sound || []).length)
+      root.append(el("div", "empty", "Когда откроешь YouTube в Chrome с расширением Хоши, плеер MPC-BE или начнёт работать Claude, здесь появятся их пульты"));
+    renderBar();
     return;
   }
   const alive = new Set(apps.map((a) => a.id));
@@ -432,7 +507,7 @@ function renderApps() {
   let previous = null;
   for (const app of apps) {
     const s = app.state || {};
-    const signature = JSON.stringify([app.commands, s.title, s.subtitle, s.thumbnail, s.hint, s.lists, s.text, s.can_reply, s.session]);
+    const signature = JSON.stringify([app.commands, s.title, s.subtitle, s.thumbnail, s.hint, s.lists, s.text, s.can_reply, s.session, s.media]);
     let view = appViews[app.id];
     if (!view || view.signature !== signature) {
       const fresh = buildApp(app, signature);
@@ -447,7 +522,9 @@ function renderApps() {
     const place = previous ? previous.nextSibling : root.firstChild;
     if (view.card !== place) root.insertBefore(view.card, place);
     previous = view.card;
+    view.card.dataset.app = app.id;
   }
+  renderBar();
 }
 
 function buildApp(app, signature) {
@@ -463,7 +540,19 @@ function buildApp(app, signature) {
     now.append(text); card.append(now);
   } else card.append(el("div", "empty", s.hint || "Ничего не играет"));
   const byName = {}; for (const c of app.commands) byName[c.command.split(":")[2]] = c;
-  if (s.text) card.append(el("div", "answer", s.text));
+  if (s.text) { const answer = el("div", "answer"); linkify(answer, s.text); card.append(answer); }
+  // Картинки, гифки и видео из ответа: Хоши отдаёт их по случайному адресу /media/<id>.
+  if ((s.media || []).length) {
+    const grid = el("div", "media-grid");
+    for (const m of s.media) {
+      const src = "/media/" + encodeURIComponent(m.id); const fig = el("figure");
+      if (m.kind === "video") { const v = el("video"); v.controls = true; v.preload = "metadata"; v.playsInline = true; v.src = src; fig.append(v); }
+      else { const link = el("a"); link.href = src; link.target = "_blank"; link.rel = "noopener";
+        const img = el("img"); img.src = src; img.alt = m.name; img.loading = "lazy"; link.append(img); fig.append(link); }
+      fig.append(el("figcaption", "", m.name)); grid.append(fig);
+    }
+    card.append(grid);
+  }
   // Быстрые кнопки Claude видны всегда; живые — только пока Claude ждёт ответа.
   if (byName.reply && !s.can_reply) {
     const quick = el("div", "chips quick-replies");

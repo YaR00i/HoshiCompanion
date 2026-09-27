@@ -24,6 +24,11 @@ const MAX_SESSIONS: int = 8
 const MAX_TEXT: int = 6000
 ## Самый длинный ответ с телефона.
 const MAX_REPLY: int = 2000
+## Картинки/гифки/видео из ответа (их находит хук): не больше, и какие виды.
+const MAX_MEDIA: int = 8
+const MAX_MEDIA_BYTES: int = 16 * 1024 * 1024
+const MEDIA_TYPES := {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif",
+	"webp": "image/webp", "mp4": "video/mp4", "webm": "video/webm"}
 ## Закончившие сессии без новостей дольше этого — убрать с пульта.
 const FORGET_AFTER: float = 3.0 * 3600.0
 ## Облачко «✓ закончил» над Хоши держится не дольше этого.
@@ -41,6 +46,7 @@ var _server := TCPServer.new()
 var _clients: Array = []   # [{stream, buffer, age}]
 var _waiters: Dictionary = {}  # session id -> StreamPeerTCP (ждун ответа с телефона)
 var _clock: float = 0.0
+var _crypto := Crypto.new()
 
 func start() -> bool:
 	stop()
@@ -146,6 +152,7 @@ func handle_event(message: Dictionary) -> void:
 		"Stop":
 			session["status"] = "done"
 			session["text"] = str(message.get("text", "")).left(MAX_TEXT)
+			session["media"] = _clean_media(message.get("media", []))
 			session["seen"] = false
 		"Notification":
 			match str(message.get("kind", "")):
@@ -190,7 +197,7 @@ func _add_waiter(message: Dictionary, stream: StreamPeerTCP) -> void:
 	_waiters[id] = stream
 	# Ждун приносит последний ответ: после перезапуска Хоши карточка возвращается сама.
 	if not sessions.has(id) or str(sessions[id]["text"]).is_empty():
-		handle_event({"app": "claude", "event": "Stop", "session": id, "folder": message.get("folder", ""), "text": message.get("text", "")})
+		handle_event({"app": "claude", "event": "Stop", "session": id, "folder": message.get("folder", ""), "text": message.get("text", ""), "media": message.get("media", [])})
 
 ## Отпустить ждуна: text — ответ с телефона, пусто — без ответа.
 func _release(id: String, text: String) -> void:
@@ -229,6 +236,40 @@ func mark_seen() -> void:
 	for id in sessions:
 		sessions[id]["seen"] = true
 
+## Файл по случайному адресу /media/<id> — только из последних ответов Claude.
+## Пусто — такого нет. Путь никогда не уходит на телефон.
+func media_file(media_id: String) -> Dictionary:
+	for id in sessions:
+		for item in sessions[id].get("media", []):
+			if item["id"] == media_id:
+				return item
+	return {}
+
+## Что знает телефон о картинках ответа: только адрес, имя файла и вид.
+func _public_media(session: Dictionary) -> Array:
+	var result: Array = []
+	for item in session.get("media", []):
+		result.append({"id": item["id"], "name": item["name"], "kind": item["kind"]})
+	return result
+
+## Список от хука -> [{id, path, name, kind, type}]: только медиа-файлы (по
+## расширению), только локальные пути, новый случайный адрес на каждый ответ.
+func _clean_media(items: Variant) -> Array:
+	var result: Array = []
+	if not items is Array:
+		return result
+	for item in items:
+		if result.size() >= MAX_MEDIA or not item is Dictionary:
+			break
+		var path: String = str(item.get("path", ""))
+		var extension: String = path.get_extension().to_lower()
+		if not MEDIA_TYPES.has(extension) or path.begins_with("\\\\") or path.begins_with("//") or not path.is_absolute_path():
+			continue
+		result.append({"id": _crypto.generate_random_bytes(16).hex_encode(), "path": path,
+			"name": path.get_file().left(80), "kind": "video" if MEDIA_TYPES[extension].begins_with("video") else "image",
+			"type": MEDIA_TYPES[extension]})
+	return result
+
 ## Самая свежая сессия (её показывает карточка). Пусто — сессий нет.
 func latest() -> String:
 	var best: String = ""
@@ -254,7 +295,7 @@ func card_state() -> Dictionary:
 	var state: Dictionary = {"title": session["folder"] if not str(session["folder"]).is_empty() else "Claude",
 		"subtitle": STATUS_TEXT.get(session["status"], ""), "badge": STATUS_TEXT.get(session["status"], ""),
 		"text": session["note"] if session["status"] == "waiting" else session["text"],
-		"session": id, "can_reply": can_reply(id)}
+		"session": id, "can_reply": can_reply(id), "media": _public_media(session)}
 	if sessions.size() > 1:
 		var items: Array = []
 		for other in _by_time():

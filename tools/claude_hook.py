@@ -12,12 +12,19 @@ so Claude never waits and never sees errors.
 With --wait (a separate Stop hook, "asyncRewake": true) it waits in the
 background for a reply typed on the phone and wakes Claude with it
 (user decision 2026-09-27: write to Claude from the phone).
+
+Media (user request 2026-09-27): pictures, GIFs and videos that the answer
+itself names (absolute path, or relative to the session folder) are listed
+for Hoshi so the phone can view them. Only existing media files up to 16 MB,
+at most 8. The full path goes to Hoshi on this PC only, never to the phone.
 """
 from __future__ import annotations
 
 import http.client
 import json
 import ntpath
+import os
+import re
 import sys
 import time
 import urllib.request
@@ -31,6 +38,47 @@ RETRY_EVERY = 3.0
 RETRY_AFTER_LOSS = 12 * 3600.0  # Hoshi closed for the night -> the card comes back in the morning
 MAX_TEXT = 6000
 EVENTS = {'SessionStart', 'UserPromptSubmit', 'Notification', 'Stop', 'SessionEnd'}
+MEDIA_KINDS = {'.png': 'image', '.jpg': 'image', '.jpeg': 'image', '.gif': 'image', '.webp': 'image',
+               '.mp4': 'video', '.webm': 'video'}
+MAX_MEDIA = 8
+MAX_MEDIA_BYTES = 16 * 1024 * 1024
+# Candidates: markdown link targets, `code` spans, and bare Windows/relative paths ending in a media extension.
+_EXT = r'\.(?:png|jpe?g|gif|webp|mp4|webm)'
+_CANDIDATES = [
+    re.compile(r'\]\(([^)\s]+)\)'),
+    re.compile(r'`([^`\n]+)`'),
+    re.compile(r'((?:[A-Za-z]:)?[\w.\-\\/~]*' + _EXT + r')', re.IGNORECASE),
+]
+
+
+def media_in(text: str, cwd: str) -> list[dict]:
+    """Media files the answer names: [{path, name, kind}] (existing, small enough)."""
+    found: list[dict] = []
+    seen: set[str] = set()
+    for pattern in _CANDIDATES:
+        for match in pattern.finditer(text):
+            raw = match.group(1).strip().strip('"\'<>').split('#')[0].split('?')[0]
+            kind = MEDIA_KINDS.get(os.path.splitext(raw)[1].lower())
+            # Never network paths: "//host/x.png" or "\\host\x.png" (also cut out of URLs)
+            # would make Windows contact another computer.
+            if not kind or raw.lower().startswith(('http://', 'https://')) or raw[:2] in ('//', '\\\\', '/\\', '\\/'):
+                continue
+            path = raw if os.path.isabs(raw) else os.path.join(cwd, raw)
+            if path[:2] in ('//', '\\\\', '/\\', '\\/'):
+                continue
+            try:
+                path = os.path.realpath(path)
+                if path[:2] in ('//', '\\\\'):
+                    continue
+                if path.lower() in seen or not os.path.isfile(path) or os.path.getsize(path) > MAX_MEDIA_BYTES:
+                    continue
+            except OSError:
+                continue
+            seen.add(path.lower())
+            found.append({'path': path, 'name': os.path.basename(path)[:80], 'kind': kind})
+            if len(found) >= MAX_MEDIA:
+                return found
+    return found
 
 
 def clean(event: dict) -> dict | None:
@@ -50,6 +98,7 @@ def clean(event: dict) -> dict | None:
         message['text'] = str(event.get('notification_message', ''))[:300]
     elif name == 'Stop':
         message['text'] = str(event.get('last_assistant_message', ''))[:MAX_TEXT]
+        message['media'] = media_in(message['text'], str(event.get('cwd', '')))
     return message
 
 
@@ -69,7 +118,8 @@ def wait_for_phone(event: dict) -> int:
         return 0
     body = json.dumps({'app': 'claude', 'event': 'Wait', 'session': session,
                        'folder': ntpath.basename(str(event.get('cwd', '')).rstrip('/\\'))[:80],
-                       'text': str(event.get('last_assistant_message', ''))[:MAX_TEXT]},
+                       'text': str(event.get('last_assistant_message', ''))[:MAX_TEXT],
+                       'media': media_in(str(event.get('last_assistant_message', ''))[:MAX_TEXT], str(event.get('cwd', '')))},
                       ensure_ascii=False).encode('utf-8')
     lost_at = 0.0
     while True:
