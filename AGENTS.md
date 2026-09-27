@@ -188,6 +188,11 @@
   webp/mp4/webm <=16 MB, max 8) that the answer itself names, never UNC/network paths; Hoshi maps them
   to random 32-hex ids served at GET /media/<id> on the remote HTTP port (streamed in chunks). The
   phone gets id/name/kind only, never paths; a new answer invalidates old ids.
+  Permissions/questions (user-approved 2026-09-27): sync hooks `claude_hook.py --ask` on PermissionRequest
+  and PreToolUse(AskUserQuestion) POST Permission/Question; Hoshi answers 204 at once unless a phone is
+  connected (bus sets assistants.phones), otherwise holds one request up to 30 s with a random 5-letter
+  code. "app:claude:permit" {id, behavior allow|deny} / "app:claude:answer" {id, answers for exactly
+  those questions} release it; timeout/close => 204 => the normal dialog on the PC.
   Clouds over Hoshi: assistant_watch.clouds() -> companion_ui -> assistant_clouds.gd (draw only,
   mouse-transparent, menu toggle "toggle_assistant_clouds", saved in companion.cfg); petting marks seen.
   Phone packets may be up to 8 KB for this. Never change Claude's permission mode from the phone.

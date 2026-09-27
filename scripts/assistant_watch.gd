@@ -8,6 +8,11 @@ extends RefCounted
 ## Приватность (решение 2026-09-27): статус, имя папки и текст последнего ответа
 ## идут на привязанный телефон; всё хранится только в памяти, на диск — нет.
 ##
+## Разрешения и вопросы с вариантами (решение 2026-09-27): хук claude_hook.py
+## --ask присылает «Permission» или «Question» и ждёт. Телефона нет — сразу
+## «нет» (обычное окно на ПК). Есть — карточка показывает запрос; ответ
+## уходит хуку; нет ответа 30 с — «нет», и спросят на ПК.
+##
 ## Ответ с телефона (решение 2026-09-27): когда Claude закончил, фоновый хук
 ## (claude_hook.py --wait, asyncRewake) присылает «Wait» и держит соединение.
 ## Пока он ждёт, на карточке есть поле «Ответить». Текст с телефона уходит ему,
@@ -24,6 +29,9 @@ const MAX_SESSIONS: int = 8
 const MAX_TEXT: int = 6000
 ## Самый длинный ответ с телефона.
 const MAX_REPLY: int = 2000
+## Сколько ждать ответа на разрешение/вопрос с телефона, потом — окно на ПК.
+const ASK_TIMEOUT: float = 30.0
+const ASK_LETTERS: String = "abcdefghijkmnopqrstuvwxyz" # без «l»: не спутать с «1»
 ## Картинки/гифки/видео из ответа (их находит хук): не больше, и какие виды.
 const MAX_MEDIA: int = 8
 const MAX_MEDIA_BYTES: int = 16 * 1024 * 1024
@@ -45,6 +53,12 @@ var listening: bool = false
 var _server := TCPServer.new()
 var _clients: Array = []   # [{stream, buffer, age}]
 var _waiters: Dictionary = {}  # session id -> StreamPeerTCP (ждун ответа с телефона)
+## Сколько телефонов на связи (ставит шина пульта): 0 — вопросы сразу на ПК.
+var phones: int = 0
+## Сообщение для Хоши на ПК (забирает шина пульта).
+var notice: String = ""
+## Открытый вопрос/разрешение: {id, session, kind, tool, detail, questions, stream, at}
+var ask: Dictionary = {}
 var _clock: float = 0.0
 var _crypto := Crypto.new()
 
@@ -57,6 +71,8 @@ func stop() -> void:
 	for client in _clients:
 		client["stream"].disconnect_from_host()
 	_clients.clear()
+	if not ask.is_empty():
+		_finish_ask({}) # Хоши закрывается — вопрос уходит на ПК
 	# Хоши закрывается: просто обрываем связь (не «отпускаем»), чтобы ждуны
 	# постучались снова, когда она вернётся (перезапуск), и принесли карточку.
 	for id in _waiters.keys():
@@ -95,6 +111,9 @@ func tick(delta: float) -> void:
 			if request is Dictionary and str(request.get("event", "")) == "Wait":
 				_add_waiter(request, stream)
 				continue
+			if request is Dictionary and str(request.get("event", "")) in ["Permission", "Question"]:
+				_add_ask(request, stream)
+				continue
 			if request is Dictionary:
 				handle_event(request)
 				stream.put_data("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_utf8_buffer())
@@ -104,6 +123,11 @@ func tick(delta: float) -> void:
 		waiter.poll()
 		if waiter.get_status() != StreamPeerTCP.STATUS_CONNECTED:
 			_waiters.erase(id)
+	if not ask.is_empty():
+		var held: StreamPeerTCP = ask["stream"]
+		held.poll()
+		if held.get_status() != StreamPeerTCP.STATUS_CONNECTED or _clock - float(ask["at"]) > ASK_TIMEOUT:
+			_finish_ask({}) # не ответили — спросят на ПК
 
 ## Полный POST на /assistant -> разобранный JSON; не весь ещё -> null; мусор -> {} .
 func _complete_request(buffer: PackedByteArray) -> Variant:
@@ -168,6 +192,81 @@ func handle_event(message: Dictionary) -> void:
 	session["at"] = _clock
 	sessions[id] = session
 	_trim()
+
+## Разрешение или вопрос от хука: телефона нет — сразу «нет»; есть — держим.
+func _add_ask(message: Dictionary, stream: StreamPeerTCP) -> void:
+	if phones <= 0 or not ask.is_empty():
+		_reply(stream, {})
+		return
+	var session: String = str(message.get("session", "")).left(64)
+	var code: String = ""
+	for i in range(5):
+		code += ASK_LETTERS[_crypto.generate_random_bytes(1)[0] % ASK_LETTERS.length()]
+	var questions: Array = []
+	for q in message.get("questions", []):
+		if q is Dictionary and questions.size() < 4:
+			var options: Array = []
+			for o in q.get("options", []):
+				if o is Dictionary and options.size() < 6:
+					options.append({"label": str(o.get("label", "")).left(80), "description": str(o.get("description", "")).left(200)})
+			questions.append({"question": str(q.get("question", "")).left(400), "header": str(q.get("header", "")).left(30),
+				"multiSelect": bool(q.get("multiSelect", false)), "options": options})
+	var kind: String = "question" if str(message.get("event", "")) == "Question" else "permission"
+	if kind == "question" and questions.is_empty():
+		_reply(stream, {})
+		return
+	ask = {"id": code, "session": session, "kind": kind, "tool": str(message.get("tool", "")).left(60),
+		"detail": str(message.get("detail", "")).left(600), "questions": questions, "stream": stream, "at": _clock}
+	if not sessions.has(session):
+		handle_event({"app": "claude", "event": "SessionStart", "session": session, "folder": message.get("folder", "")})
+	sessions[session]["status"] = "waiting"
+	sessions[session]["at"] = _clock
+	notice = "Claude ждёт ответа на телефоне (%d с)" % int(ASK_TIMEOUT)
+
+## Ответ телефона на разрешение: behavior — "allow" / "deny".
+func answer_permission(ask_id: String, behavior: String) -> String:
+	if ask.is_empty() or ask["id"] != ask_id or ask["kind"] != "permission":
+		return "no_question"
+	if not behavior in ["allow", "deny"]:
+		return "bad_answer"
+	_finish_ask({"behavior": behavior})
+	return ""
+
+## Ответ телефона на вопрос: {текст вопроса: выбранный вариант или свой текст}.
+func answer_question(ask_id: String, answers: Variant) -> String:
+	if ask.is_empty() or ask["id"] != ask_id or ask["kind"] != "question":
+		return "no_question"
+	if not answers is Dictionary:
+		return "bad_answer"
+	var clean: Dictionary = {}
+	for q in ask["questions"]:
+		var value: String = str(answers.get(q["question"], "")).strip_edges().left(500)
+		if value.is_empty():
+			return "not_all_answered"
+		clean[q["question"]] = value
+	_finish_ask({"answers": clean})
+	return ""
+
+func _finish_ask(answer: Dictionary) -> void:
+	if ask.is_empty():
+		return
+	var session: String = ask["session"]
+	_reply(ask["stream"], answer)
+	ask = {}
+	if sessions.has(session):
+		sessions[session]["status"] = "working"
+		sessions[session]["at"] = _clock
+
+## Ответ хуку: пустой — 204 («спроси на ПК»), иначе 200 с JSON.
+func _reply(stream: StreamPeerTCP, answer: Dictionary) -> void:
+	if stream.get_status() == StreamPeerTCP.STATUS_CONNECTED:
+		if answer.is_empty():
+			stream.put_data("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_utf8_buffer())
+		else:
+			var body: PackedByteArray = JSON.stringify(answer).to_utf8_buffer()
+			stream.put_data(("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % body.size()).to_utf8_buffer())
+			stream.put_data(body)
+	stream.disconnect_from_host()
 
 ## Можно ли ответить этой сессии с телефона (её ждун на связи).
 func can_reply(id: String) -> bool:
@@ -284,7 +383,9 @@ func active() -> bool:
 
 ## Объявление для app_adapters.announce().
 func announcement() -> Dictionary:
-	return {"id": ID, "title": "Claude", "commands": [{"name": "reply", "title": "Ответить", "row": "hidden", "args": {"text": "", "session": ""}}], "state": card_state()}
+	return {"id": ID, "title": "Claude", "commands": [{"name": "reply", "title": "Ответить", "row": "hidden", "args": {"text": "", "session": ""}},
+		{"name": "permit", "title": "Разрешить/запретить", "row": "hidden", "args": {"id": "", "behavior": ""}},
+		{"name": "answer", "title": "Ответить на вопрос", "row": "hidden", "args": {"id": "", "answers": {}}}], "state": card_state()}
 
 ## Карточка «Claude»: свежая сессия крупно, остальные — списком.
 func card_state() -> Dictionary:
@@ -296,6 +397,11 @@ func card_state() -> Dictionary:
 		"subtitle": STATUS_TEXT.get(session["status"], ""), "badge": STATUS_TEXT.get(session["status"], ""),
 		"text": session["note"] if session["status"] == "waiting" else session["text"],
 		"session": id, "can_reply": can_reply(id), "media": _public_media(session)}
+	if not ask.is_empty():
+		# Открытый вопрос/разрешение — наверху карточки (без самого соединения).
+		state["ask"] = {"id": ask["id"], "kind": ask["kind"], "tool": ask["tool"], "detail": ask["detail"], "questions": ask["questions"],
+			"seconds": maxi(0, int(ASK_TIMEOUT - (_clock - float(ask["at"]))))}
+		state["badge"] = "? ждёт ответа"
 	if sessions.size() > 1:
 		var items: Array = []
 		for other in _by_time():

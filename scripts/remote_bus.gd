@@ -112,6 +112,7 @@ func stop() -> void:
 	_http.stop()
 	_ws.stop()
 	adapters = Adapters.new()
+	assistants.phones = 0 # пульт выключен — вопросы Claude сразу на ПК
 	enabled = false
 
 func new_pairing_code() -> void:
@@ -210,6 +211,10 @@ func tick(delta: float) -> void:
 		if _peers.has(key):
 			_poll_peer(key, dt)
 	mpc.tick(dt, phone_count() > 0)
+	assistants.phones = phone_count()
+	if not assistants.notice.is_empty():
+		_say(assistants.notice)
+		assistants.notice = ""
 	_sync_mpc()
 	_sync_assistants()
 	if not sound.notice.is_empty():
@@ -491,6 +496,11 @@ func run(command: String, args: Variant = {}) -> String:
 		if int(target["peer"]) == AssistantWatch.PEER:
 			# Ответ Claude с телефона (решение 2026-09-27): длиннее обычных аргументов.
 			var reply: Dictionary = args if args is Dictionary else {}
+			match str(target["name"]):
+				"permit":
+					return assistants.answer_permission(str(reply.get("id", "")), str(reply.get("behavior", "")))
+				"answer":
+					return assistants.answer_question(str(reply.get("id", "")), reply.get("answers", {}))
 			return assistants.reply(str(reply.get("text", "")), str(reply.get("session", "")))
 		_send(int(target["peer"]), {"op": "run", "command": target["name"], "args": _clean_args(args)})
 		return ""

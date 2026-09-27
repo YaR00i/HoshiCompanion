@@ -93,6 +93,21 @@
   .answer { margin-top: 10px; padding: 10px 12px; border-radius: 14px; background: var(--paper); border: 1px solid var(--line);
     font-size: 13px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 45vh; overflow-y: auto; }
   .quick-replies { margin-top: 10px; }
+  /* «Claude спрашивает»: разрешение или вопрос с вариантами */
+  .ask { margin: 4px 0 10px; padding: 12px; border-radius: 16px; background: #fdf3e2; border: 1px solid #efd9b3; }
+  .ask .ask-head { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; color: #9a6b1f; margin-bottom: 6px; }
+  .ask .detail { font: 12px/1.35 ui-monospace, Consolas, monospace; background: #fff; border: 1px solid #efd9b3; border-radius: 10px;
+    padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 30vh; overflow-y: auto; }
+  .ask .q { margin: 8px 0 4px; font-weight: 650; font-size: 14px; }
+  .ask .opt { display: block; width: 100%; text-align: left; margin-top: 6px; padding: 9px 12px; border-radius: 12px;
+    background: #fff; border: 1px solid #efd9b3; }
+  .ask .opt.on { background: var(--plum); border-color: var(--plum); color: #fff; }
+  .ask .opt small { display: block; font-size: 11px; opacity: .75; margin-top: 2px; }
+  .ask input { width: 100%; margin-top: 6px; padding: 9px 12px; border-radius: 12px; border: 1px solid #efd9b3; font: inherit; }
+  .ask .row { display: flex; gap: 8px; margin-top: 10px; }
+  .ask .row button { flex: 1; padding: 11px; border-radius: 12px; font-weight: 650; background: #fff; border: 1px solid #efd9b3; }
+  .ask .row .yes { background: #4caf7a; border-color: #4caf7a; color: #fff; }
+  .ask .row .no { background: #8c3c52; border-color: #8c3c52; color: #fff; }
   .answer a { color: var(--plum); text-decoration: underline; overflow-wrap: anywhere; }
   .media-grid { display: grid; gap: 8px; margin-top: 10px; }
   .media-grid figure { margin: 0; }
@@ -297,7 +312,8 @@ function connect() {
       nothing_to_cancel: "Нечего отменять", need_confirm: "Нужно подтвердить",
       not_available: "Это устройство сейчас не на связи",
       not_waiting: "Claude сейчас не ждёт ответа — напиши, когда он закончит", unknown_session: "Эта сессия Claude уже закрыта",
-      unknown_window: "Этого окна уже нет — обнови список", bad_screen: "Выбери экран"}[m.reason] || "Сейчас не получилось");
+      unknown_window: "Этого окна уже нет — обнови список", bad_screen: "Выбери экран",
+      no_question: "Вопрос уже закрыт — Claude спросит на ПК", not_all_answered: "Ответь на все вопросы"}[m.reason] || "Сейчас не получилось");
     else if (m.op === "error") {
       if (m.reason === "need_pairing") {
         token = null; try { localStorage.removeItem("hoshi-token"); } catch (e) {}
@@ -508,7 +524,7 @@ function confirmThen(item) {
   $("sheetIcon").textContent = item.icon || "⚠️";
   $("sheetText").textContent = item.title + "?";
   $("sheet").classList.remove("hidden");
-  $("sheetYes").onclick = () => { $("sheet").classList.add("hidden"); run(item.command, {confirm: true}); };
+  $("sheetYes").onclick = () => { $("sheet").classList.add("hidden"); run(item.command, item.args || {confirm: true}); };
 }
 $("sheetNo").onclick = () => $("sheet").classList.add("hidden");
 $("sheet").onclick = (e) => { if (e.target === $("sheet")) $("sheet").classList.add("hidden"); };
@@ -563,7 +579,8 @@ function barItems() {
   for (const app of state.apps || []) {
     const s = app.state || {}; let mark = "", kind = "";
     if (app.id === "claude") {
-      if (s.subtitle === "работает…") mark = "…";
+      if (s.ask) { mark = "?"; kind = "waiting"; }
+      else if (s.subtitle === "работает…") mark = "…";
       else if (String(s.subtitle || "").startsWith("?")) { mark = "?"; kind = "waiting"; }
       else if (s.can_reply) { mark = "✓"; kind = "done"; }
     } else if (s.playing) mark = "▶";
@@ -634,6 +651,7 @@ function clock(s) {
 const appViews = {};      // id -> {signature, card, fill, times, buttons}
 const openLists = {};     // "app:list" -> раскрыт ли список
 const drafts = {};        // app id -> недописанный ответ (Claude), переживает перестройку карточки
+const askDrafts = {};     // id вопроса -> {вопрос: ответ}
 
 function renderApps() {
   const root = $("apps");
@@ -653,7 +671,8 @@ function renderApps() {
   let previous = null;
   for (const app of apps) {
     const s = app.state || {};
-    const signature = JSON.stringify([app.commands, s.title, s.subtitle, s.thumbnail, s.hint, s.lists, s.text, s.can_reply, s.session, s.media]);
+    const signature = JSON.stringify([app.commands, s.title, s.subtitle, s.thumbnail, s.hint, s.lists, s.text, s.can_reply, s.session, s.media,
+      s.ask ? s.ask.id : ""]); // таймер вопроса не перестраивает карточку — выбор не сбрасывается
     let view = appViews[app.id];
     if (!view || view.signature !== signature) {
       const fresh = buildApp(app, signature);
@@ -686,6 +705,7 @@ function buildApp(app, signature) {
     now.append(text); card.append(now);
   } else card.append(el("div", "empty", s.hint || "Ничего не играет"));
   const byName = {}; for (const c of app.commands) byName[c.command.split(":")[2]] = c;
+  if (s.ask && byName.permit) { card.insertBefore(buildAsk(s.ask, byName, view), card.children[1] || null); }
   if (s.text) { const answer = el("div", "answer"); linkify(answer, s.text); card.append(answer); }
   // Картинки, гифки и видео из ответа: Хоши отдаёт их по случайному адресу /media/<id>.
   if ((s.media || []).length) {
@@ -706,7 +726,7 @@ function buildApp(app, signature) {
       const chip = el("button", "chip", label); chip.disabled = true; chip.style.opacity = ".45"; quick.append(chip);
     }
     card.append(quick);
-    if (!s.hint) card.append(el("div", "empty", s.subtitle === "работает…" ? "Claude работает — кнопки оживут, когда закончит"
+    if (!s.hint && !s.ask) card.append(el("div", "empty", s.subtitle === "работает…" ? "Claude работает — кнопки оживут, когда закончит"
       : "Claude не ждёт ответа — напиши ему в сессии на ПК, потом кнопки оживут"));
   }
   // Ответ Claude с телефона: поле есть, только пока Claude ждёт (его хук на связи).
@@ -773,8 +793,57 @@ function buildApp(app, signature) {
   return view;
 }
 
+// «Claude спрашивает»: разрешение (Разрешить / Запретить, с кодом) или вопрос с вариантами.
+function buildAsk(ask, byName, view) {
+  const box = el("div", "ask"); const head = el("div", "ask-head");
+  view.askTimer = el("span", "", "");
+  head.append(el("span", "", ask.kind === "permission" ? "Claude просит разрешение · " + ask.id : "Claude спрашивает"), view.askTimer);
+  box.append(head);
+  if (ask.kind === "permission") {
+    box.append(el("div", "", ask.tool || "Действие"));
+    if (ask.detail) box.append(el("div", "detail", ask.detail));
+    const row = el("div", "row"); const no = el("button", "no", "✕ Запретить"); const yes = el("button", "yes", "✓ Разрешить");
+    no.onclick = () => { run(byName.permit.command, {id: ask.id, behavior: "deny"}); toast("Запретила"); };
+    yes.onclick = () => confirmThen({icon: "✓", title: "Разрешить «" + (ask.tool || "действие") + "» · код " + ask.id,
+      command: byName.permit.command, args: {id: ask.id, behavior: "allow"}});
+    row.append(no, yes); box.append(row);
+    return box;
+  }
+  const answers = askDrafts[ask.id] = askDrafts[ask.id] || {};
+  const send = el("button", "yes", "Отправить ответ");
+  const refresh = () => { send.disabled = ask.questions.some((q) => !answers[q.question]); send.style.opacity = send.disabled ? ".5" : "1"; };
+  for (const q of ask.questions) {
+    if (q.header) box.append(el("div", "ask-head", q.header));
+    box.append(el("div", "q", q.question));
+    const picked = new Set(String(answers[q.question] || "").split(", ").filter(Boolean));
+    const buttons = [];
+    for (const o of q.options) {
+      const b = el("button", "opt" + (picked.has(o.label) ? " on" : ""), o.label);
+      if (o.description) b.append(el("small", "", o.description));
+      b.onclick = () => {
+        if (q.multiSelect) { picked.has(o.label) ? picked.delete(o.label) : picked.add(o.label); }
+        else { picked.clear(); picked.add(o.label); other.value = ""; }
+        for (const x of buttons) x.classList.toggle("on", picked.has(x.firstChild.textContent));
+        answers[q.question] = [...picked].join(", "); refresh();
+      };
+      buttons.push(b); box.append(b);
+    }
+    const other = el("input"); other.placeholder = "Другое — свой ответ…"; other.maxLength = 500;
+    other.oninput = () => {
+      if (other.value.trim()) { picked.clear(); for (const x of buttons) x.classList.remove("on"); answers[q.question] = other.value.trim(); }
+      else answers[q.question] = "";
+      refresh();
+    };
+    box.append(other);
+  }
+  send.onclick = () => { if (send.disabled) return; run(byName.answer.command, {id: ask.id, answers}); toast("Ответила Claude"); };
+  const row = el("div", "row"); row.append(send); box.append(row); refresh();
+  return box;
+}
+
 function updateApp(view, app) {
   const s = app.state || {}, icons = s.icons || {}, active = new Set(s.active || []);
+  if (view.askTimer && s.ask) view.askTimer.textContent = s.ask.seconds + " с";
   view.playing.textContent = s.badge !== undefined ? s.badge : (s.playing ? "▶ играет" : (s.title ? "⏸ пауза" : ""));
   view.duration = s.duration || 0;
   if (view.progress) {

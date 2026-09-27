@@ -111,6 +111,36 @@ func _run() -> void:
 	live.handle_event({"app": "claude", "event": "UserPromptSubmit", "session": "live"})
 	got = await _read_all(live, waiter)
 	_check(got.begins_with("HTTP/1.1 204") and not live.can_reply("live"), "typing on the PC lets the waiting hook go without a reply")
+	# Разрешения и вопросы: нет телефона — сразу «спроси на ПК»; есть — ждём ответа.
+	live.phones = 0
+	var perm: StreamPeerTCP = await _open_ask(live, {"app": "claude", "event": "Permission", "session": "live", "tool": "Bash", "detail": "git commit -m test"})
+	got = await _read_all(live, perm)
+	_check(got.begins_with("HTTP/1.1 204") and live.ask.is_empty(), "no phone connected — the question goes to the PC at once")
+	live.phones = 1
+	perm = await _open_ask(live, {"app": "claude", "event": "Permission", "session": "live", "tool": "Bash", "detail": "git commit -m test"})
+	var shown_ask: Dictionary = live.card_state().get("ask", {})
+	_check(shown_ask.get("kind", "") == "permission" and str(shown_ask.get("id", "")).length() == 5 and not str(shown_ask["id"]).contains("l") and shown_ask["detail"] == "git commit -m test" and live.clouds()[0]["status"] == "waiting", "with a phone the permission request waits on the card, with a 5-letter code")
+	_check(live.notice.contains("телефоне"), "Hoshi tells the PC that Claude waits for the phone")
+	_check(bus_live.run("app:claude:permit", {"id": "zzzzz", "behavior": "allow"}) == "no_question" and bus_live.run("app:claude:permit", {"id": shown_ask["id"], "behavior": "sudo"}) == "bad_answer", "a wrong code or answer is refused")
+	_check(bus_live.run("app:claude:permit", {"id": shown_ask["id"], "behavior": "allow"}) == "" and live.ask.is_empty(), "the phone allows it")
+	got = await _read_all(live, perm)
+	_check(got.begins_with("HTTP/1.1 200") and got.contains("\"behavior\":\"allow\""), "the hook gets «allow»")
+	var question_note: Dictionary = {"app": "claude", "event": "Question", "session": "live", "questions": [
+		{"question": "Какой цвет облачка?", "header": "Облачко", "multiSelect": false, "options": [{"label": "Оранжевый", "description": ""}, {"label": "Мятный", "description": ""}]},
+		{"question": "Какие приложения?", "header": "", "multiSelect": true, "options": [{"label": "Claude"}, {"label": "Codex"}]}]}
+	var held_q: StreamPeerTCP = await _open_ask(live, question_note)
+	var q_id: String = live.card_state()["ask"]["id"]
+	_check(live.card_state()["ask"]["questions"].size() == 2 and bus_live.run("app:claude:answer", {"id": q_id, "answers": {"Какой цвет облачка?": "Мятный"}}) == "not_all_answered", "every question needs an answer")
+	_check(bus_live.run("app:claude:answer", {"id": q_id, "answers": {"Какой цвет облачка?": "Мятный", "Какие приложения?": "Claude, Codex", "Лишний": "x"}}) == "", "the phone answers the questions")
+	got = await _read_all(live, held_q)
+	var answer_json: Variant = JSON.parse_string(got.get_slice("\r\n\r\n", 1))
+	_check(answer_json is Dictionary and answer_json["answers"] == {"Какой цвет облачка?": "Мятный", "Какие приложения?": "Claude, Codex"}, "the hook gets exactly the answers to its own questions")
+	held_q = await _open_ask(live, question_note)
+	live._clock += AssistantWatch.ASK_TIMEOUT + 1.0
+	got = await _read_all(live, held_q)
+	_check(got.begins_with("HTTP/1.1 204") and live.ask.is_empty(), "no answer in 30 s — the question goes to the PC")
+	live.phones = 0
+
 	waiter = await _open_waiter(live, "live")
 	live.stop()
 	got = await _read_all(live, waiter)
@@ -184,6 +214,25 @@ func _open_waiter(watch, session: String, last_answer: String = "") -> StreamPee
 			peer.put_data(data)
 			sent = true
 		if sent and watch.can_reply(session):
+			break
+		await process_frame
+	return peer
+
+## Прислать разрешение/вопрос (как claude_hook.py --ask) и дождаться, пока Хоши решит.
+func _open_ask(watch, note: Dictionary) -> StreamPeerTCP:
+	var peer := StreamPeerTCP.new()
+	peer.connect_to_host("127.0.0.1", watch.port)
+	var body: PackedByteArray = JSON.stringify(note).to_utf8_buffer()
+	var sent: bool = false
+	for frame in range(60):
+		peer.poll()
+		watch.tick(0.016)
+		if peer.get_status() == StreamPeerTCP.STATUS_CONNECTED and not sent:
+			var data: PackedByteArray = ("POST /assistant HTTP/1.1\r\nContent-Length: %d\r\n\r\n" % body.size()).to_utf8_buffer()
+			data.append_array(body)
+			peer.put_data(data)
+			sent = true
+		elif sent and frame > 10:
 			break
 		await process_frame
 	return peer

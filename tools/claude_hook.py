@@ -13,6 +13,13 @@ With --wait (a separate Stop hook, "asyncRewake": true) it waits in the
 background for a reply typed on the phone and wakes Claude with it
 (user decision 2026-09-27: write to Claude from the phone).
 
+With --ask (synchronous hooks: PermissionRequest, and PreToolUse for
+AskUserQuestion; user decision 2026-09-27) Claude's permission requests and
+multiple-choice questions go to the phone while a phone is connected. Hoshi
+answers at once "no phone" -> nothing is printed and the usual dialog shows on
+the PC. A phone answer comes back as the hook decision (allow/deny, or the
+chosen answers). No answer in ASK_WAIT seconds -> the usual dialog on the PC.
+
 Media (user request 2026-09-27): pictures, GIFs and videos that the answer
 itself names (absolute path, or relative to the session folder) are listed
 for Hoshi so the phone can view them. Only existing media files up to 16 MB,
@@ -37,6 +44,7 @@ URL = 'http://%s:%d%s' % (HOST, PORT, PATH)
 RETRY_EVERY = 3.0
 RETRY_AFTER_LOSS = 12 * 3600.0  # Hoshi closed for the night -> the card comes back in the morning
 MAX_TEXT = 6000
+ASK_WAIT = 32.0  # Hoshi lets go after 30 s; a little longer here
 EVENTS = {'SessionStart', 'UserPromptSubmit', 'Notification', 'Stop', 'SessionEnd'}
 MEDIA_KINDS = {'.png': 'image', '.jpg': 'image', '.jpeg': 'image', '.gif': 'image', '.webp': 'image',
                '.mp4': 'video', '.webm': 'video'}
@@ -157,6 +165,72 @@ def wait_for_phone(event: dict) -> int:
     return 2
 
 
+def _short(value, limit: int = 400) -> str:
+    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    return text[:limit]
+
+
+def ask_message(event: dict) -> dict | None:
+    """What to show on the phone for a permission request or a question."""
+    name = str(event.get('hook_event_name', ''))
+    tool = str(event.get('tool_name', ''))[:60]
+    tool_input = event.get('tool_input', {}) if isinstance(event.get('tool_input'), dict) else {}
+    base = {'app': 'claude', 'session': str(event.get('session_id', ''))[:64],
+            'folder': ntpath.basename(str(event.get('cwd', '')).rstrip('/\\'))[:80]}
+    if name == 'PreToolUse' and tool == 'AskUserQuestion':
+        questions = []
+        for q in (tool_input.get('questions') or [])[:4]:
+            if not isinstance(q, dict):
+                continue
+            options = [{'label': _short(o.get('label', ''), 80), 'description': _short(o.get('description', ''), 200)}
+                       for o in (q.get('options') or [])[:6] if isinstance(o, dict)]
+            questions.append({'question': _short(q.get('question', ''), 400), 'header': _short(q.get('header', ''), 30),
+                              'multiSelect': bool(q.get('multiSelect', False)), 'options': options})
+        return dict(base, event='Question', questions=questions) if questions else None
+    if name == 'PermissionRequest':
+        # The gist of what Claude wants to do: a command, a file, a site.
+        detail = tool_input.get('command') or tool_input.get('file_path') or tool_input.get('url') or tool_input.get('pattern') or tool_input
+        return dict(base, event='Permission', tool=tool, detail=_short(detail, 600))
+    return None
+
+
+def ask_phone(event: dict) -> int:
+    """--ask: hold the question until the phone answers (or Hoshi lets go)."""
+    message = ask_message(event)
+    if message is None or not message['session']:
+        return 0
+    connection = http.client.HTTPConnection(HOST, PORT, timeout=ASK_WAIT)
+    try:
+        connection.request('POST', PATH, json.dumps(message, ensure_ascii=False).encode('utf-8'), {'Content-Type': 'application/json'})
+        answer = connection.getresponse()
+        status, data = answer.status, answer.read()
+    except OSError:
+        return 0  # Hoshi closed or no answer in time: the usual dialog on the PC
+    finally:
+        connection.close()
+    if status != 200:
+        return 0
+    try:
+        reply = json.loads(data.decode('utf-8'))
+    except ValueError:
+        return 0
+    if message['event'] == 'Permission' and reply.get('behavior') in ('allow', 'deny'):
+        decision = {'behavior': reply['behavior']}
+        if reply['behavior'] == 'deny':
+            decision['message'] = 'Запрещено с телефона (пульт Хоши)'
+        print(json.dumps({'hookSpecificOutput': {'hookEventName': 'PermissionRequest', 'decision': decision}}, ensure_ascii=False))
+        return 0
+    if message['event'] == 'Question' and isinstance(reply.get('answers'), dict):
+        tool_input = dict(event.get('tool_input') or {})
+        known = {q['question'] for q in message['questions']}
+        tool_input['answers'] = {str(k): str(v)[:500] for k, v in reply['answers'].items() if str(k) in known}
+        print(json.dumps({'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'allow',
+                                                 'permissionDecisionReason': 'Ответ с телефона (пульт Хоши)',
+                                                 'updatedInput': tool_input}}, ensure_ascii=False))
+        return 0
+    return 0
+
+
 def main() -> int:
     try:
         event = json.loads(sys.stdin.buffer.read().decode('utf-8', errors='replace') or '{}')
@@ -166,6 +240,9 @@ def main() -> int:
         return 0
     if '--wait' in sys.argv[1:]:
         return wait_for_phone(event) if event.get('hook_event_name') == 'Stop' else 0
+    if '--ask' in sys.argv[1:]:
+        sys.stdout.reconfigure(encoding='utf-8')
+        return ask_phone(event)
     message = clean(event)
     if message is None:
         return 0
