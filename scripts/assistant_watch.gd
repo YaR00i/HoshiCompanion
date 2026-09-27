@@ -8,6 +8,11 @@ extends RefCounted
 ## Приватность (решение 2026-09-27): статус, имя папки и текст последнего ответа
 ## идут на привязанный телефон; всё хранится только в памяти, на диск — нет.
 ##
+## История бесед (решение 2026-09-27, на ПК): по просьбе телефона
+## tools/claude_history.py читает журналы Claude Code — список сессий или
+## тексты одной беседы (без служебных шагов); ответ уходит только тому
+## телефону, который попросил (шина пульта забирает take_history()).
+##
 ## Разрешения и вопросы с вариантами (решение 2026-09-27): хук claude_hook.py
 ## --ask присылает «Permission» или «Question» и ждёт. Телефона нет — сразу
 ## «нет» (обычное окно на ПК). Есть — карточка показывает запрос; ответ
@@ -59,6 +64,14 @@ var phones: int = 0
 var notice: String = ""
 ## Открытый вопрос/разрешение: {id, session, kind, tool, detail, questions, stream, at}
 var ask: Dictionary = {}
+## Готовые ответы «история» для телефонов: [{peer, message}] (забирает шина).
+var history_ready: Array = []
+## Для тестов: вместо помощника записывать, что просили.
+var history_dry_run: bool = false
+var history_asked: Array = []
+var _history_jobs: Array = []  # [{peer, kind, io, pid, buffer, age}]
+const HISTORY_HELPER: String = "res://tools/claude_history.py"
+const HISTORY_MESSAGES: int = 50
 var _clock: float = 0.0
 var _crypto := Crypto.new()
 
@@ -84,6 +97,7 @@ func stop() -> void:
 func tick(delta: float) -> void:
 	var dt: float = clampf(delta, 0.0, 0.1)
 	_clock += dt
+	_poll_history(dt)
 	if not listening:
 		return
 	while _server.is_connection_available():
@@ -192,6 +206,81 @@ func handle_event(message: Dictionary) -> void:
 	session["at"] = _clock
 	sessions[id] = session
 	_trim()
+
+## Телефон просит историю: kind "sessions" (все сессии) или "read" (беседа;
+## пустой session — текущая, с карточки).
+func request_history(peer: int, kind: String, session: String) -> void:
+	if not kind in ["sessions", "read"] or _history_jobs.size() >= 3:
+		return
+	if kind == "read" and session.is_empty():
+		session = latest()
+	if kind == "read" and (session.is_empty() or not _looks_like_session(session)):
+		history_ready.append({"peer": peer, "message": {"op": "history", "kind": "read", "ok": false, "error": "no_session"}})
+		return
+	var args: Array = ["sessions", "30"] if kind == "sessions" else ["read", session, str(HISTORY_MESSAGES)]
+	if history_dry_run:
+		history_asked.append([peer] + args)
+		return
+	var helper: String = ProjectSettings.globalize_path(HISTORY_HELPER)
+	if OS.get_name() != "Windows" or not FileAccess.file_exists(helper):
+		return
+	var python: String = FileAccess.get_file_as_string("res://python_path.txt").strip_edges() if FileAccess.file_exists("res://python_path.txt") else "python"
+	var process: Dictionary = OS.execute_with_pipe(python, PackedStringArray(["-u", helper] + args), false)
+	if not process.is_empty():
+		_history_jobs.append({"peer": peer, "kind": kind, "io": process["stdio"], "pid": int(process["pid"]), "buffer": PackedByteArray(), "age": 0.0})
+
+static func _looks_like_session(id: String) -> bool:
+	if id.length() < 8 or id.length() > 64:
+		return false
+	for character in id:
+		if not (character.is_valid_hex_number() or character == "-"):
+			return false
+	return true
+
+## Ответ помощника истории (отдельной функцией — тесты подают его сами).
+func apply_history(peer: int, kind: String, result: Variant) -> void:
+	var message: Dictionary = {"op": "history", "kind": kind, "ok": result is Dictionary and bool(result.get("ok", false))}
+	if message["ok"]:
+		if kind == "sessions":
+			var list: Array = []
+			for s in result.get("sessions", []):
+				if s is Dictionary and list.size() < 30:
+					list.append({"id": str(s.get("id", "")).left(64), "title": str(s.get("title", "")).left(80),
+						"folder": str(s.get("folder", "")).left(80), "updated": int(s.get("updated", 0)), "current": str(s.get("id", "")) == latest()})
+			message["sessions"] = list
+		else:
+			var messages: Array = []
+			for m in result.get("messages", []):
+				if m is Dictionary and str(m.get("role", "")) in ["user", "phone", "assistant"] and messages.size() < HISTORY_MESSAGES:
+					messages.append({"role": m["role"], "text": str(m.get("text", "")).left(3000), "time": str(m.get("time", "")).left(19)})
+			message["id"] = str(result.get("id", "")).left(64)
+			message["title"] = str(result.get("title", "")).left(80)
+			message["messages"] = messages
+	history_ready.append({"peer": peer, "message": message})
+
+## Забрать готовые ответы истории (шина отправит каждый своему телефону).
+func take_history() -> Array:
+	var ready: Array = history_ready
+	history_ready = []
+	return ready
+
+func _poll_history(dt: float) -> void:
+	for job in _history_jobs.duplicate():
+		job["age"] = float(job["age"]) + dt
+		var chunk: PackedByteArray = (job["io"] as FileAccess).get_buffer(262144)
+		if not chunk.is_empty():
+			var grown: PackedByteArray = job["buffer"]
+			grown.append_array(chunk)
+			job["buffer"] = grown
+		if OS.is_process_running(int(job["pid"])) and float(job["age"]) < 10.0:
+			continue
+		if OS.is_process_running(int(job["pid"])):
+			OS.kill(int(job["pid"]))
+		var rest: PackedByteArray = (job["io"] as FileAccess).get_buffer(1048576)
+		var all: PackedByteArray = job["buffer"]
+		all.append_array(rest)
+		_history_jobs.erase(job)
+		apply_history(int(job["peer"]), str(job["kind"]), JSON.parse_string(all.get_string_from_utf8().strip_edges()))
 
 ## Разрешение или вопрос от хука: телефона нет — сразу «нет»; есть — держим.
 func _add_ask(message: Dictionary, stream: StreamPeerTCP) -> void:

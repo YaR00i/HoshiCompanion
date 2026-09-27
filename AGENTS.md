@@ -193,6 +193,10 @@
   connected (bus sets assistants.phones), otherwise holds one request up to 30 s with a random 5-letter
   code. "app:claude:permit" {id, behavior allow|deny} / "app:claude:answer" {id, answers for exactly
   those questions} release it; timeout/close => 204 => the normal dialog on the PC.
+  History (user-approved on the PC 2026-09-27): phone op "history" {kind read|sessions, session} ->
+  tools/claude_history.py (read-only, ~/.claude/projects/*/<id>.jsonl, message texts only: user/phone/
+  assistant; never tool calls/results, file contents, thinking) -> {op:"history"} sent ONLY to the
+  requesting phone (never in broadcast state). Session ids are validated (hex/-).
   Clouds over Hoshi: assistant_watch.clouds() -> companion_ui -> assistant_clouds.gd (draw only,
   mouse-transparent, menu toggle "toggle_assistant_clouds", saved in companion.cfg); petting marks seen.
   Phone packets may be up to 8 KB for this. Never change Claude's permission mode from the phone.

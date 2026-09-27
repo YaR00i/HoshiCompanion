@@ -93,6 +93,24 @@
   .answer { margin-top: 10px; padding: 10px 12px; border-radius: 14px; background: var(--paper); border: 1px solid var(--line);
     font-size: 13px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 45vh; overflow-y: auto; }
   .quick-replies { margin-top: 10px; }
+  /* история бесед Claude — на весь экран */
+  .history { position: fixed; inset: 0; z-index: 6; background: var(--paper); display: flex; flex-direction: column; }
+  .history header { border-radius: 0; padding-bottom: 12px; }
+  .history .hbar { display: flex; align-items: center; gap: 10px; }
+  .history .hbar button { color: #fff; font-size: 20px; padding: 2px 8px; }
+  .history .htitle { font-size: 16px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .history .hbody { flex: 1; overflow-y: auto; padding: 12px 12px calc(16px + env(safe-area-inset-bottom)); }
+  .bubble { max-width: 88%; margin: 8px 0; padding: 9px 12px; border-radius: 16px; font-size: 14px; line-height: 1.4;
+    white-space: pre-wrap; overflow-wrap: anywhere; }
+  .bubble.assistant { background: var(--card); border: 1px solid var(--line); border-bottom-left-radius: 5px; }
+  .bubble.user, .bubble.phone { margin-left: auto; background: var(--plum); color: #fff; border-bottom-right-radius: 5px; }
+  .bubble.phone { background: #7d6894; }
+  .bubble .when { display: block; font-size: 10px; opacity: .6; margin-top: 4px; }
+  .bubble a { color: inherit; text-decoration: underline; }
+  .sess { display: block; width: 100%; text-align: left; padding: 11px 12px; margin: 6px 0; border-radius: 14px;
+    background: var(--card); border: 1px solid var(--line); }
+  .sess.current { border-color: var(--plum); box-shadow: 0 0 0 1px var(--plum); }
+  .sess b { display: block; font-size: 14px; } .sess span { font-size: 12px; color: var(--muted); }
   /* «Claude спрашивает»: разрешение или вопрос с вариантами */
   .ask { margin: 4px 0 10px; padding: 12px; border-radius: 16px; background: #fdf3e2; border: 1px solid #efd9b3; }
   .ask .ask-head { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; color: #9a6b1f; margin-bottom: 6px; }
@@ -308,6 +326,7 @@ function connect() {
       }
     }
     else if (m.op === "state") { state = m; online(true, (m.hoshi && m.hoshi.status) || "На связи"); renderHoshi(); renderSound(); renderApps(); renderPending(); renderWindows(); }
+    else if (m.op === "history") showHistory(m);
     else if (m.op === "ran" && !m.ok) toast({not_allowed: "С телефона так нельзя", missing: "Не нашла этот файл на компьютере",
       nothing_to_cancel: "Нечего отменять", need_confirm: "Нужно подтвердить",
       not_available: "Это устройство сейчас не на связи",
@@ -705,6 +724,12 @@ function buildApp(app, signature) {
     now.append(text); card.append(now);
   } else card.append(el("div", "empty", s.hint || "Ничего не играет"));
   const byName = {}; for (const c of app.commands) byName[c.command.split(":")[2]] = c;
+  if (app.id === "claude") { // история бесед (решение 27.09): текущая беседа и все сессии
+    const hist = el("div", "chips"); hist.style.margin = "2px 0 8px";
+    const talk = el("button", "chip", "💬 Беседа"); talk.onclick = () => openHistory("read", s.session || "");
+    const all = el("button", "chip", "🗂 Все сессии"); all.onclick = () => openHistory("sessions", "");
+    hist.append(talk, all); card.insertBefore(hist, card.children[1] || null);
+  }
   if (s.ask && byName.permit) { card.insertBefore(buildAsk(s.ask, byName, view), card.children[1] || null); }
   if (s.text) { const answer = el("div", "answer"); linkify(answer, s.text); card.append(answer); }
   // Картинки, гифки и видео из ответа: Хоши отдаёт их по случайному адресу /media/<id>.
@@ -839,6 +864,47 @@ function buildAsk(ask, byName, view) {
   send.onclick = () => { if (send.disabled) return; run(byName.answer.command, {id: ask.id, answers}); toast("Ответила Claude"); };
   const row = el("div", "row"); row.append(send); box.append(row); refresh();
   return box;
+}
+
+// Экран истории: беседа (пузыри) или список сессий. Данные приходят {op: "history"}.
+let historyView = null;
+function openHistory(kind, session) {
+  if (!historyView) {
+    historyView = el("div", "history"); const head = el("header"); const bar = el("div", "hbar");
+    const back = el("button", "", "←"); historyView.titleEl = el("div", "htitle", "");
+    const close = el("button", "", "✕"); bar.append(back, historyView.titleEl, close); head.append(bar);
+    historyView.body = el("div", "hbody"); historyView.append(head, historyView.body);
+    back.onclick = () => historyView.kind === "read" ? openHistory("sessions", "") : (historyView.remove());
+    close.onclick = () => historyView.remove();
+  }
+  historyView.kind = kind; historyView.titleEl.textContent = kind === "read" ? "Беседа" : "Все сессии Claude";
+  historyView.body.textContent = ""; historyView.body.append(el("div", "empty", "Загружаю…"));
+  document.body.append(historyView);
+  send({op: "history", kind, session});
+}
+function showHistory(m) {
+  if (!historyView || !historyView.isConnected || m.kind !== historyView.kind) return;
+  const body = historyView.body; body.textContent = "";
+  if (!m.ok) { body.append(el("div", "empty", m.kind === "read" ? "Беседа не найдена — открой «Все сессии»" : "Не получилось прочитать сессии")); return; }
+  if (m.kind === "sessions") {
+    if (!m.sessions.length) body.append(el("div", "empty", "Сессий пока нет"));
+    for (const x of m.sessions) {
+      const b = el("button", "sess" + (x.current ? " current" : ""));
+      b.append(el("b", "", x.title), el("span", "", x.folder + " · " + new Date(x.updated * 1000).toLocaleString("ru-RU", {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"})));
+      b.onclick = () => openHistory("read", x.id);
+      body.append(b);
+    }
+    return;
+  }
+  historyView.titleEl.textContent = m.title || "Беседа";
+  if (!m.messages.length) body.append(el("div", "empty", "Сообщений пока нет"));
+  for (const msg of m.messages) {
+    const bubble = el("div", "bubble " + msg.role); linkify(bubble, (msg.role === "phone" ? "📱 " : "") + msg.text);
+    const when = msg.time ? new Date(msg.time + "Z") : null;
+    if (when && !isNaN(when)) bubble.append(el("span", "when", when.toLocaleString("ru-RU", {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"})));
+    body.append(bubble);
+  }
+  body.scrollTop = body.scrollHeight; // к последнему сообщению
 }
 
 function updateApp(view, app) {

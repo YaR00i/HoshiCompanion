@@ -177,6 +177,24 @@ func _run() -> void:
 	media_bus.stop()
 	DirAccess.remove_absolute(picture)
 
+	# История бесед: по просьбе телефона, только ему, только тексты сообщений.
+	var history = AssistantWatch.new()
+	history.history_dry_run = true
+	_note(history, "UserPromptSubmit", "0123abcd-4567-89ef-0123-456789abcdef")
+	history.request_history(7, "read", "")
+	history.request_history(7, "sessions", "")
+	history.request_history(7, "read", "../../secret")
+	_check(history.history_asked == [[7, "read", "0123abcd-4567-89ef-0123-456789abcdef", str(AssistantWatch.HISTORY_MESSAGES)], [7, "sessions", "30"]], "the current conversation and the session list are read on request")
+	var refused: Array = history.take_history()
+	_check(refused.size() == 1 and refused[0]["peer"] == 7 and not refused[0]["message"]["ok"], "a made-up session id is refused")
+	history.apply_history(9, "read", {"ok": true, "id": "0123abcd", "title": "Пульт", "messages": [
+		{"role": "user", "text": "Привет", "time": "2026-09-27T12:00:00"}, {"role": "tool", "text": "cat secret"},
+		{"role": "assistant", "text": "а".repeat(5000), "time": "2026-09-27T12:00:05"}]})
+	var sent_history: Dictionary = history.take_history()[0]
+	_check(sent_history["peer"] == 9 and sent_history["message"]["op"] == "history" and sent_history["message"]["messages"].size() == 2 and sent_history["message"]["messages"][1]["text"].length() == 3000, "only chat messages go to the phone that asked; long answers are cut")
+	history.apply_history(9, "sessions", {"ok": true, "sessions": [{"id": "0123abcd-4567-89ef-0123-456789abcdef", "title": "Пульт", "folder": "HoshiCompanion", "updated": 5}]})
+	_check(history.take_history()[0]["message"]["sessions"][0]["current"], "the session list marks the current one")
+
 	# Через шину: карточка «Claude» у телефона, исчезает без сессий.
 	var bus = RemoteBus.new()
 	bus.setup(StubApp.new())

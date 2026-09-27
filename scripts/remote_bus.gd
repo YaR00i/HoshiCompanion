@@ -212,6 +212,8 @@ func tick(delta: float) -> void:
 			_poll_peer(key, dt)
 	mpc.tick(dt, phone_count() > 0)
 	assistants.phones = phone_count()
+	for ready in assistants.take_history():
+		_send(int(ready["peer"]), ready["message"])
 	if not assistants.notice.is_empty():
 		_say(assistants.notice)
 		assistants.notice = ""
@@ -335,6 +337,7 @@ func _accept_ws() -> void:
 			continue
 		var ws := WebSocketPeer.new()
 		ws.inbound_buffer_size = MAX_ADAPTER_PACKET * 2
+		ws.outbound_buffer_size = 1 << 20 # история беседы Claude может быть большой
 		ws.max_queued_packets = 64
 		if ws.accept_stream(stream) != OK:
 			stream.disconnect_from_host()
@@ -461,6 +464,13 @@ func _handle(key: int, message: Dictionary) -> void:
 			_broadcast_state(true)
 		"state":
 			_send(key, _state_message())
+		"history":
+			# История бесед Claude (решение 2026-09-27): только этому телефону.
+			peer["runs"] = float(peer["runs"]) + 1.0
+			if float(peer["runs"]) > MAX_RUNS_PER_SECOND:
+				_send(key, {"op": "error", "reason": "too_fast"})
+				return
+			assistants.request_history(key, str(message.get("kind", "")), str(message.get("session", "")).left(64))
 		_:
 			_send(key, {"op": "error", "reason": "unknown_op"})
 
