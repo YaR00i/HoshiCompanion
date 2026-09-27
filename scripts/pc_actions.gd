@@ -24,6 +24,13 @@ extends RefCounted
 ## ставит НОВОЕ окно (только его, один раз). С телефона можно передать только
 ## номер экрана и один из четырёх режимов — и только если у действия «ask».
 ##
+## Значки: для каждого действия Хоши один раз достаёт настоящий значок программы
+## (tools/app_icon.py — как его показывает Windows) в user://pc_icons/<id>.png;
+## пульт получает адрес /pc_icon/<id>.png. Для ссылок — 🌐 как раньше.
+##
+## «Если уже открыто — показать» (reuse, по умолчанию да): программа уже запущена —
+## её окно выходит наверх (и встаёт, куда настроено) вместо второго запуска.
+##
 ## Переставить уже открытое окно (решение 2026-09-27): "pc:windows" — обновить
 ## список открытых окон (только имя программы, экран, развёрнуто ли; заголовки
 ## не читаем), "pc:move" {hwnd, monitor, mode} — переставить окно из этого
@@ -47,6 +54,8 @@ const KIND_ICONS := {"open": "🚀", "folder": "📁", "file": "📄", "url": "�
 const APP_WORDS := {"mpc": ["mpc-be", "mpc-hc"], "claude": ["claude_", "claude.exe", "anthropicclaude"], "codex": ["codex"]}
 const APP_SITES := {"youtube": ["youtube.com", "youtu.be"]}
 const PLACE_HELPER: String = "res://tools/window_place.py"
+const ICON_HELPER: String = "res://tools/app_icon.py"
+const ICON_DIR: String = "user://pc_icons/"
 const PLACE_MODES := {"center": "По центру", "left": "Левая половина", "right": "Правая половина", "max": "На весь экран"}
 const MAX_MONITORS: int = 16
 ## Известные программы из «Пуска», у которых AppID не говорит имя файла.
@@ -65,6 +74,12 @@ var executed: Array = []
 var path: String = FILE_PATH
 ## Экраны ПК (для выбора «где появится окно»): [{index, label}], обновляет tools/window_place.py.
 var monitors: Array = []
+## Появились новые значки — пультам надо обновить кнопки (забирает шина).
+var icons_changed: bool = false
+var _icon_queue: Array = []
+var _icon_io: FileAccess
+var _icon_pid: int = 0
+var _icon_age: float = 0.0
 ## Открытые окна (последний список по просьбе): [{hwnd, app, name, monitor, state}]
 var open_windows: Array = []
 ## Растёт при каждом новом списке окон/экранов — окна на ПК перерисовываются.
@@ -101,6 +116,7 @@ func load_actions() -> void:
 		if not clean.is_empty() and actions.size() < MAX_ACTIONS:
 			actions.append(clean)
 	monitors = _clean_monitors(parsed.get("monitors", []))
+	refresh_icons()
 	var system: Variant = parsed.get("system", {})
 	if system is Dictionary:
 		for id in SYSTEM:
@@ -120,6 +136,7 @@ func add(kind: String, title: String, target: String, args: String = "", icon: S
 		return ""
 	actions.append(item)
 	save_actions()
+	refresh_icons()
 	return str(item["id"])
 
 func remove(id: String) -> void:
@@ -127,6 +144,7 @@ func remove(id: String) -> void:
 		if actions[index]["id"] == id:
 			actions.remove_at(index)
 			save_actions()
+			DirAccess.remove_absolute(icon_file(id))
 			return
 
 func rename(id: String, title: String) -> void:
@@ -146,11 +164,17 @@ func move(id: String, step: int) -> void:
 			return
 
 ## Где появится окно этого действия (из окна «Мои действия» на ПК).
-func set_place(id: String, monitor: int, mode: String, ask: bool) -> void:
+func set_place(id: String, monitor: int, mode: String, ask: bool, reuse: bool = true) -> void:
 	for item in actions:
 		if item["id"] == id:
 			item["place"] = _clean_place({"monitor": monitor, "mode": mode, "ask": ask})
+			item["reuse"] = reuse
 			save_actions()
+
+## Показывать уже открытое окно вместо второго запуска? (по умолчанию — да,
+## если известно, чьё окно ждать).
+static func reuses(item: Dictionary) -> bool:
+	return bool(item.get("reuse", true)) and not window_exe(item).is_empty()
 
 func set_system(id: String, enabled: bool) -> void:
 	if SYSTEM.has(id):
@@ -162,6 +186,8 @@ func catalog() -> Array:
 	var items: Array = []
 	for item in actions:
 		var entry: Dictionary = {"command": "pc:" + str(item["id"]), "title": item["title"], "icon": item["icon"], "confirm": false, "app": app_for(item)}
+		if FileAccess.file_exists(icon_file(item["id"])):
+			entry["icon_url"] = "/pc_icon/%s.png?v=%d" % [item["id"], FileAccess.get_modified_time(icon_file(item["id"]))]
 		var place: Dictionary = item.get("place", {})
 		if bool(place.get("ask", false)):
 			# Телефон спросит, где открыть: экраны и режимы — только из этого списка.
@@ -211,8 +237,8 @@ func run(command: String, args: Dictionary, out: Dictionary = {}) -> String:
 			var place: Dictionary = item.get("place", {})
 			if bool(place.get("ask", false)) and args.has("monitor"):
 				place = _clean_place({"monitor": args.get("monitor", 0), "mode": args.get("mode", ""), "ask": true})
-			if int(place.get("monitor", 0)) > 0 and item["kind"] != "url":
-				return _run_placed(item, place, out)
+			if (int(place.get("monitor", 0)) > 0 or reuses(item)) and item["kind"] != "url":
+				return _run_placed(item, place if not place.is_empty() else {"monitor": 0, "mode": "center"}, out)
 			return _run_saved(item, out)
 	return "unknown_action"
 
@@ -258,6 +284,8 @@ func _run_placed(item: Dictionary, place: Dictionary, out: Dictionary) -> String
 		out["say"] = "Не нашла: " + str(item["title"])
 		return "missing"
 	var args: Array = ["place", str(OS.get_process_id()), str(place["monitor"]), str(place["mode"]), window_exe(item) if not window_exe(item).is_empty() else "-"]
+	if reuses(item):
+		args.append("reuse")
 	if dry_run:
 		executed.append(args)
 		return _run_saved(item, out)
@@ -275,8 +303,51 @@ func _run_placed(item: Dictionary, place: Dictionary, out: Dictionary) -> String
 	out["say"] = "Открываю: " + str(item["title"])
 	return ""
 
+## Где лежит значок действия.
+func icon_file(id: String) -> String:
+	return ProjectSettings.globalize_path(ICON_DIR + id + ".png")
+
+## Поставить в очередь значки, которых ещё нет (ссылкам значок не нужен).
+func refresh_icons() -> void:
+	if dry_run:
+		return
+	for item in actions:
+		if item["kind"] != "url" and not FileAccess.file_exists(icon_file(item["id"])) and not item["id"] in _icon_queue:
+			_icon_queue.append(item["id"])
+
+func _tick_icons(dt: float) -> void:
+	if _icon_io != null:
+		_icon_age += dt
+		_icon_io.get_buffer(4096)
+		if OS.is_process_running(_icon_pid) and _icon_age < 10.0:
+			return
+		if OS.is_process_running(_icon_pid):
+			OS.kill(_icon_pid)
+		_icon_io = null
+		icons_changed = true
+	while not _icon_queue.is_empty() and _icon_io == null:
+		var id: String = _icon_queue.pop_front()
+		var item: Dictionary = {}
+		for candidate in actions:
+			if candidate["id"] == id:
+				item = candidate
+		if item.is_empty() or OS.get_name() != "Windows":
+			continue
+		var target: String = "shell:AppsFolder\\" + str(item["target"]) if item["kind"] == "startapp" else str(item["target"])
+		var helper: String = ProjectSettings.globalize_path(ICON_HELPER)
+		if not FileAccess.file_exists(helper):
+			_icon_queue.clear()
+			return
+		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(ICON_DIR))
+		var process: Dictionary = OS.execute_with_pipe(_python(), PackedStringArray(["-u", helper, target, icon_file(id), "96"]), false)
+		if not process.is_empty():
+			_icon_io = process["stdio"]
+			_icon_pid = int(process["pid"])
+			_icon_age = 0.0
+
 ## Каждый кадр (шина пульта): расстановка окна и список экранов.
 func tick(delta: float) -> void:
+	_tick_icons(clampf(delta, 0.0, 0.1))
 	if _windows_again > 0.0:
 		_windows_again -= clampf(delta, 0.0, 0.1)
 		if _windows_again <= 0.0:
@@ -293,8 +364,9 @@ func tick(delta: float) -> void:
 		_place_age += clampf(delta, 0.0, 0.1)
 		_place_buffer += _place_io.get_buffer(4096).get_string_from_utf8()
 		if not _place_item.is_empty() and (_place_buffer.contains("ready") or _place_age > 3.0 or not OS.is_process_running(_place_pid)):
-			_run_saved(_place_item, {}) # окна запомнены — теперь запуск
-			_place_item = {}
+			if not _place_buffer.contains("\"existing\": true"):
+				_run_saved(_place_item, {}) # окна запомнены — теперь запуск
+			_place_item = {} # уже было открыто — помощник сам показал окно
 		if not OS.is_process_running(_place_pid) or _place_age > 20.0:
 			if OS.is_process_running(_place_pid):
 				OS.kill(_place_pid)
@@ -505,6 +577,8 @@ func _clean(item: Variant) -> Dictionary:
 	if icon.is_empty():
 		icon = KIND_ICONS.get(kind, "🚀")
 	var clean: Dictionary = {"id": id, "kind": kind, "title": title, "target": target, "args": str(item.get("args", "")).left(200), "icon": icon}
+	if item.has("reuse"):
+		clean["reuse"] = bool(item["reuse"])
 	var place: Dictionary = _clean_place(item.get("place", {}))
 	if int(place.get("monitor", 0)) > 0 or bool(place.get("ask", false)):
 		clean["place"] = place

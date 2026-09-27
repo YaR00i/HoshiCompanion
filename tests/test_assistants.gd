@@ -185,6 +185,9 @@ func _run() -> void:
 	served = await _http_get(media_bus, "/app/../project.godot")
 	var other: String = await _http_get(media_bus, "/app/secret.txt")
 	_check(served.begins_with("HTTP/1.1 404") and other.begins_with("HTTP/1.1 404"), "nothing else can be fetched through /app/")
+	served = await _http_get(media_bus, "/pc_icon/../project.godot")
+	other = await _http_get(media_bus, "/pc_icon/nope_nope.png")
+	_check(served.begins_with("HTTP/1.1 404") and other.begins_with("HTTP/1.1 404"), "program icons: only real icons of saved actions")
 	media_bus.stop()
 	DirAccess.remove_absolute(picture)
 

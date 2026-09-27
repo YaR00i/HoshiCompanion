@@ -213,6 +213,9 @@ func tick(delta: float) -> void:
 		if _peers.has(key):
 			_poll_peer(key, dt)
 	mpc.tick(dt, phone_count() > 0)
+	if pc.icons_changed:
+		pc.icons_changed = false
+		refresh_catalog() # появились значки программ — обновить кнопки на телефонах
 	assistants.phones = phone_count()
 	for ready in assistants.take_history():
 		_send(int(ready["peer"]), ready["message"])
@@ -315,6 +318,16 @@ func _respond(request_line: String) -> PackedByteArray:
 		if body.is_empty():
 			status = "404 Not Found"
 			body = "No app build yet".to_utf8_buffer()
+	elif path.begins_with("/pc_icon/"):
+		# Значок «Моего действия» (настоящий значок программы) — для кнопок пульта.
+		var icon_id: String = path.get_file().get_basename()
+		if icon_id.is_valid_identifier() and icon_id.length() <= 16 and FileAccess.file_exists(pc.icon_file(icon_id)):
+			body = FileAccess.get_file_as_bytes(pc.icon_file(icon_id))
+			kind = "image/png"
+			cache = "private, max-age=86400"
+		if body.is_empty():
+			status = "404 Not Found"
+			body = "Not found".to_utf8_buffer()
 	elif path.begins_with("/media/"):
 		# Картинка/гифка/видео из ответа Claude: только по случайному адресу, который
 		# знают привязанные телефоны; сам путь к файлу телефон не видит.

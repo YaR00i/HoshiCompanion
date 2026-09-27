@@ -156,6 +156,10 @@
   file name only, never titles/pixels), prints ready, Hoshi launches, then it moves only the NEW window
   of the expected exe (or that exe's foreground window for single-instance apps) once, re-checking once.
   The phone may pass {monitor, mode} only for actions with ask=true; values are clamped/enumerated.
+  "reuse" (default on when window_exe is known): window_place.py place ... reuse first looks for an
+  open window of that exe; if found it is brought forward (and placed) and nothing is launched.
+  Program icons: tools/app_icon.py (IShellItemImageFactory, icon picture only) -> user://pc_icons/<id>.png,
+  served at /pc_icon/<id>.png (id must be a saved action id); catalog items carry icon_url.
   Moving open windows (user-approved 2026-09-27): "pc:windows" refreshes a list via window_place.py
   list (exe file name, monitor, normal/maximized/minimized; never titles), sent to paired phones in
   state.windows; "pc:move" {hwnd, monitor, mode, front} and "pc:front" {hwnd} accept only an hwnd from

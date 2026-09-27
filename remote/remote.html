@@ -41,6 +41,7 @@
   .tile { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 2px 8px; border-radius: 16px;
     background: var(--card); border: 1px solid var(--line); font-size: 11px; color: var(--ink); min-height: 72px; text-align: center; }
   .tile .icon { font-size: 24px; line-height: 28px; }
+  .tile img.icon, .appicon .face img { width: 30px; height: 30px; object-fit: contain; border-radius: 7px; }
   .tile:active { transform: scale(.95); background: var(--soft); }
   .tile.on { background: var(--plum); border-color: var(--plum); color: #fff; }
   .tile.off { opacity: .45; }
@@ -489,11 +490,17 @@ function renderQuickSetup(root) {
   root.append(box);
 }
 
+// Значок кнопки: настоящий значок программы (с ПК), иначе смайлик.
+function iconOf(item, fallback) {
+  if (item.icon_url) { const img = el("img", "icon"); img.src = item.icon_url; img.alt = ""; return img; }
+  return el("span", "icon", item.icon || fallback);
+}
+
 function tiles(items) {
   const box = el("div", "tiles");
   for (const item of items) {
     const b = el("button", "tile" + (item.system ? " system" : ""));
-    b.append(el("span", "icon", item.icon || "🚀"), el("span", "", item.title));
+    b.append(iconOf(item, "🚀"), el("span", "", item.title));
     b.onclick = () => launchAction(item);
     box.append(b);
   }
@@ -671,14 +678,15 @@ function barItems() {
       else if (String(s.subtitle || "").startsWith("?")) { mark = "?"; kind = "waiting"; }
       else if (s.can_reply) { mark = "✓"; kind = "done"; }
     } else if (s.playing) mark = "▶";
-    items.push({id: app.id, title: app.title, mark, kind});
+    const action = (catalog.pc || []).find((a) => a.app === app.id && a.icon_url); // настоящий значок, если приложение есть в «Моих действиях»
+    items.push({id: app.id, title: app.title, mark, kind, icon_url: action && action.icon_url});
   }
   // Закрытые приложения, у которых есть запуск в «Моих действиях», — серые иконки.
   const running = new Set(items.map((i) => i.id));
   for (const action of catalog.pc || []) {
     if (!action.app || running.has(action.app)) continue;
     running.add(action.app);
-    items.push({id: action.app, title: APP_TITLES[action.app] || action.title, launch: action, closed: true});
+    items.push({id: action.app, title: APP_TITLES[action.app] || action.title, launch: action, closed: true, icon_url: action.icon_url});
   }
   return items;
 }
@@ -695,7 +703,8 @@ function renderBar() {
     renderBar.key = key; bar.textContent = "";
     for (const item of items) {
       const b = el("button", "appicon" + (item.id === openApp && !item.closed ? " open" : "") + (item.closed ? " closed" : ""));
-      const face = el("span", "face", APP_ICONS[item.id] || "▣");
+      const face = el("span", "face", item.icon_url ? "" : (APP_ICONS[item.id] || "▣"));
+      if (item.icon_url) { const img = el("img"); img.src = item.icon_url; img.alt = ""; face.append(img); }
       if (item.mark) face.append(el("span", "mark " + item.kind, item.mark));
       b.append(face, el("span", "name", item.title));
       b.onclick = () => {

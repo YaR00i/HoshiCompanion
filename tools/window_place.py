@@ -16,7 +16,10 @@ press, once, right after the launch).
         "front" also brings it over the other windows.
     python tools/window_place.py front <owner_pid> <hwnd>
         Only brings that window over the other windows (restores it if minimized).
-    python tools/window_place.py place <owner_pid> <monitor> <mode> <exe|->
+    python tools/window_place.py place <owner_pid> <monitor> <mode> <exe|-> [reuse]
+        monitor 0 = do not move. "reuse": if a window of <exe> is already open,
+        only bring it forward (and place it), print {"ready": true, "existing": true}
+        and stop — Hoshi then does not start a second copy.
         Takes a snapshot of the windows that exist now, prints {"ready": true}
         (Hoshi launches the app only after that), then waits up to 10 s for a
         NEW top-level window (preferably of <exe>) and places it. If none
@@ -258,15 +261,27 @@ def front(owner_pid: int, hwnd: int) -> dict:
     return {'ok': True, 'app': windows.app(hwnd)}
 
 
-def place(owner_pid: int, monitor: int, mode: str, exe: str) -> dict:
+def place(owner_pid: int, monitor: int, mode: str, exe: str, reuse: bool = False) -> dict:
     screens = monitors()
     screen = next((m for m in screens if m['index'] == monitor), None)
-    if mode not in MODES or screen is None:
+    if mode not in MODES or (screen is None and monitor != 0):
         print(json.dumps({'ready': True}), flush=True)
         return {'ok': False, 'error': 'bad_target'}
     windows = Windows(owner_pid)
-    before = set(windows.top_level())
+    before = windows.top_level()  # top first (Z-order)
+    if reuse and exe:
+        mine = [h for h in before if windows.app(h) == exe]
+        if mine:
+            # Already open: show that window instead of starting a second copy.
+            print(json.dumps({'ready': True, 'existing': True}), flush=True)
+            if screen is not None:
+                windows.place(mine[0], screen['work'], mode)
+            windows.front(mine[0])
+            return {'ok': True, 'app': exe, 'existing': True}
+    before = set(before)
     print(json.dumps({'ready': True}), flush=True)
+    if screen is None:
+        return {'ok': True, 'app': exe}  # nothing to place
     start = time.monotonic()
     chosen = 0
     while time.monotonic() - start < WAIT_NEW and not chosen:
@@ -308,9 +323,9 @@ def main(argv: list[str]) -> int:
     if len(argv) == 4 and argv[1] == 'front' and argv[2].isdigit() and argv[3].isdigit():
         print(json.dumps(front(int(argv[2]), int(argv[3]))), flush=True)
         return 0
-    if len(argv) == 6 and argv[1] == 'place' and argv[2].isdigit() and argv[3].isdigit():
+    if len(argv) in (6, 7) and argv[1] == 'place' and argv[2].isdigit() and argv[3].isdigit():
         exe = '' if argv[5] == '-' else argv[5].lower()
-        print(json.dumps(place(int(argv[2]), int(argv[3]), argv[4], exe)), flush=True)
+        print(json.dumps(place(int(argv[2]), int(argv[3]), argv[4], exe, argv[6:] == ['reuse'])), flush=True)
         return 0
     print('usage: window_place.py monitors | list <owner_pid> | move <owner_pid> <hwnd> <monitor> <mode> [front]'
           ' | front <owner_pid> <hwnd> | place <owner_pid> <monitor> <mode> <exe|->', file=sys.stderr)

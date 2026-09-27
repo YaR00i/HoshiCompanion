@@ -91,15 +91,23 @@ func _run() -> void:
 	pc.monitors = [{"index": 1, "label": "Экран 1 (основной) · 2560×1440"}, {"index": 2, "label": "Экран 2 · 1920×1080"}]
 	pc.set_place(mpc_app, 2, "right", false)
 	out = {}
-	_check(pc.run("pc:" + mpc_app, {"monitor": 1, "mode": "max"}, out) == "" and pc.executed[-2] == ["place", str(OS.get_process_id()), "2", "right", "mpc-be64.exe"] and pc.executed[-1][0] == "explorer.exe", "the window goes where the PC settings say; the phone cannot change it without «ask»")
+	_check(pc.run("pc:" + mpc_app, {"monitor": 1, "mode": "max"}, out) == "" and pc.executed[-2] == ["place", str(OS.get_process_id()), "2", "right", "mpc-be64.exe", "reuse"] and pc.executed[-1][0] == "explorer.exe", "the window goes where the PC settings say; the phone cannot change it without «ask»")
 	pc.set_place(mpc_app, 2, "right", true)
 	pc.run("pc:" + mpc_app, {"monitor": 1, "mode": "max"})
-	_check(pc.executed[-2] == ["place", str(OS.get_process_id()), "1", "max", "mpc-be64.exe"], "with «ask» the phone chooses the screen and the position")
+	_check(pc.executed[-2] == ["place", str(OS.get_process_id()), "1", "max", "mpc-be64.exe", "reuse"], "with «ask» the phone chooses the screen and the position")
 	pc.run("pc:" + mpc_app, {"monitor": 99, "mode": "rm -rf"})
 	_check(pc.executed[-2][2] == "16" and pc.executed[-2][3] == "center", "the phone can pass only a screen number and one of four positions")
-	var before_count: int = pc.executed.size()
 	pc.run("pc:" + mpc_app, {"monitor": 0, "mode": "left"})
-	_check(pc.executed.size() == before_count + 1 and pc.executed[-1][0] == "explorer.exe", "«as it opens» on the phone launches without moving anything")
+	_check(pc.executed[-2] == ["place", str(OS.get_process_id()), "0", "left", "mpc-be64.exe", "reuse"] and pc.executed[-1][0] == "explorer.exe", "«as it opens» on the phone launches without moving anything (only «already open?» is checked)")
+	# «Если уже открыто — показать»: выключили — запуск без проверки.
+	pc.set_place(mpc_app, 0, "center", false, false)
+	var before_count: int = pc.executed.size()
+	pc.run("pc:" + mpc_app, {})
+	_check(pc.executed.size() == before_count + 1 and pc.executed[-1][0] == "explorer.exe", "with «show if already open» off it just starts")
+	pc.set_place(mpc_app, 0, "center", false, true)
+	pc.run("pc:" + mpc_app, {})
+	_check(pc.executed[-2][-1] == "reuse" and not PcActions.reuses({"kind": "url", "target": "https://x.io"}), "«show if already open» is on by default when Hoshi knows the program")
+	pc.set_place(mpc_app, 2, "right", true)
 	var ask_item: Dictionary = {}
 	for item in pc.catalog():
 		if item["command"] == "pc:" + mpc_app:

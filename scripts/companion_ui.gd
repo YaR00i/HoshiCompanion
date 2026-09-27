@@ -49,6 +49,7 @@ var _place_window: Window
 var _place_monitor: OptionButton
 var _place_mode: OptionButton
 var _place_ask: CheckBox
+var _place_reuse: CheckBox
 var _place_id: String = ""
 var _place_map: Control
 ## «Переставить окно»: открытые окна, схема экранов, положение.
@@ -670,7 +671,7 @@ func _show_place_window(id: String) -> void:
 	if _place_window == null:
 		_place_window = Window.new()
 		_place_window.title = "Где откроется окно"
-		_place_window.size = Vector2i(440, 380)
+		_place_window.size = Vector2i(460, 410)
 		_place_window.unresizable = true
 		_place_window.always_on_top = true
 		_place_window.theme = theme
@@ -706,11 +707,14 @@ func _show_place_window(id: String) -> void:
 		_place_ask = CheckBox.new()
 		_place_ask.text = "Спрашивать на телефоне при каждом запуске"
 		column.add_child(_place_ask)
+		_place_reuse = CheckBox.new()
+		_place_reuse.text = "Если уже открыто — показать окно (не запускать ещё раз)"
+		column.add_child(_place_reuse)
 		var save := Button.new()
 		save.text = "Сохранить"
 		save.pressed.connect(func():
 			var mode: String = str(_place_mode.get_item_metadata(maxi(0, _place_mode.selected)))
-			_pc_source.set_place(_place_id, int(_place_monitor.get_item_metadata(maxi(0, _place_monitor.selected))), mode, _place_ask.button_pressed)
+			_pc_source.set_place(_place_id, int(_place_monitor.get_item_metadata(maxi(0, _place_monitor.selected))), mode, _place_ask.button_pressed, _place_reuse.button_pressed)
 			_place_window.hide()
 			_after_pc_change())
 		column.add_child(save)
@@ -732,6 +736,12 @@ func _show_place_window(id: String) -> void:
 		if _place_mode.get_item_metadata(index) == str(place.get("mode", "center")):
 			_place_mode.select(index)
 	_place_ask.button_pressed = bool(place.get("ask", false))
+	var action_item: Dictionary = {}
+	for item in _pc_source.actions:
+		if item["id"] == id:
+			action_item = item
+	_place_reuse.button_pressed = bool(action_item.get("reuse", true))
+	_place_reuse.disabled = PcActions.window_exe(action_item).is_empty() # неизвестно, чьё окно искать
 	_place_map.monitors = _pc_source.monitors
 	_place_map.selected = int(place.get("monitor", 0))
 	_place_window.popup_centered()
