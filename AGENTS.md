@@ -155,4 +155,9 @@
   multimedia default and never the communications default. Privacy (user-approved 2026-09-27):
   output device friendly names and which one is default only; never playing programs, sessions,
   volume or media. test_sound_outputs.gd runs in dry_run.
+- scripts/mpc_adapter.gd: MPC-BE as a built-in add-on (peer -1 in app_adapters, "app:mpc:<name>").
+  Talks only to its web interface at 127.0.0.1:13579, only while the remote is on and a phone is
+  connected (1 s poll, 3 s probe when closed). Privacy (user-approved 2026-09-27): file NAME,
+  position, duration, play state, player volume/mute only; never filepath/filedir. Commands only on a human press.
+  test_mpc_adapter.gd and test_remote.gd keep mpc/sound in dry_run — tests never touch real apps.
 

@@ -406,7 +406,7 @@ function renderApps() {
   const apps = state.apps || [];
   if (!apps.length) {
     root.textContent = ""; for (const k in appViews) delete appViews[k];
-    root.append(el("div", "empty", "Когда откроешь YouTube в Chrome с расширением Хоши, здесь появится пульт для видео"));
+    root.append(el("div", "empty", "Когда откроешь YouTube в Chrome с расширением Хоши или плеер MPC-BE, здесь появится пульт для видео"));
     return;
   }
   const alive = new Set(apps.map((a) => a.id));

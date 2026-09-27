@@ -95,6 +95,9 @@ func _run() -> void:
 	bus = RemoteBus.new()
 	bus.setup(app)
 	bus.loopback_only = true
+	# Never touch a real MPC-BE or sound devices of this PC from a test.
+	bus.mpc.dry_run = true
+	bus.sound.dry_run = true
 	bus.http_port = 18870
 	bus.ws_port = 18871
 	_check(bus.start() and bus.pairing_code.length() == 6, "remote starts with a 6-digit code")

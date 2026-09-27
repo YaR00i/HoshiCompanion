@@ -23,6 +23,7 @@ const Commands = preload("res://scripts/hoshi_commands.gd")
 const Adapters = preload("res://scripts/app_adapters.gd")
 const PcActions = preload("res://scripts/pc_actions.gd")
 const SoundOutputs = preload("res://scripts/sound_outputs.gd")
+const MpcAdapter = preload("res://scripts/mpc_adapter.gd")
 
 const HTTP_PORT: int = 18770
 const WS_PORT: int = 18771
@@ -49,6 +50,8 @@ var adapters = Adapters.new()
 var pc = PcActions.new()
 ## «Звук на пульте»: куда идёт звук ПК (устройства выбираются только на ПК).
 var sound = SoundOutputs.new()
+## Плеер MPC-BE — встроенный аддон (карточка как у YouTube).
+var mpc = MpcAdapter.new()
 var last_error: String = ""
 ## Для тестов: слушать только 127.0.0.1 и на других портах.
 var loopback_only: bool = false
@@ -153,6 +156,8 @@ func tick(delta: float) -> void:
 		# A reconnecting phone may have closed another peer earlier in this loop.
 		if _peers.has(key):
 			_poll_peer(key, dt)
+	mpc.tick(dt, phone_count() > 0)
+	_sync_mpc()
 	if not sound.notice.is_empty():
 		_say(sound.notice)
 		sound.notice = ""
@@ -388,6 +393,8 @@ func run(command: String, args: Variant = {}) -> String:
 		var target: Dictionary = adapters.resolve(command)
 		if target.is_empty():
 			return "unknown_app_command"
+		if int(target["peer"]) == MpcAdapter.PEER:
+			return mpc.run(target["name"], _clean_args(args))
 		_send(int(target["peer"]), {"op": "run", "command": target["name"], "args": _clean_args(args)})
 		return ""
 	if not Commands.allows(command, "remote"):
@@ -397,6 +404,15 @@ func run(command: String, args: Variant = {}) -> String:
 		return "no_app"
 	app.run_command(command)
 	return ""
+
+## MPC-BE отвечает — его карточка есть на пульте; закрыли плеер — карточка исчезает.
+func _sync_mpc() -> void:
+	if not mpc.present:
+		adapters.drop_peer(MpcAdapter.PEER)
+	elif not adapters.adapters.has(MpcAdapter.ID):
+		adapters.announce(MpcAdapter.PEER, mpc.announcement())
+	else:
+		adapters.update_state(MpcAdapter.PEER, mpc.card_state())
 
 func _say(text: String) -> void:
 	var app = _app()
