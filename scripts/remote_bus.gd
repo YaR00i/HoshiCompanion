@@ -124,8 +124,13 @@ func new_pairing_code() -> void:
 
 ## Ссылка для QR: адрес пульта + одноразовый код. Телефон, открыв её,
 ## привязывается сам, без ввода кода.
-func pairing_url(address: String) -> String:
-	return "%s#pair=%s" % [address, pairing_code]
+## alts — запасные адреса ПК (другие сети: дом/VPN): приложение на телефоне
+## пробует их, если основной не отвечает. Браузер открывает основной.
+func pairing_url(address: String, alts: PackedStringArray = PackedStringArray()) -> String:
+	var link: String = "%s#pair=%s" % [address, pairing_code]
+	if not alts.is_empty():
+		link += "&alt=" + ",".join(alts)
+	return link
 
 func forget_phones() -> void:
 	tokens = PackedStringArray()

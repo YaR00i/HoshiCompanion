@@ -129,6 +129,7 @@ class HoshiService : Service() {
         socket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 retry = 2000L
+                failures = 0
                 webSocket.send(JSONObject().put("op", "hello").put("token", prefs.token).toString())
                 // Кнопка, нажатая, пока связи не было, — сразу после приветствия.
                 pending?.let { webSocket.send(it) }
@@ -149,12 +150,22 @@ class HoshiService : Service() {
         })
     }
 
+    private var failures = 0
+
     private fun reconnect(closed: WebSocket) {
         main.post {
             if (socket !== closed) return@post // это старое соединение (пульт на виду закрыл его сам)
             socket = null
             if (!running || pageVisible) return@post
             notifyOngoing("Хоши не на связи — жду…")
+            failures++
+            if (failures % 3 == 0) {
+                // Может, сменилась сеть (дом ↔ VPN): проверить запасные адреса ПК.
+                Thread {
+                    val prefs = Prefs(this)
+                    Prefs.pickReachable(prefs)?.let { if (it != prefs.host) prefs.host = it }
+                }.start()
+            }
             main.postDelayed({ connect() }, retry)
             retry = (retry * 2).coerceAtMost(60_000L)
         }

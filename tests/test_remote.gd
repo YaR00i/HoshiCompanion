@@ -106,6 +106,8 @@ func _run() -> void:
 	var version_before: int = bus.code_version
 	var link: String = bus.pairing_url("http://192.168.1.23:18770/")
 	_check(link == "http://192.168.1.23:18770/#pair=" + bus.pairing_code, "QR link carries the address and the one-time code")
+	var with_alts: String = bus.pairing_url("http://192.168.1.23:18770/", PackedStringArray(["10.8.1.2", "26.1.2.3"]))
+	_check(with_alts == "http://192.168.1.23:18770/#pair=" + bus.pairing_code + "&alt=10.8.1.2,26.1.2.3" and not QR.encode(with_alts).is_empty(), "QR link can carry spare addresses for the app (home and VPN)")
 	# Адреса пульта подписаны сетью; VPN помечены; выбранный адрес для QR запоминается.
 	_check(RemoteBus.is_virtual_network("AmneziaVPN") and RemoteBus.is_virtual_network("Radmin VPN") and RemoteBus.is_virtual_network("vEthernet (WSL)") and not RemoteBus.is_virtual_network("Ethernet") and not RemoteBus.is_virtual_network("Беспроводная сеть"), "VPN and virtual networks are recognised by name")
 	var choices: Array = [{"url": "http://192.168.0.94:18870/", "ip": "192.168.0.94", "network": "Ethernet", "virtual": false},

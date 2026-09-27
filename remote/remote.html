@@ -215,6 +215,7 @@
     <p>Введи код, который Хоши показывает на компьютере<br>(меню → Пульт с телефона → Адрес и код)</p>
     <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••">
     <br><button id="pairButton">Подружиться</button>
+    <br><button id="scanButton" class="hidden" style="margin-top:12px;padding:11px 26px;border-radius:999px;background:var(--soft);color:var(--plum)">📷 Сканировать QR</button>
     <div class="error" id="pairError"></div>
   </div>
 
@@ -1001,6 +1002,11 @@ function updateApp(view, app) {
   }
 }
 
+// В приложении «Хоши» для Android — сканер QR (адрес и код из окна «Пульт с телефона»).
+if (window.HoshiApp && window.HoshiApp.scanQr) {
+  $("scanButton").classList.remove("hidden");
+  $("scanButton").onclick = () => window.HoshiApp.scanQr();
+}
 $("pairButton").addEventListener("click", () => {
   const code = $("code").value.replace(/\D/g, "");
   if (code.length !== 6) { $("pairError").textContent = "Нужно 6 цифр"; return; }

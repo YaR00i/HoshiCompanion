@@ -575,7 +575,11 @@ func _note(text: String, seconds: float) -> void:
 func _show_remote_info() -> void:
 	var choices: Array = remote.address_choices()
 	var chosen: Dictionary = remote.qr_choice(choices)
-	var qr_text: String = remote.pairing_url(chosen["url"]) if remote.enabled and not chosen.is_empty() else ""
+	var alts := PackedStringArray()
+	for choice in choices:
+		if choice["ip"] != chosen.get("ip", "") and alts.size() < 3:
+			alts.append(choice["ip"]) # запасные адреса: приложение переключится само (дом ↔ VPN)
+	var qr_text: String = remote.pairing_url(chosen["url"], alts) if remote.enabled and not chosen.is_empty() else ""
 	ui.show_remote_info(remote.enabled, choices, str(chosen.get("ip", "")), remote.pairing_code, remote.phone_count(), remote.last_error, qr_text, remote.code_version, remote.skipped_networks(), _choose_remote_address)
 
 ## В окне «Пульт с телефона» выбрали адрес для QR — запомнить и перерисовать QR.

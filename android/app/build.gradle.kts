@@ -13,8 +13,8 @@ android {
         targetSdk = 35
         // Поднимать при каждой новой сборке: по нему приложение узнаёт, что пора обновиться
         // (tools/dev.py android читает его и кладёт в version.json рядом с APK).
-        versionCode = 7
-        versionName = "0.7"
+        versionCode = 9
+        versionName = "0.9"
     }
 
     buildTypes {
@@ -40,6 +40,8 @@ dependencies {
     implementation("androidx.webkit:webkit:1.12.1")
     // Кнопки плеера на экране блокировки (MediaSession + MediaStyle-уведомление).
     implementation("androidx.media:media:1.7.0")
+    // Сканер QR от Google Play: без разрешения на камеру, своё окно съёмки.
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
     // WebSocket для фоновой связи с Хоши, когда телефон заблокирован.
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

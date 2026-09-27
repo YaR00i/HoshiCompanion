@@ -11,6 +11,11 @@ class Prefs(context: Context) {
         get() = store.getString("host", "") ?: ""
         set(value) = store.edit().putString("host", value.trim()).apply()
 
+    /** Все известные адреса ПК (из QR: основной и запасные — дом/VPN), через запятую. */
+    var hosts: List<String>
+        get() = (store.getString("hosts", "") ?: "").split(",").filter { it.isNotBlank() }
+        set(value) = store.edit().putString("hosts", value.distinct().take(6).joinToString(",")).apply()
+
     /** Ключ привязки (тот же, что страница пульта хранит у себя). */
     var token: String
         get() = store.getString("token", "") ?: ""
@@ -31,6 +36,20 @@ class Prefs(context: Context) {
     companion object {
         const val HTTP_PORT = 18770
         const val WS_PORT = 18771
+
+        /** Отвечает ли Хоши по этому адресу (быстрая проверка, не на главном потоке). */
+        fun reachable(host: String): Boolean = runCatching {
+            val connection = java.net.URL("http://$host:$HTTP_PORT/manifest.webmanifest").openConnection() as java.net.HttpURLConnection
+            connection.connectTimeout = 1500
+            connection.readTimeout = 1500
+            try { connection.responseCode == 200 } finally { connection.disconnect() }
+        }.getOrDefault(false)
+
+        /** Первый отвечающий адрес из списка (текущий — первым); null — никто. */
+        fun pickReachable(prefs: Prefs): String? {
+            val candidates = (listOf(prefs.host) + prefs.hosts).filter { it.isNotBlank() }.distinct()
+            return candidates.firstOrNull { reachable(it) }
+        }
 
         /** Адрес из того, что ввёл человек: "http://10.8.1.2:18770/#pair=1" -> "10.8.1.2". */
         fun cleanHost(text: String): String {

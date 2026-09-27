@@ -23,6 +23,10 @@ import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import android.widget.Toast
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -110,11 +114,46 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         })
+        column.addView(Button(this).apply {
+            text = "📷 Сканировать QR с экрана ПК"
+            setOnClickListener { scanQr() }
+        })
         setContentView(column)
     }
 
+    /** QR из окна «Пульт с телефона»: http://<ПК>:18770/#pair=<код> — адрес и привязка сразу. */
+    private fun scanQr() {
+        val options = GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
+        GmsBarcodeScanning.getClient(this, options).startScan()
+            .addOnSuccessListener { code -> onScanned(code.rawValue ?: "") }
+            .addOnFailureListener { toast("Сканер не запустился — введи адрес вручную") }
+    }
+
+    private fun onScanned(text: String) {
+        val host = Prefs.cleanHost(text)
+        val pair = Regex("pair=(\\d{6})").find(text)?.groupValues?.get(1)
+        if (host.isEmpty() || !text.contains(":${Prefs.HTTP_PORT}")) {
+            toast("Это не QR Хоши — открой на ПК «Пульт с телефона»")
+            return
+        }
+        // Запасные адреса (другие сети ПК: дом/VPN) — взять тот, что отвечает сейчас.
+        val alts = Regex("alt=([0-9.,]+)").find(text)?.groupValues?.get(1)?.split(",")?.map { Prefs.cleanHost(it) }?.filter { it.isNotEmpty() } ?: emptyList()
+        prefs.hosts = listOf(host) + alts
+        prefs.host = host
+        toast("Ищу Хоши…")
+        Thread {
+            val alive = Prefs.pickReachable(prefs) ?: host
+            runOnUiThread {
+                prefs.host = alive
+                showRemote(pair)
+            }
+        }.start()
+    }
+
+    private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_LONG).show()
+
     @SuppressLint("SetJavaScriptEnabled")
-    private fun showRemote() {
+    private fun showRemote(pair: String? = null) {
         val view = WebView(this)
         view.settings.javaScriptEnabled = true
         view.settings.domStorageEnabled = true // страница хранит ключ привязки в localStorage
@@ -132,15 +171,27 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onReceivedError(v: WebView, request: WebResourceRequest, error: WebResourceError) {
-                if (request.isForMainFrame) {
-                    runOnUiThread { showSetup("Не достучалась до Хоши по адресу ${prefs.host}. Хоши запущена и пульт включён?") }
-                }
+                if (!request.isForMainFrame) return
+                // Основной адрес не отвечает — может, сменилась сеть (дом ↔ VPN): попробовать запасные.
+                val failed = prefs.host
+                Thread {
+                    val alive = Prefs.pickReachable(prefs)
+                    runOnUiThread {
+                        if (alive != null && alive != failed) {
+                            prefs.host = alive
+                            showRemote()
+                        } else {
+                            showSetup("Не достучалась до Хоши по адресу $failed. Хоши запущена и пульт включён?")
+                        }
+                    }
+                }.start()
             }
         }
         web?.destroy()
         web = view
         setContentView(view)
-        view.loadUrl(prefs.pageUrl)
+        // С кодом из QR страница привяжется сама (#pair=…) и отдаст приложению ключ.
+        view.loadUrl(prefs.pageUrl + (pair?.let { "#pair=$it" } ?: ""))
         Updater(this, prefs).checkLater()
     }
 
@@ -188,6 +239,12 @@ class MainActivity : AppCompatActivity() {
             if (summary.toString() == QuickActions.summary.toString()) return
             QuickActions.summary = summary
             QuickActions.refresh(this@MainActivity)
+        }
+
+        /** Кнопка «📷 Сканировать QR» на странице привязки. */
+        @JavascriptInterface
+        fun scanQr() {
+            runOnUiThread { this@MainActivity.scanQr() }
         }
 
         @JavascriptInterface
