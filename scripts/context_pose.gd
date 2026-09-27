@@ -119,9 +119,47 @@ func apply(time: float) -> void:
 	var sy: float = clampf(velocity.y / 900.0, -1.2, 1.2)
 	var u: float = phase_progress()
 	var blend: float = smoothstep(0.0, SWITCH_TIME, _switch_age) if not _prev_mode.is_empty() else 1.0
+	# Feet on the ground: remember where they stand before the overlay bends the legs.
+	# Touch-down is instant: while a fall/jump overlay fades into the landing, the feet
+	# are already on the floor, so the landing's grounding applies in full.
+	var planted: float = _planted(pose_mode, u)
+	if blend < 1.0:
+		planted = maxf(planted, _planted(_prev_mode, _prev_u) * (1.0 - blend))
+	var feet_before: Vector3 = _feet_point() if planted > 0.001 else Vector3.ZERO
 	if blend < 1.0:
 		_apply_mode(_prev_mode, _prev_u, w * (1.0 - blend), time, sx, sy)
 	_apply_mode(pose_mode, u, w * blend, time, sx, sy)
+	if planted > 0.001:
+		# Measure, don't guess: move the pelvis by exactly how far the feet moved, so the
+		# hips go down into the squat while the shoes stay on the floor. This also covers
+		# leftovers of other overlays (fall, carry) still fading out underneath.
+		var shift: Vector3 = feet_before - _feet_point()
+		_move_hips(Vector3(0.0, shift.y, shift.z) * planted)
+
+## How much of this pose stands on the ground (1) versus hangs in the air (0).
+func _planted(mode: String, u: float) -> float:
+	match mode:
+		"land":
+			return 1.0
+		"jump":
+			# AirMotion keeps her on the spot for the crouch (first 20% of progress).
+			return 1.0 - smoothstep(0.17, 0.24, u)
+	return 0.0
+
+func _feet_point() -> Vector3:
+	var sum := Vector3.ZERO
+	var count: int = 0
+	for side in ["left", "right"]:
+		if rig.bones.has(side + "Foot"):
+			sum += skeleton.get_bone_global_pose(int(rig.bones[side + "Foot"])).origin
+			count += 1
+	return sum / float(maxi(count, 1))
+
+func _move_hips(offset: Vector3) -> void:
+	var hips: int = int(rig.bones["hips"])
+	var parent: int = skeleton.get_bone_parent(hips)
+	var parent_basis: Basis = skeleton.get_bone_global_pose(parent).basis if parent >= 0 else Basis.IDENTITY
+	skeleton.set_bone_pose_position(hips, skeleton.get_bone_pose_position(hips) + parent_basis.inverse() * offset)
 
 func _apply_mode(mode: String, u: float, w: float, time: float, sx: float, sy: float) -> void:
 	if w <= 0.0005:
@@ -209,8 +247,9 @@ func _apply_mode(mode: String, u: float, w: float, time: float, sx: float, sy: f
 			_add("leftLowerArm", Vector3(0.0, -10.0 * flight - 6.0 * prepare, 0.0) * w)
 			_add("rightLowerArm", Vector3(0.0, 10.0 * flight + 6.0 * prepare, 0.0) * w)
 			_legs(36.0 * crouch * w, 22.0 * crouch * w, true)
-			# In the air the knees come up (not planted); before touch-down they reach for the ground.
-			var tuck: float = 30.0 * flight + 12.0 * prepare
+			# In the air the knees come up (not planted); before touch-down they straighten and
+			# reach for the ground, so the feet are on it when the planted landing squat starts.
+			var tuck: float = 30.0 * flight + 12.0 * prepare * (1.0 - smoothstep(0.86, 1.0, u))
 			_legs(tuck * w, tuck * 0.75 * w, false)
 			_add("leftFoot", Vector3(-6.0 * push + 8.0 * flight, 0.0, 0.0) * w)
 			_add("rightFoot", Vector3(-6.0 * push + 8.0 * flight, 0.0, 0.0) * w)
@@ -228,9 +267,12 @@ func _apply_mode(mode: String, u: float, w: float, time: float, sx: float, sy: f
 			var spread: float = (9.0 + 23.0 * alarm) * react + 8.0 * brace
 			_add("leftUpperArm", Vector3(-7.0 * react + 5.0 * brace, 0.0, spread) * w)
 			_add("rightUpperArm", Vector3(-7.0 * react + 5.0 * brace, 0.0, -spread) * w)
-			# Knees come up in front of the body (thigh -X, shin +X), then reach down to brace.
-			var thigh: float = (11.0 + severity * 17.0) * tuck + 9.0 * brace
-			var shin: float = (21.0 + severity * 24.0) * tuck + 18.0 * brace
+			# Knees come up in front of the body (thigh -X, shin +X), then the legs reach down so
+			# the feet meet the ground at contact. The landing squat (planted) absorbs the impact;
+			# legs still tucked at contact would hang in the air above the floor.
+			var reach_down: float = 1.0 - 0.85 * brace
+			var thigh: float = (11.0 + severity * 17.0) * tuck * reach_down
+			var shin: float = (21.0 + severity * 24.0) * tuck * reach_down
 			_add("leftUpperLeg", Vector3(-thigh, 0.0, -2.0) * w)
 			_add("rightUpperLeg", Vector3(-thigh * 0.9, 0.0, 2.0) * w)
 			_add("leftLowerLeg", Vector3(shin, 0.0, 0.0) * w)
@@ -289,25 +331,15 @@ func _apply_mode(mode: String, u: float, w: float, time: float, sx: float, sy: f
 			_add("rightHand", Vector3(0.0, 0.0, 12.0) * w)
 
 ## Bends the knees: thighs forward by `thigh_deg`, shins lean back by `shin_deg`, feet
-## stay level. When `planted`, the pelvis moves down and back by exactly what keeps the
-## ankles where they were, so the shoes do not slide on the ground.
-func _legs(thigh_deg: float, shin_deg: float, planted: bool) -> void:
+## stay level. Keeping the shoes on the floor is done once per frame in apply()
+## (measured pelvis shift for grounded poses), so `_planted` here is only descriptive.
+func _legs(thigh_deg: float, shin_deg: float, _planted_hint: bool) -> void:
 	if thigh_deg <= 0.01 and shin_deg <= 0.01:
 		return
 	for side in ["left", "right"]:
 		_add(side + "UpperLeg", Vector3(-thigh_deg, 0.0, 0.0))
 		_add(side + "LowerLeg", Vector3(thigh_deg + shin_deg, 0.0, 0.0))
 		_add(side + "Foot", Vector3(-shin_deg, 0.0, 0.0))
-	if not planted or _thigh_m <= 0.0:
-		return
-	var t: float = deg_to_rad(thigh_deg)
-	var k: float = deg_to_rad(shin_deg)
-	var drop: float = _thigh_m * (1.0 - cos(t)) + _shin_m * (1.0 - cos(k))
-	var back: float = _thigh_m * sin(t) - _shin_m * sin(k)
-	var hips: int = int(rig.bones["hips"])
-	var parent: int = skeleton.get_bone_parent(hips)
-	var parent_basis: Basis = skeleton.get_bone_global_pose(parent).basis if parent >= 0 else Basis.IDENTITY
-	skeleton.set_bone_pose_position(hips, skeleton.get_bone_pose_position(hips) + parent_basis.inverse() * Vector3(0.0, -drop, -back))
 
 static func _ease_out(x: float) -> float:
 	return 1.0 - pow(1.0 - clampf(x, 0.0, 1.0), 3.0)

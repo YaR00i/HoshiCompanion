@@ -14,6 +14,9 @@ const LANDING_DURATION: float = 0.85
 ## A jump first crouches on the spot; the pose layer sees this as the first 20% of progress.
 const CROUCH_TIME: float = 0.17
 const CROUCH_SHARE: float = 0.20
+## false: the jump ends straight into a seat on a ledge (no floor landing squat).
+## Reset by every begin_jump/begin_fall; the caller sets it right after begin_jump.
+var land_on_arrival: bool = true
 
 func active() -> bool:
 	return mode != "idle"
@@ -62,6 +65,7 @@ func begin_jump(from: Vector2, to: Vector2, body_pixels: float) -> void:
 	_arc_px = clampf(maxf(34.0, distance * 0.18), 34.0, body_pixels * 0.22)
 	_impact_strength = clampf(0.38 + distance / maxf(body_pixels, 1.0) * 0.12, 0.38, 0.64)
 	_screen_velocity = Vector2.ZERO
+	land_on_arrival = true
 	mode = "jump"
 
 func begin_fall(from: Vector2, to: Vector2, body_pixels: float, release_style: String = "") -> void:
@@ -78,6 +82,7 @@ func begin_fall(from: Vector2, to: Vector2, body_pixels: float, release_style: S
 	elif release_style == "rough":
 		_impact_strength = minf(1.25, _impact_strength + 0.20)
 	_screen_velocity = Vector2.ZERO
+	land_on_arrival = true
 	mode = "fall"
 
 func set_target(value: Vector2) -> void:
@@ -98,7 +103,7 @@ func tick(delta: float) -> Vector2:
 			position.y -= 4.0 * u * (1.0 - u) * _arc_px
 			if u >= 1.0:
 				position = target
-				mode = "land"
+				mode = "land" if land_on_arrival else "idle"
 				_landing_time = 0.0
 		"fall":
 			_age += dt

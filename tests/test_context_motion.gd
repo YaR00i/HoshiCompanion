@@ -197,6 +197,28 @@ func _run() -> void:
 		state.tick(1.0 / 30.0)
 		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
 	check(stage.context_pose.phase_label() == "brace" and stage.rig.world_point("leftFoot").is_finite(), "hard fall reaches a finite brace phase")
+	# At touch-down the feet must already reach the ground (standing foot height),
+	# otherwise the window is on the floor while the legs are still tucked in the air.
+	advance_context(stage, state, "idle", Vector2.ZERO, 70)
+	var standing_foot_y: float = stage.rig.world_point("leftFoot").y
+	for contact_mode in ["fall", "jump"]:
+		advance_context(stage, state, "idle", Vector2.ZERO, 70)
+		for i in range(20):
+			stage.set_context_action(contact_mode, Vector2(60, 700), 1.0, 1.2)
+			state.tick(1.0 / 30.0)
+			stage.animate(1.0 / 30.0, state, Vector2.ZERO)
+		var lift: float = stage.rig.world_point("leftFoot").y - standing_foot_y
+		check(lift < stage.model_height * 0.015, contact_mode + " feet reach the ground at touch-down (lift " + str(snappedf(lift, 0.001)) + " m)")
+	# Deepest landing squat: the pelvis goes down, the shoes stay on the floor.
+	advance_context(stage, state, "idle", Vector2.ZERO, 70)
+	var standing_hips_y: float = stage.rig.world_point("hips").y
+	for i in range(12):
+		stage.set_context_action("land", Vector2.ZERO, 0.35, 1.2)
+		state.tick(1.0 / 30.0)
+		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
+	var squat_lift: float = absf(stage.rig.world_point("leftFoot").y - standing_foot_y)
+	var squat_drop: float = standing_hips_y - stage.rig.world_point("hips").y
+	check(squat_lift < 0.004 and squat_drop > stage.model_height * 0.12, "landing squat lowers the pelvis while feet stay on the floor (feet " + str(snappedf(squat_lift, 0.001)) + " m, hips " + str(snappedf(squat_drop, 0.001)) + " m)")
 	stage.set_context_action("land", Vector2(90, 0), 0.18, 1.2)
 	for i in range(8):
 		state.tick(1.0 / 30.0)

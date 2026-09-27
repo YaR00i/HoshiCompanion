@@ -9,15 +9,21 @@ var automatic: bool = false
 var rest_left: float = 0.0
 var _progress: float = 0.0
 var _speed: float = 0.0
+## A quick transition happens in the air: standing up while jumping off a support
+## (done before the feet meet the floor) or dropping onto a ledge seat after a hop.
+var quick: bool = false
+const QUICK_SPEED: float = 2.6
 
-func request_sit(auto_rest: bool = false, duration: float = 50.0) -> void:
+func request_sit(auto_rest: bool = false, duration: float = 50.0, fast: bool = false) -> void:
 	target_seated = true
+	quick = fast
 	automatic = auto_rest
 	rest_left = maxf(10.0, duration)
 	_update_mode()
 
-func request_stand() -> void:
+func request_stand(fast: bool = false) -> void:
 	target_seated = false
+	quick = fast
 	automatic = false
 	_update_mode()
 
@@ -36,14 +42,16 @@ func tick(delta: float, allow_auto_stand: bool = true) -> void:
 			request_stand()
 	var goal: float = 1.0 if target_seated else 0.0
 	if not is_equal_approx(_progress, goal):
-		var desired_speed: float = 0.43 if target_seated else -0.47
-		_speed = move_toward(_speed, desired_speed, dt * 2.2)
+		var desired_speed: float = (QUICK_SPEED if target_seated else -QUICK_SPEED) if quick else (0.43 if target_seated else -0.47)
+		_speed = desired_speed if quick else move_toward(_speed, desired_speed, dt * 2.2)
 		_progress = clampf(_progress + _speed * dt, 0.0, 1.0)
 		if (target_seated and _progress >= 1.0) or (not target_seated and _progress <= 0.0):
 			_speed = 0.0
+			quick = false
 	else:
 		_progress = goal
 		_speed = 0.0
+		quick = false
 	amount = _progress * _progress * _progress * (10.0 + _progress * (-15.0 + 6.0 * _progress))
 	_update_mode()
 
@@ -74,3 +82,4 @@ func reset_standing() -> void:
 	rest_left = 0.0
 	_progress = 0.0
 	_speed = 0.0
+	quick = false

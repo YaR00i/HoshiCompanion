@@ -202,7 +202,7 @@ func finish_press() -> void:
 				app.host.finish_drag()
 			else:
 				app.state.dozing = false
-				app.state.posture.request_stand()
+				app.state.posture.request_stand(true)
 				floor_goal = app.host.remember_floor_position()
 				app.interaction.record_release(release_style)
 				app.state.react_to_release(release_style)

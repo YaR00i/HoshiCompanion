@@ -171,6 +171,19 @@ func _check_timers() -> void:
 	for index in range(600):
 		controller.tick(1.0 / 30.0)
 	_check(controller.mode == "seated", "user interaction claims automatic seat")
+	# Jumping off a support: she must be standing before the shortest fall (0.38 s) lands.
+	controller.request_stand(true)
+	for index in range(12):
+		controller.tick(1.0 / 30.0)
+	_check(controller.mode == "standing" and not controller.quick, "quick stand finishes in the air before touch-down")
+	controller.request_sit(false, 50.0, true)
+	for index in range(12):
+		controller.tick(1.0 / 30.0)
+	_check(controller.mode == "seated" and not controller.quick, "hop onto a ledge settles into the seat quickly")
+	controller.request_stand()
+	for index in range(12):
+		controller.tick(1.0 / 30.0)
+	_check(controller.mode == "standing_up", "a normal stand stays calm and slow")
 
 func _check_autonomous_sequence() -> void:
 	app._on_action("stand")

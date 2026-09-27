@@ -201,13 +201,16 @@ func before_tick(delta: float) -> void:
 				_from = Vector2(app.host.window.position)
 				_age = 0.0
 				app.air.begin_jump(_from, Vector2(planned["position"]), float(app.host.body_pixels))
+				# Hop straight onto the seat like onto a table edge: the feet hang below the
+				# edge, so a floor landing squat there would bend the legs in mid-air.
+				app.air.land_on_arrival = false
 				phase = "boarding"
 	elif phase == "boarding":
 		if not _shelf_usable():
 			return_home()
 		elif not app.air.active():
 			if app.state.posture.mode == "standing" and not app.state.posture.target_seated:
-				app.state.posture.request_sit(false)
+				app.state.posture.request_sit(false, 50.0, true)
 			elif app.state.posture.mode == "seated":
 				phase = "attached"
 				app.host.raise_companion()
@@ -366,7 +369,9 @@ func return_home(walk_after: bool = false) -> void:
 	ledge_probe.close()
 	port.cancel_plans_and_walk()
 	app.state.dozing = false
-	app.state.posture.request_stand()
+	# Stand up in the air, before the feet meet the floor; the landing squat then starts
+	# from standing instead of unfolding a seated pose on the ground.
+	app.state.posture.request_stand(true)
 	_from = Vector2(app.host.window.position)
 	_return_goal = Vector2(app.host.floor_position())
 	_age = 0.0
