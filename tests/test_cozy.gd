@@ -55,7 +55,9 @@ func _run() -> void:
 	var corner_id: int = cozy.get_window_id()
 	app._open_menu()
 	app._on_action("cozy_corner")
+	# _open_menu() shows the quick menu; an open menu pauses seated activities, so close both.
 	app.ui.menu.hide()
+	app.ui.quick_menu.hide()
 	await process_frame
 	await RenderingServer.frame_post_draw
 	_advance(3)
