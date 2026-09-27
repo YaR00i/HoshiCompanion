@@ -345,6 +345,15 @@ func _tick_icons(dt: float) -> void:
 			_icon_pid = int(process["pid"])
 			_icon_age = 0.0
 
+## Погасить экраны (таймер сна): как «монитор в сон» в Windows, мышь будит.
+func screen_off() -> void:
+	var script: String = "Add-Type -Namespace W -Name M -MemberDefinition '[DllImport(\"user32.dll\")] public static extern int PostMessage(int h, int m, int w, int l);'; [W.M]::PostMessage(0xFFFF, 0x0112, 0xF170, 2)"
+	_exec("powershell.exe", ["-NoProfile", "-WindowStyle", "Hidden", "-EncodedCommand", Marshalls.raw_to_base64(script.to_utf16_buffer())])
+
+## Окно, запущенное с расстановкой, ещё ставится (сценарий ждёт его).
+func placing() -> bool:
+	return _place_io != null
+
 ## Каждый кадр (шина пульта): расстановка окна и список экранов.
 func tick(delta: float) -> void:
 	_tick_icons(clampf(delta, 0.0, 0.1))

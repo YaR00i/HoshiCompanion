@@ -171,6 +171,15 @@ func _check_menus() -> void:
 	user_interface.action_requested.connect(func(command: String): emitted.append(command))
 	user_interface._on_menu_id(Commands.menu_id("wave"))
 	_check(emitted.size() == 1 and emitted[0] == "wave", "menu click is delivered as the command name")
+	# У правого края: главное меню 1500..1800, второй уровень открылся влево (1270..1500),
+	# третий Godot ставит вправо (1500..1720) — поверх главного. Уводим его влево.
+	var screen := Rect2i(0, 0, 1920, 1040)
+	var grand := Rect2i(1500, 300, 300, 330)
+	var parent := Rect2i(1270, 400, 230, 170)
+	_check(UI.submenu_position(Rect2i(1500, 480, 220, 230), parent, grand, screen) == Vector2i(1050, 480), "third menu level opens away from the main menu, not over it")
+	_check(UI.submenu_position(Rect2i(230, 480, 220, 230), Rect2i(0, 400, 230, 170), Rect2i(230, 300, 300, 330), screen) == Vector2i(10, 480)
+		and UI.submenu_position(Rect2i(700, 480, 220, 230), parent, grand, screen) == Vector2i(700, 480),
+		"no room on the side — right next to the main menu; not overlapping — left as it is")
 	user_interface.queue_free()
 
 func _finish() -> void:

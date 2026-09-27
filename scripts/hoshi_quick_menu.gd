@@ -12,7 +12,7 @@ const MUTED: Color = Color("82798f")
 const PLUM: Color = Color("665479")
 const GOLD: Color = Color("c4a36e")
 const WIDTH: int = 390
-const HEIGHT: int = 706
+const HEIGHT: int = 753
 
 var status_label: Label
 var voice_button: Button
@@ -128,7 +128,7 @@ func _ready() -> void:
 	pc_grid.add_theme_constant_override("v_separation", 7)
 	column.add_child(pc_grid)
 	for item in [["🚀  Мои действия", "pc_actions_editor"], ["🔊  Звук на пульте", "sound_outputs_editor"],
-			["⧉  Переставить окно", "move_window_editor"], ["🔄  Перезапустить", "restart"]]:
+			["✨  Сценарии", "scenes_editor"], ["⧉  Переставить окно", "move_window_editor"], ["🔄  Перезапустить", "restart"]]:
 		var button := _button(str(item[0]), str(item[1]), Color("fffdfb"), 40)
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		pc_grid.add_child(button)

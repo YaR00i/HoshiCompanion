@@ -118,6 +118,7 @@ const LIST := {
 	"pc_actions_editor": {"title": "Мои действия для пульта…", "group": "remote", "menu_id": 183, "sources": ["user"]},
 	"sound_outputs_editor": {"title": "Звук на пульте…", "group": "remote", "menu_id": 184, "sources": ["user"]},
 	"move_window_editor": {"title": "Переставить окно…", "group": "remote", "menu_id": 185, "sources": ["user"]},
+	"scenes_editor": {"title": "Сценарии для пульта…", "group": "remote", "menu_id": 186, "sources": ["user"]},
 	# Переключатели
 	"toggle_look": {"title": "Внимание к курсору", "group": "look", "menu_id": 120, "sources": ["user"]},
 	"toggle_motion": {"title": "Мягкие движения", "group": "look", "menu_id": 121, "sources": ["user"]},

@@ -220,11 +220,20 @@ class HoshiService : Service() {
         val apps = message.optJSONArray("apps") ?: JSONArray()
         val seen = mutableSetOf<String>()
         var started = ""
+        // Видео YouTube уже есть своей карточкой — та же вкладка из «Вкладок Chrome» не дублируется.
+        var youtubePlaying = false
+        for (i in 0 until apps.length()) {
+            val app = apps.optJSONObject(i) ?: continue
+            if (app.optString("id") == "youtube" && app.optJSONObject("state")?.optBoolean("playing") == true) youtubePlaying = true
+        }
         for (i in 0 until apps.length()) {
             val app = apps.optJSONObject(i) ?: continue
             val id = app.optString("id")
             val state = app.optJSONObject("state") ?: continue
             if (id !in PLAYERS || state.optString("title").isEmpty()) continue
+            // «Вкладки Chrome» — только когда во вкладке есть видео (иначе там подсказка).
+            if (id == "tabs" && (state.has("hint") ||
+                    (youtubePlaying && state.optString("subtitle").startsWith("youtube.com")))) continue
             seen.add(id)
             val player = players.getOrPut(id) { Player(newSession(id)) }
             val commands = mutableMapOf<String, JSONObject>()
@@ -422,7 +431,7 @@ class HoshiService : Service() {
         @Volatile private var pending: String? = null
         private const val EXTRA_PLAYER = "player_button"
         private const val EXTRA_APP = "player_app"
-        private val PLAYERS = listOf("mpc", "youtube")
+        private val PLAYERS = listOf("mpc", "youtube", "tabs")
         private val BUTTONS = listOf("back", "toggle", "forward", "next")
         private const val ONGOING_ID = 1
         private const val ALERT_ID = 2

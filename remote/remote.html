@@ -49,6 +49,18 @@
 
   /* чипы режимов */
   .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  /* сценарии: ряд крупных кнопок на «Главном», листается вбок */
+  .scenes { display: flex; gap: 8px; overflow-x: auto; margin: 12px -14px 0; padding: 2px 14px 4px; scrollbar-width: none; }
+  .scenes::-webkit-scrollbar { display: none; }
+  .scene { flex: none; display: flex; align-items: center; gap: 7px; padding: 10px 15px 10px 12px; border-radius: 16px;
+    background: linear-gradient(135deg, var(--soft), var(--card)); border: 1px solid var(--line); font-weight: 600; font-size: 14px; color: var(--plum); }
+  .scene .icon { font-size: 20px; }
+  .scene.going { background: var(--plum); color: #fff; }
+  /* таймер сна: полоска-напоминание и выбор на «Компьютере» */
+  .timerbar { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 12px; border-radius: 16px;
+    background: #2f2a45; color: #f3ecff; font-size: 14px; }
+  .timerbar b { font-variant-numeric: tabular-nums; }
+  .timerbar button { margin-left: auto; padding: 7px 13px; border-radius: 999px; background: rgba(255, 255, 255, .16); color: #fff; }
   .chip { padding: 8px 13px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); font-size: 13px; }
   .chip:active { background: var(--soft); }
   .chip.on { background: var(--plum); border-color: var(--plum); color: #fff; }
@@ -239,6 +251,8 @@
   <div id="remote" class="hidden">
     <section class="tab active" data-tab="main">
       <div class="quick" id="quick"></div>
+      <div class="scenes hidden" id="scenes"></div>
+      <div id="timerBox"></div>
       <div class="appbar" id="appbar"></div>
       <div id="sound"></div>
       <div class="app hidden" id="windowsPanel"></div>
@@ -367,7 +381,7 @@ function connect() {
         if (openApp === "windows") send({op: "run", command: "pc:windows", args: {}}); // «Окна» открыты — свежий список
       }
     }
-    else if (m.op === "state") { state = m; online(true, (m.hoshi && m.hoshi.status) || "На связи"); renderHoshi(); renderSound(); renderApps(); renderPending(); renderWindows(); renderMini();
+    else if (m.op === "state") { state = m; online(true, (m.hoshi && m.hoshi.status) || "На связи"); renderHoshi(); renderSound(); renderApps(); renderPending(); renderWindows(); renderMini(); renderTimer();
       // Приложению — что сейчас включено (звук, режимы), чтобы плитки и кнопки горели правильно.
       if (window.HoshiApp && window.HoshiApp.onState) { try { window.HoshiApp.onState(JSON.stringify({sound: (m.sound || {}).current || "", selected: (m.hoshi || {}).selected || []})); } catch (e) {} } }
     else if (m.op === "history") showHistory(m);
@@ -376,7 +390,8 @@ function connect() {
       not_available: "Это устройство сейчас не на связи",
       not_waiting: "Claude сейчас не ждёт ответа — напиши, когда он закончит", unknown_session: "Эта сессия Claude уже закрыта",
       unknown_window: "Этого окна уже нет — обнови список", bad_screen: "Выбери экран",
-      no_question: "Вопрос уже закрыт — Claude спросит на ПК", not_all_answered: "Ответь на все вопросы"}[m.reason] || "Сейчас не получилось");
+      no_question: "Вопрос уже закрыт — Claude спросит на ПК", not_all_answered: "Ответь на все вопросы",
+      unknown_scene: "Этого сценария уже нет", bad_minutes: "Столько минут нельзя", empty_scene: "В сценарии нет шагов — добавь их на ПК"}[m.reason] || "Сейчас не получилось");
     else if (m.op === "error") {
       if (m.reason === "need_pairing") {
         token = null; try { localStorage.removeItem("hoshi-token"); } catch (e) {}
@@ -429,13 +444,24 @@ function selected() { return new Set((state.hoshi && state.hoshi.selected) || []
 
 function renderHoshi() {
   const on = selected();
-  const key = JSON.stringify([catalog.quick, catalog.groups, [...on]]);
+  const key = JSON.stringify([catalog.quick, catalog.groups, catalog.scenes, [...on]]);
   if (renderHoshi.key === key) return; // ничего не поменялось — не трогаем страницу
   renderHoshi.key = key;
   const quick = $("quick"); quick.textContent = "";
   for (const item of catalog.quick || []) {
     const b = el("button", "round"); const face = el("span", "face", item.icon || "✦");
     b.append(face, el("span", "", item.title)); b.onclick = () => run(item.command); quick.append(b);
+  }
+  // Сценарии (собираются на ПК): одна кнопка — несколько шагов по очереди.
+  const scenes = $("scenes"); scenes.textContent = "";
+  scenes.classList.toggle("hidden", !(catalog.scenes || []).length);
+  for (const item of catalog.scenes || []) {
+    const b = el("button", "scene"); b.append(el("span", "icon", item.icon || "✨"), el("span", "", item.title));
+    b.onclick = () => {
+      run(item.command); toast("Сценарий «" + item.title + "»…");
+      b.classList.add("going"); setTimeout(() => b.classList.remove("going"), 1500 + 900 * (item.steps || 1));
+    };
+    scenes.append(b);
   }
   for (const tab of ["play", "modes"]) {
     const root = $(tab + "Tab"); root.textContent = "";
@@ -458,12 +484,14 @@ function renderHoshi() {
 function renderPc() {
   const root = $("pcTab"); root.textContent = "";
   root.append(el("div", "", "")); root.lastChild.id = "pendingBox";
+  root.append(el("div", "", "")); root.lastChild.id = "pcTimerBox";
   const items = catalog.pc || [];
   const mine = items.filter((i) => !i.system), system = items.filter((i) => i.system);
   root.append(el("h2", "", "Мои действия"));
   if (!mine.length) root.append(el("div", "empty", "Добавь программы, папки и ссылки на компьютере: меню Хоши → Пульт с телефона → Мои действия"));
   else root.append(tiles(mine));
   if (system.length) { root.append(el("h2", "", "Компьютер")); root.append(tiles(system)); }
+  renderTimerSetup(root);
   if (window.HoshiApp && window.HoshiApp.getQuickActions) renderQuickSetup(root);
   renderPending();
 }
@@ -472,7 +500,12 @@ function renderPc() {
 // что уже есть на пульте; «опасные» (с «Точно?») не предлагаются. Хранит приложение.
 function quickCandidates() {
   const out = [];
+  for (const i of catalog.scenes || []) out.push({command: i.command, title: i.title, icon: i.icon || "✨"});
   for (const i of catalog.sound || []) out.push({command: i.command, title: i.title, icon: i.icon || "🔊"});
+  if (catalog.timer) {
+    for (const m of [30, 60]) out.push({command: "timer:" + m, title: "Сон " + m + " мин", icon: "🌙"});
+    out.push({command: "timer:cancel", title: "Отменить сон", icon: "☀️"});
+  }
   for (const i of (catalog.pc || []).filter((x) => !x.confirm)) out.push({command: i.command, title: i.title, icon: i.icon || "🚀"});
   for (const i of catalog.quick || []) out.push({command: i.command, title: i.title, icon: i.icon || "✦"});
   for (const g of catalog.groups || []) for (const i of g.commands) if (!i.confirm && !out.some((o) => o.command === i.command))
@@ -811,6 +844,48 @@ function renderMini() {
   const toggle = box.querySelector('[data-name="toggle"]');
   if (toggle) toggle.textContent = (s.icons || {}).toggle || (s.playing ? "⏸" : "▶");
   box.querySelector(".line").style.width = s.duration > 0 ? Math.min(100, 100 * (s.time || 0) / s.duration) + "%" : "0";
+}
+
+// Таймер сна: идёт — тёмная полоска «🌙 Пауза через 23:10 · Отменить» на «Главном»
+// и «Компьютере»; выбор минут и «что потом» — на «Компьютере».
+function renderTimer() {
+  const t = state.timer || {};
+  for (const id of ["timerBox", "pcTimerBox"]) {
+    const box = $(id); if (!box) continue;
+    if (!t.seconds) { box.textContent = ""; continue; }
+    let bar = box.querySelector(".timerbar");
+    if (!bar) {
+      box.textContent = ""; bar = el("div", "timerbar");
+      const text = el("span", ""); const cancel = el("button", "", "Отменить");
+      cancel.onclick = () => run(t.cancel || "timer:cancel");
+      bar.append(el("span", "", "🌙"), text, cancel); box.append(bar);
+    }
+    const text = bar.children[1]; text.textContent = "";
+    text.append(document.createTextNode((t.title || "Пауза") + " через "), el("b", "", clock(t.seconds)));
+  }
+}
+function renderTimerSetup(root) {
+  const info = catalog.timer; if (!info) return;
+  let then = info.last || "pause";
+  try { then = localStorage.getItem("hoshi-timer-then") || then; } catch (e) {}
+  if (then === "sleep" && !info.sleep) then = "pause";
+  root.append(el("h2", "", "🌙 Таймер сна"));
+  const whats = el("div", "chips");
+  for (const key in info.then || {}) {
+    if (key === "sleep" && !info.sleep) continue; // сон ПК — только если «Сон» включён на ПК
+    const c = el("button", "chip" + (key === then ? " on" : ""), info.then[key]);
+    c.onclick = () => { try { localStorage.setItem("hoshi-timer-then", key); } catch (e) {} renderPc(); };
+    whats.append(c);
+  }
+  root.append(whats);
+  const minutes = el("div", "chips"); minutes.style.marginTop = "8px";
+  for (const m of info.minutes || []) {
+    const c = el("button", "chip", m + " мин");
+    c.onclick = () => { run("timer:" + m, {then}); toast("Таймер сна: " + m + " мин"); };
+    minutes.append(c);
+  }
+  root.append(minutes);
+  renderTimer();
 }
 
 // Ссылки http(s) в тексте — нажимаются и открываются в браузере телефона.

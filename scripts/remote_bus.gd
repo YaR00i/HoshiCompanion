@@ -22,6 +22,8 @@ extends RefCounted
 const Commands = preload("res://scripts/hoshi_commands.gd")
 const Adapters = preload("res://scripts/app_adapters.gd")
 const PcActions = preload("res://scripts/pc_actions.gd")
+const PcScenes = preload("res://scripts/pc_scenes.gd")
+const SleepTimer = preload("res://scripts/sleep_timer.gd")
 const SoundOutputs = preload("res://scripts/sound_outputs.gd")
 const MpcAdapter = preload("res://scripts/mpc_adapter.gd")
 const AssistantWatch = preload("res://scripts/assistant_watch.gd")
@@ -59,6 +61,13 @@ var adapters = Adapters.new()
 var pc = PcActions.new()
 ## «Звук на пульте»: куда идёт звук ПК (устройства выбираются только на ПК).
 var sound = SoundOutputs.new()
+## Сценарии: одна кнопка — несколько шагов (собираются только на ПК).
+var scenes = PcScenes.new()
+## Таймер сна: «через 30 минут — пауза» (и по выбору экран/сон ПК).
+var timer = SleepTimer.new()
+## Какие плееры таймер сна поставил на паузу в последний раз (для проверок).
+var last_paused: Array = []
+var _quiet: bool = false
 ## Плеер MPC-BE — встроенный аддон (карточка как у YouTube).
 var mpc = MpcAdapter.new()
 ## ИИ-помощники на ПК (Claude Code): записки от хуков, карточка «Claude».
@@ -524,6 +533,12 @@ func _handle_adapter(key: int, op: String, message: Dictionary) -> void:
 
 ## Выполнить команду с телефона. Пусто — выполнено, иначе причина отказа.
 func run(command: String, args: Variant = {}) -> String:
+	if command.begins_with("scene:") or command.begins_with("timer:"):
+		var said: Dictionary = {}
+		var why: String = scenes.run(command, said) if command.begins_with("scene:") else _run_timer(command, args, said)
+		if said.has("say"):
+			_say(str(said["say"]))
+		return why
 	if command.begins_with("pc:") or command.begins_with("sound:"):
 		var out: Dictionary = {}
 		var reason: String = pc.run(command, args if args is Dictionary else {}, out) if command.begins_with("pc:") else sound.run(command, out)
@@ -574,7 +589,71 @@ func _sync_assistants() -> void:
 	else:
 		adapters.update_state(AssistantWatch.PEER, assistants.card_state())
 
+## Шаг сценария: как нажатие на пульте, только Хоши не комментирует каждый шаг.
+func _scene_step(command: String) -> String:
+	_quiet = true
+	var reason: String = run(command)
+	_quiet = false
+	return reason
+
+## Каждый кадр (из companion, работает и без пульта): следующий шаг сценария
+## и таймер сна.
+func tick_scenes(dt: float) -> void:
+	if not scenes.run_step.is_valid():
+		scenes.run_step = _scene_step
+		scenes.busy = pc.placing
+	scenes.tick(dt)
+	if not scenes.notice.is_empty():
+		_say(scenes.notice)
+		scenes.notice = ""
+	match timer.tick():
+		"warn":
+			_say("Через минуту поставлю всё на паузу")
+		"fire":
+			_sleep_now()
+
+## "timer:30" (args.then: pause/screen/sleep; нет — как в прошлый раз), "timer:cancel".
+func _run_timer(command: String, args: Variant, out: Dictionary) -> String:
+	var part: String = command.trim_prefix("timer:")
+	if part == "cancel":
+		return timer.cancel(out)
+	if not part.is_valid_int():
+		return "bad_minutes"
+	var what: String = str(args.get("then", "")) if args is Dictionary else ""
+	return timer.start(int(part), what, bool(pc.system_enabled.get("sleep", false)), out)
+
+## Время вышло: все плееры — на паузу, потом экран или сон ПК.
+func _sleep_now() -> void:
+	pause_players()
+	match timer.then:
+		"screen":
+			_say("Спокойной ночи")
+			pc.screen_off()
+		"sleep":
+			var out: Dictionary = {}
+			pc.run("pc:system_sleep", {}, out)
+			_say(str(out.get("say", "Спокойной ночи")))
+		_:
+			_say("Спокойной ночи — всё на паузе")
+
+## Поставить на паузу всё, что играет (кроме карточки Claude). Одно и то же видео
+## YouTube в «Вкладках Chrome» второй раз не нажимаем — иначе оно снова заиграет.
+func pause_players() -> void:
+	var youtube: Dictionary = adapters.adapters.get("youtube", {})
+	var youtube_playing: bool = bool(youtube.get("state", {}).get("playing", false))
+	last_paused.clear()
+	for id in adapters.adapters.keys():
+		var item: Dictionary = adapters.adapters[id]
+		if id == AssistantWatch.ID or not bool(item["state"].get("playing", false)):
+			continue
+		if id == "tabs" and youtube_playing and str(item["state"].get("subtitle", "")).begins_with("youtube.com"):
+			continue
+		_scene_step("app:%s:toggle" % id)
+		last_paused.append(id)
+
 func _say(text: String) -> void:
+	if _quiet:
+		return
 	var app = _app()
 	if app != null and app.has_method("remote_say"):
 		app.remote_say(text)
@@ -612,7 +691,8 @@ func remote_catalog() -> Dictionary:
 				items.append(_item(command))
 		if not items.is_empty():
 			groups.append({"id": group[0], "title": group[1], "tab": group[2], "commands": items})
-	return {"quick": quick, "groups": groups, "pc": pc.catalog(), "sound": sound.catalog()}
+	return {"quick": quick, "groups": groups, "pc": pc.catalog(), "sound": sound.catalog(), "scenes": scenes.catalog(),
+		"timer": {"minutes": SleepTimer.MINUTES, "then": SleepTimer.THEN, "sleep": bool(pc.system_enabled.get("sleep", false)), "last": timer.last_then}}
 
 ## Список «Моих действий» или «Звука на пульте» изменили на ПК — обновить пульты.
 func refresh_catalog() -> void:
@@ -629,7 +709,7 @@ func _item(command: String) -> Dictionary:
 func _state_message() -> Dictionary:
 	var app = _app()
 	var hoshi: Dictionary = app.remote_snapshot() if app != null and app.has_method("remote_snapshot") else {}
-	return {"op": "state", "hoshi": hoshi, "apps": adapters.catalog(), "pc_pending": pc.pending_state(), "sound": sound.state(), "windows": pc.windows_state()}
+	return {"op": "state", "hoshi": hoshi, "apps": adapters.catalog(), "pc_pending": pc.pending_state(), "sound": sound.state(), "windows": pc.windows_state(), "timer": timer.state()}
 
 func _broadcast_state(force: bool) -> void:
 	var message: Dictionary = _state_message()

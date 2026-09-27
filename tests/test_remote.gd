@@ -233,9 +233,65 @@ func _run() -> void:
 	_pump([again], 20)
 	_check(bus.tokens.is_empty() and again.get_ready_state() != WebSocketPeer.STATE_OPEN, "forget phones disconnects them")
 	bus.stop()
+	_check_scenes()
+	_check_timer()
 	_check_restart()
 	print("HOSHI_REMOTE_RESULT checks=%d failures=%d" % [checks, failures])
 	quit(1 if failures > 0 else 0)
+
+## Сценарии: шаги — только готовые кнопки пульта, по очереди, ждут расстановку окна.
+func _check_scenes() -> void:
+	var scenes = bus.scenes
+	scenes.path = "user://test_pc_scenes.json"
+	scenes.scenes.clear()
+	var id: String = scenes.add("Кино", "🎬")
+	_check(scenes.add_step(id, "sit") and scenes.add_step(id, "mood_relaxed") and not scenes.add_step(id, "quit")
+		and not scenes.add_step(id, "scene:" + id) and not scenes.add_step(id, "pc:windows") and not scenes.add_step(id, "app:mpc:toggle"),
+		"scene steps are only ready phone buttons (no menu-only commands, no scene in scene)")
+	var listed: Array = bus.remote_catalog().get("scenes", [])
+	_check(listed.size() == 1 and listed[0]["command"] == "scene:" + id and listed[0]["steps"] == 2, "scenes reach the phone catalog")
+	var copy = RemoteBus.PcScenes.new()
+	copy.path = scenes.path
+	copy.load_scenes()
+	_check(copy.scenes.size() == 1 and copy.scenes[0]["steps"] == ["sit", "mood_relaxed"] and copy.scenes[0]["icon"] == "🎬", "scenes are saved and loaded")
+	_check(bus.run("scene:nope") == "unknown_scene", "unknown scene is refused")
+	bus.tick_scenes(0.0) # связывает шаги с шиной
+	var placing: Array = [true]
+	scenes.busy = func() -> bool: return placing[0]
+	app.ran.clear()
+	_check(bus.run("scene:" + id).is_empty() and scenes.is_running(), "scene starts from the phone")
+	bus.tick_scenes(0.1)
+	var waited: bool = app.ran.is_empty()
+	placing[0] = false
+	bus.tick_scenes(0.1)
+	var first: Array = app.ran.duplicate()
+	bus.tick_scenes(0.3)
+	var gap: bool = app.ran.size() == 1
+	for i in range(4):
+		bus.tick_scenes(0.4)
+	_check(waited and first == ["sit"] and gap and app.ran == ["sit", "mood_relaxed"] and not scenes.is_running(),
+		"steps run in order, with a pause, after the previous window is placed")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(scenes.path))
+
+## Таймер сна: пауза всего, что играет (одно видео YouTube — один раз), сон ПК — только если включён.
+func _check_timer() -> void:
+	var toggle := [{"name": "toggle", "title": "Пауза"}]
+	bus.adapters.announce(901, {"id": "youtube", "title": "YouTube", "commands": toggle, "state": {"playing": true, "title": "Видео"}})
+	bus.adapters.announce(902, {"id": "tabs", "title": "Вкладки", "commands": toggle, "state": {"playing": true, "subtitle": "youtube.com · 🔊"}})
+	bus.adapters.announce(903, {"id": "vk", "title": "VK", "commands": toggle, "state": {"playing": false}})
+	bus.pc.system_enabled["sleep"] = false
+	_check(bus.run("timer:30", {"then": "sleep"}) == "not_allowed" and not bus.timer.active(), "sleep timer cannot put the PC to sleep unless «Сон» is enabled on the PC")
+	_check(bus.run("timer:500") == "bad_minutes" and bus.run("timer:abc") == "bad_minutes", "timer minutes are checked")
+	_check(bus.run("timer:30", {"then": "pause"}).is_empty() and bus.timer.state()["seconds"] > 1790, "timer starts and shows the time left")
+	_check(bus.remote_catalog()["timer"]["minutes"].has(30) and bus._state_message()["timer"]["cancel"] == "timer:cancel", "timer reaches the phone")
+	_check(bus.run("timer:cancel").is_empty() and not bus.timer.active() and bus.run("timer:cancel") == "nothing_to_cancel", "timer can be cancelled")
+	bus.run("timer:15")
+	bus.timer.ends_at = Time.get_ticks_msec() - 1
+	bus.tick_scenes(0.1)
+	_check(not bus.timer.active() and bus.last_paused == ["youtube"], "time is up: playing players are paused, the same YouTube video only once")
+	_check(RemoteBus.PcScenes.step_allowed("timer:30") and not RemoteBus.PcScenes.step_allowed("timer:cancel"), "a scene can start the sleep timer")
+	for peer in [901, 902, 903]:
+		bus.adapters.drop_peer(peer)
 
 ## «Перезапустить Хоши»: на пульте с «Точно?»; новая версия с ошибкой — не закрываемся.
 func _check_restart() -> void:

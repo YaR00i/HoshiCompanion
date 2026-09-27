@@ -77,6 +77,7 @@ func _ready() -> void:
 	remote.setup(self)
 	remote.pc.load_actions()
 	remote.sound.load_outputs()
+	remote.scenes.load_scenes()
 	host.setup(get_window())
 	var seed_value: int = 70420 if OS.get_cmdline_user_args().has("--test-mode") else int(Time.get_ticks_usec())
 	state.seed_random(seed_value)
@@ -247,6 +248,7 @@ func _process(delta: float) -> void:
 	# Звуковой помощник отвечает не сразу; работает и при выключенном пульте (окно на ПК).
 	remote.sound.tick(dt, remote.phone_count() > 0)
 	remote.pc.tick(dt) # запуск с расстановкой окна и список экранов (работает и без пульта)
+	remote.tick_scenes(dt) # сценарии: шаги по очереди
 	_tick_restart(dt)
 	remote.assistants.tick(dt)
 	ui.cloud_items = remote.assistants.clouds()
@@ -667,6 +669,9 @@ func _on_action(command: Variant) -> void:
 		return
 	if action == "move_window_editor":
 		ui.show_move_window(remote.pc)
+		return
+	if action == "scenes_editor":
+		ui.show_scenes(remote, remote.refresh_catalog)
 		return
 	if action == "remote_forget":
 		remote.forget_phones()

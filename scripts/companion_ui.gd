@@ -55,6 +55,16 @@ var _place_map: Control
 ## «Переставить окно»: открытые окна, схема экранов, положение.
 var move_window: Window
 var _move_source
+## Окно «Сценарии» (одна кнопка пульта — несколько шагов).
+var scenes_window: Window
+var _scenes_bus
+var _scenes_changed: Callable
+var _scenes_pick: OptionButton
+var _scenes_name: LineEdit
+var _scenes_icon: LineEdit
+var _scenes_steps: ItemList
+var _scenes_add: OptionButton
+var _scenes_current: String = ""
 var _move_list: ItemList
 var _move_map: Control
 var _move_version: int = -1
@@ -414,8 +424,33 @@ func _submenu(parent: PopupMenu, title_value: String, node_name: String, entries
 	for pair in entries:
 		_add_menu_item(sub, str(pair[0]), str(pair[1]))
 	sub.id_pressed.connect(_on_menu_id)
+	sub.visibility_changed.connect(func(): if sub.visible: _keep_submenu_clear.call_deferred(sub))
 	parent.add_submenu_item(title_value, node_name)
 	return sub
+
+## Подменю не должно ложиться поверх меню уровнем выше: у края экрана второй
+## уровень открывается влево, а третий Godot ставит вправо — прямо на главное
+## меню; по пути к нему курсор задевает его пункты, и всё закрывается
+## (жалоба 28.09). Тогда третий уровень открываем с другой стороны.
+func _keep_submenu_clear(sub: PopupMenu) -> void:
+	var parent := sub.get_parent() as PopupMenu
+	var grand := parent.get_parent() as PopupMenu if parent != null else null
+	if not sub.visible or grand == null or not grand.visible:
+		return
+	sub.position = submenu_position(Rect2i(sub.position, sub.size), Rect2i(parent.position, parent.size), Rect2i(grand.position, grand.size),
+		DisplayServer.screen_get_usable_rect(DisplayServer.get_screen_from_rect(Rect2(parent.position, parent.size))))
+
+## Где поставить подменю (sub) рядом с parent, чтобы не закрыть grand: сбоку от
+## parent, а если места нет — вплотную к grand (частично поверх parent, это не
+## мешает: курсор сразу попадает в подменю). Никак — оставить как есть.
+static func submenu_position(sub: Rect2i, parent: Rect2i, grand: Rect2i, screen: Rect2i) -> Vector2i:
+	if not sub.intersects(grand):
+		return sub.position
+	for x in [parent.position.x - sub.size.x, parent.end.x, grand.position.x - sub.size.x, grand.end.x]:
+		var moved := Rect2i(Vector2i(x, sub.position.y), sub.size)
+		if not moved.intersects(grand) and x >= screen.position.x and moved.end.x <= screen.end.x:
+			return moved.position
+	return sub.position
 
 func _add_menu_item(parent: PopupMenu, title_value: String, action: String, checked: bool = false) -> void:
 	var id: int = Commands.menu_id(action)
@@ -463,7 +498,8 @@ func show_pc_actions(pc, on_changed: Callable) -> void:
 ## Не popup_centered(): он делает окно «привязанным» (transient), а Windows
 ## не даёт так окнам поверх других — в журнале сыпались ошибки.
 func _open_on_top(target: Window) -> void:
-	var area := Rect2i(DisplayServer.screen_get_usable_rect(get_window().current_screen))
+	var screen: int = get_window().current_screen if get_window() != null else DisplayServer.SCREEN_OF_MAIN_WINDOW
+	var area := Rect2i(DisplayServer.screen_get_usable_rect(screen))
 	var parent := target.get_parent() as Window
 	if parent != null and parent.visible and parent != get_tree().root:
 		area = Rect2i(parent.position, parent.size)
@@ -1321,6 +1357,7 @@ func _build_menu() -> void:
 	_add_menu_item(remote_menu, "Мои действия для пульта…", "pc_actions_editor")
 	_add_menu_item(remote_menu, "Звук на пульте…", "sound_outputs_editor")
 	_add_menu_item(remote_menu, "Переставить окно…", "move_window_editor")
+	_add_menu_item(remote_menu, "Сценарии для пульта…", "scenes_editor")
 	_add_menu_item(remote_menu, "Забыть все телефоны", "remote_forget")
 	var appearance := _submenu(menu, "Внешний вид  ›", "AppearanceMenu", [])
 	_add_menu_item(appearance, "Настроить свет, тени и обводку…", "light_editor")
@@ -1451,3 +1488,235 @@ func _on_surface_candidate_selected(index: int) -> void:
 		"Pane": "область", "Custom": "нестандартный элемент"}
 	var kind: String = str(item.get("kind", ""))
 	surface_detail.text = "%s · ширина %d px · высота %d px в окне" % [str(kinds.get(kind, kind)), int(item.get("width", 0)), int(item.get("y", 0))]
+
+# ---------------------------------------------------------------- сценарии
+
+## Окно «Сценарии»: собрать кнопку пульта из шагов — звук, «Мои действия»,
+## команды Хоши. bus — remote_bus.gd (сценарии, звук, действия); on_changed —
+## сообщить пультам, что кнопки изменились.
+func show_scenes(bus, on_changed: Callable) -> void:
+	_scenes_bus = bus
+	_scenes_changed = on_changed
+	if scenes_window == null:
+		_build_scenes_window()
+	if _scenes_current.is_empty() and not bus.scenes.scenes.is_empty():
+		_scenes_current = str(bus.scenes.scenes[0]["id"])
+	_refresh_scenes()
+	_open_on_top(scenes_window)
+
+func _build_scenes_window() -> void:
+	scenes_window = Window.new()
+	scenes_window.title = "Сценарии для пульта"
+	scenes_window.size = Vector2i(500, 600)
+	scenes_window.min_size = Vector2i(440, 480)
+	scenes_window.always_on_top = true
+	scenes_window.theme = theme
+	add_child(scenes_window)
+	scenes_window.close_requested.connect(scenes_window.hide)
+	var panel_bg := PanelContainer.new()
+	panel_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("fffdfb")
+	style.set_content_margin_all(16)
+	panel_bg.add_theme_stylebox_override("panel", style)
+	scenes_window.add_child(panel_bg)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 8)
+	panel_bg.add_child(column)
+	var intro := _label("Одна кнопка на пульте — несколько шагов по очереди. Например, «🎬 Кино»: звук на телевизор, плеер на его экран, Хоши садится.", 13, MUTED)
+	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	column.add_child(intro)
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 6)
+	column.add_child(top)
+	_scenes_pick = OptionButton.new()
+	_scenes_pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_scenes_pick.item_selected.connect(_on_scene_picked)
+	top.add_child(_scenes_pick)
+	var add_scene := Button.new()
+	add_scene.text = "＋ Новый"
+	add_scene.pressed.connect(_add_scene)
+	top.add_child(add_scene)
+	var remove_scene := Button.new()
+	remove_scene.text = "Удалить"
+	remove_scene.pressed.connect(_remove_scene)
+	top.add_child(remove_scene)
+	var name_row := HBoxContainer.new()
+	name_row.add_theme_constant_override("separation", 6)
+	column.add_child(name_row)
+	_scenes_icon = LineEdit.new()
+	_scenes_icon.custom_minimum_size = Vector2(54, 0)
+	_scenes_icon.max_length = 4
+	_scenes_icon.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_scenes_icon.tooltip_text = "Значок кнопки (смайлик: Win + точка)"
+	_style_line_edit(_scenes_icon)
+	name_row.add_child(_scenes_icon)
+	_scenes_name = LineEdit.new()
+	_scenes_name.placeholder_text = "Название кнопки"
+	_scenes_name.max_length = 40
+	_scenes_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_style_line_edit(_scenes_name)
+	name_row.add_child(_scenes_name)
+	for edit in [_scenes_icon, _scenes_name]:
+		edit.text_submitted.connect(func(_text: String): _save_scene_name())
+		edit.focus_exited.connect(_save_scene_name)
+	column.add_child(_label("Шаги (по очереди, сверху вниз)", 12, MUTED))
+	_scenes_steps = ItemList.new()
+	_scenes_steps.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_style_item_list(_scenes_steps)
+	column.add_child(_scenes_steps)
+	var step_row := HBoxContainer.new()
+	step_row.add_theme_constant_override("separation", 6)
+	column.add_child(step_row)
+	var up := Button.new()
+	up.text = "↑"
+	up.pressed.connect(_move_scene_step.bind(-1))
+	step_row.add_child(up)
+	var down := Button.new()
+	down.text = "↓"
+	down.pressed.connect(_move_scene_step.bind(1))
+	step_row.add_child(down)
+	var remove_step := Button.new()
+	remove_step.text = "Убрать шаг"
+	remove_step.pressed.connect(_remove_scene_step)
+	step_row.add_child(remove_step)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	step_row.add_child(spacer)
+	var try_scene := Button.new()
+	try_scene.text = "▶ Проверить"
+	try_scene.tooltip_text = "Запустить сценарий сейчас, как с пульта"
+	try_scene.pressed.connect(_try_scene)
+	step_row.add_child(try_scene)
+	column.add_child(_label("Добавить шаг", 12, MUTED))
+	var add_row := HBoxContainer.new()
+	add_row.add_theme_constant_override("separation", 6)
+	column.add_child(add_row)
+	_scenes_add = OptionButton.new()
+	_scenes_add.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_scenes_add.fit_to_longest_item = false
+	add_row.add_child(_scenes_add)
+	var add_step := Button.new()
+	add_step.text = "＋ Добавить"
+	add_step.pressed.connect(_add_scene_step)
+	add_row.add_child(add_step)
+	var outro := _label("Программы берутся из «Моих действий» (со своим экраном и местом окна), звук — из «Звука на пульте».", 11, MUTED)
+	outro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	column.add_child(outro)
+
+func _on_scene_picked(index: int) -> void:
+	var id: Variant = _scenes_pick.get_item_metadata(index)
+	if id is String:
+		_scenes_current = id
+	_refresh_scenes()
+
+func _add_scene() -> void:
+	var id: String = _scenes_bus.scenes.add("Новый сценарий", "✨")
+	if not id.is_empty():
+		_scenes_current = id
+	_after_scenes_change()
+	_scenes_name.grab_focus()
+	_scenes_name.select_all()
+
+func _remove_scene() -> void:
+	_scenes_bus.scenes.remove(_scenes_current)
+	var left: Array = _scenes_bus.scenes.scenes
+	_scenes_current = str(left[0]["id"]) if not left.is_empty() else ""
+	_after_scenes_change()
+
+func _move_scene_step(step: int) -> void:
+	var chosen: PackedInt32Array = _scenes_steps.get_selected_items()
+	if chosen.is_empty():
+		return
+	_scenes_bus.scenes.move_step(_scenes_current, chosen[0], step)
+	_after_scenes_change()
+	if _scenes_steps.item_count > 0:
+		_scenes_steps.select(clampi(chosen[0] + step, 0, _scenes_steps.item_count - 1))
+
+func _remove_scene_step() -> void:
+	var chosen: PackedInt32Array = _scenes_steps.get_selected_items()
+	if not chosen.is_empty():
+		_scenes_bus.scenes.remove_step(_scenes_current, chosen[0])
+		_after_scenes_change()
+
+func _add_scene_step() -> void:
+	var index: int = _scenes_add.selected
+	if _scenes_current.is_empty() or index < 0 or index >= _scenes_add.item_count:
+		return
+	var command: Variant = _scenes_add.get_item_metadata(index)
+	if command is String and _scenes_bus.scenes.add_step(_scenes_current, command):
+		_after_scenes_change()
+
+func _try_scene() -> void:
+	if not _scenes_current.is_empty():
+		_scenes_bus.run("scene:" + _scenes_current)
+
+func _save_scene_name() -> void:
+	if _scenes_current.is_empty() or _scenes_bus == null:
+		return
+	var item: Dictionary = _scenes_bus.scenes.find(_scenes_current)
+	if item.is_empty() or (item["title"] == _scenes_name.text.strip_edges() and item["icon"] == _scenes_icon.text.strip_edges()):
+		return
+	_scenes_bus.scenes.rename(_scenes_current, _scenes_name.text, _scenes_icon.text)
+	_after_scenes_change()
+
+func _after_scenes_change() -> void:
+	_refresh_scenes()
+	if _scenes_changed.is_valid():
+		_scenes_changed.call()
+
+## Что за шаг — по-человечески: «🔊 Звук: Телевизор», «🚀 MPC-BE», «✦ Хоши: Сесть».
+func scene_step_title(command: String) -> String:
+	for entry in _scene_step_choices():
+		if entry[0] == command:
+			return entry[1]
+	return "⚠ " + command + " (такой кнопки уже нет)"
+
+## Из чего можно собрать шаг: [команда, подпись]. Опасные (с «Точно?») — нет.
+func _scene_step_choices() -> Array:
+	var out: Array = []
+	if _scenes_bus == null:
+		return out
+	for item in _scenes_bus.sound.catalog():
+		out.append([item["command"], "%s Звук: %s" % [item["icon"], item["title"]]])
+	for item in _scenes_bus.pc.catalog():
+		if not bool(item.get("confirm", false)):
+			out.append([item["command"], "%s %s" % [item.get("icon", "🚀"), item["title"]]])
+	for minutes in [15, 30, 45, 60, 90]:
+		out.append(["timer:%d" % minutes, "🌙 Таймер сна: %d мин" % minutes])
+	for command in Commands.names():
+		if Commands.allows(command, "remote") and not Commands.has_flag(command, "confirm"):
+			var icon: String = Commands.icon(command)
+			out.append([command, "%s Хоши: %s" % [icon if not icon.is_empty() else "✦", Commands.short_title(command)]])
+	return out
+
+func _refresh_scenes() -> void:
+	if scenes_window == null or _scenes_bus == null:
+		return
+	var scenes: Array = _scenes_bus.scenes.scenes
+	_scenes_pick.clear()
+	for item in scenes:
+		_scenes_pick.add_item("%s %s" % [item["icon"], item["title"]])
+		_scenes_pick.set_item_metadata(_scenes_pick.item_count - 1, item["id"])
+		if item["id"] == _scenes_current:
+			_scenes_pick.select(_scenes_pick.item_count - 1)
+	if scenes.is_empty():
+		_scenes_pick.add_item("Пока нет — нажми «＋ Новый»")
+	_scenes_pick.disabled = scenes.is_empty()
+	var current: Dictionary = _scenes_bus.scenes.find(_scenes_current)
+	_scenes_name.editable = not current.is_empty()
+	_scenes_icon.editable = not current.is_empty()
+	_scenes_name.text = str(current.get("title", ""))
+	_scenes_icon.text = str(current.get("icon", ""))
+	_scenes_steps.clear()
+	var steps: Array = current.get("steps", [])
+	for index in range(steps.size()):
+		_scenes_steps.add_item("%d.  %s" % [index + 1, scene_step_title(str(steps[index]))])
+	if not current.is_empty() and steps.is_empty():
+		_scenes_steps.add_item("Шагов пока нет — добавь их внизу")
+		_scenes_steps.set_item_disabled(0, true)
+	_scenes_add.clear()
+	for entry in _scene_step_choices():
+		_scenes_add.add_item(entry[1])
+		_scenes_add.set_item_metadata(_scenes_add.item_count - 1, entry[0])
+	_scenes_add.disabled = current.is_empty()
