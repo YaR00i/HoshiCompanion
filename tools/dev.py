@@ -57,8 +57,13 @@ def run_step(engine: str, log_dir: Path, label: str, args: list[str], timeout: i
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=['check', 'import', 'test', 'commands', 'supports', 'focus', 'remote', 'pc', 'sound', 'mpc', 'assistants', 'smoke', 'preview', 'desktop', 'editor', 'walk', 'capture', 'posture', 'poses', 'shelf', 'shelf_windows', 'shelf_demo', 'external_windows', 'edge_life', 'edge_views', 'cozy_windows', 'cozy_native', 'clickthrough', 'place', 'context', 'context_views', 'surface', 'hair_collision', 'animation_workshop', 'animation_authoring', 'workshop', 'workshop_editor', 'walk_workshop'])
+    parser.add_argument('mode', choices=['check', 'import', 'test', 'commands', 'supports', 'focus', 'remote', 'pc', 'sound', 'mpc', 'assistants', 'smoke', 'preview', 'desktop', 'editor', 'walk', 'capture', 'posture', 'poses', 'shelf', 'shelf_windows', 'shelf_demo', 'external_windows', 'edge_life', 'edge_views', 'cozy_windows', 'cozy_native', 'clickthrough', 'place', 'context', 'context_views', 'surface', 'hair_collision', 'animation_workshop', 'animation_authoring', 'workshop', 'workshop_editor', 'walk_workshop', 'android'])
     opts = parser.parse_args()
+    if opts.mode == 'android':
+        # Android app «Хоши»: build and hand it to Hoshi for auto-update (no Godot needed).
+        sys.path.insert(0, str(ROOT / 'tools'))
+        import android_build
+        return android_build.main()
     engine = (ROOT / 'godot_path.txt').read_text(encoding='utf-8-sig').strip()
     if not Path(engine).is_file():
         raise FileNotFoundError('Update godot_path.txt: ' + engine)

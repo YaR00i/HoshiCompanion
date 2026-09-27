@@ -24,6 +24,12 @@ Media (user request 2026-09-27): pictures, GIFs and videos that the answer
 itself names (absolute path, or relative to the session folder) are listed
 for Hoshi so the phone can view them. Only existing media files up to 16 MB,
 at most 8. The full path goes to Hoshi on this PC only, never to the phone.
+
+StopFailure (the turn ended on a usage limit or an API error) is reported too,
+so the phone does not keep showing "working"; the waiter also starts after it.
+
+A tiny diagnostic log (time, event, short session id, what happened — never any
+text) goes to %LOCALAPPDATA%/HoshiCompanion/claude_hook.log, at most ~200 KB.
 """
 from __future__ import annotations
 
@@ -42,10 +48,26 @@ PATH = '/assistant'
 URL = 'http://%s:%d%s' % (HOST, PORT, PATH)
 # --wait: Hoshi went away while we waited (restart) -> knock every few seconds, for a while.
 RETRY_EVERY = 3.0
+HEARTBEAT = 300.0
 RETRY_AFTER_LOSS = 12 * 3600.0  # Hoshi closed for the night -> the card comes back in the morning
 MAX_TEXT = 6000
 ASK_WAIT = 32.0  # Hoshi lets go after 30 s; a little longer here
-EVENTS = {'SessionStart', 'UserPromptSubmit', 'Notification', 'Stop', 'SessionEnd'}
+EVENTS = {'SessionStart', 'UserPromptSubmit', 'Notification', 'Stop', 'StopFailure', 'SessionEnd'}
+LOG_LIMIT = 200 * 1024
+
+
+def log(event: str, session: str, what: str) -> None:
+    """Diagnostics only: time, event, 8 characters of the session id, outcome. Never text."""
+    try:
+        folder = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'HoshiCompanion')
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, 'claude_hook.log')
+        if os.path.exists(path) and os.path.getsize(path) > LOG_LIMIT:
+            os.replace(path, path + '.old')
+        with open(path, 'a', encoding='utf-8') as handle:
+            handle.write('%s %s %s %s\n' % (time.strftime('%Y-%m-%d %H:%M:%S'), event[:20], session[:8], what[:40]))
+    except OSError:
+        pass
 MEDIA_KINDS = {'.png': 'image', '.jpg': 'image', '.jpeg': 'image', '.gif': 'image', '.webp': 'image',
                '.mp4': 'video', '.webm': 'video'}
 MAX_MEDIA = 8
@@ -104,6 +126,9 @@ def clean(event: dict) -> dict | None:
     if name == 'Notification':
         message['kind'] = str(event.get('notification_type', ''))[:40]
         message['text'] = str(event.get('notification_message', ''))[:300]
+    elif name == 'StopFailure':
+        # Only the kind of failure (e.g. "rate_limit"), not any text of the conversation.
+        message['kind'] = str(event.get('error_type') or event.get('error') or event.get('reason') or '')[:40]
     elif name == 'Stop':
         message['text'] = str(event.get('last_assistant_message', ''))[:MAX_TEXT]
         message['media'] = media_in(message['text'], str(event.get('cwd', '')))
@@ -124,6 +149,7 @@ def wait_for_phone(event: dict) -> int:
     session = str(event.get('session_id', ''))[:64]
     if not session:
         return 0
+    log('Wait', session, 'start')
     body = json.dumps({'app': 'claude', 'event': 'Wait', 'session': session,
                        'folder': ntpath.basename(str(event.get('cwd', '')).rstrip('/\\'))[:80],
                        'text': str(event.get('last_assistant_message', ''))[:MAX_TEXT],
@@ -131,12 +157,15 @@ def wait_for_phone(event: dict) -> int:
                       ensure_ascii=False).encode('utf-8')
     lost_at = 0.0
     while True:
-        connection = http.client.HTTPConnection(HOST, PORT, timeout=None)
+        # Knock again every 5 minutes: the log shows the waiter is alive, and Hoshi
+        # gets the card back even if something dropped the old connection quietly.
+        connection = http.client.HTTPConnection(HOST, PORT, timeout=HEARTBEAT)
         try:
             connection.connect()
         except OSError:
             # Never reached Hoshi, or she has not come back after a restart in time.
             if lost_at == 0.0 or time.monotonic() - lost_at > RETRY_AFTER_LOSS:
+                log('Wait', session, 'no Hoshi' if lost_at == 0.0 else 'gave up after loss')
                 return 0
             time.sleep(RETRY_EVERY)
             continue
@@ -145,13 +174,18 @@ def wait_for_phone(event: dict) -> int:
             connection.request('POST', PATH, body, {'Content-Type': 'application/json'})
             answer = connection.getresponse()
             status, data = answer.status, answer.read()
-        except OSError:
+        except TimeoutError:
+            log('Wait', session, 'alive')  # nobody answered for 5 minutes: knock again
+            continue
+        except OSError as error:
             lost_at = time.monotonic()  # Hoshi closed while we waited: maybe a restart
+            log('Wait', session, 'lost: ' + type(error).__name__)
             time.sleep(RETRY_EVERY)
             continue
         finally:
             connection.close()
         if status != 200:
+            log('Wait', session, 'let go (%d)' % status)
             return 0
         try:
             text = str(json.loads(data.decode('utf-8')).get('text', '')).strip()[:2000]
@@ -160,6 +194,7 @@ def wait_for_phone(event: dict) -> int:
         break
     if not text:
         return 0
+    log('Wait', session, 'phone reply -> wake')
     sys.stderr.buffer.write(('Сообщение от пользователя с телефона (пульт Хоши):\n' + text + '\n').encode('utf-8'))
     sys.stderr.flush()
     return 2
@@ -239,7 +274,7 @@ def main() -> int:
     if not isinstance(event, dict):
         return 0
     if '--wait' in sys.argv[1:]:
-        return wait_for_phone(event) if event.get('hook_event_name') == 'Stop' else 0
+        return wait_for_phone(event) if event.get('hook_event_name') in ('Stop', 'StopFailure') else 0
     if '--ask' in sys.argv[1:]:
         sys.stdout.reconfigure(encoding='utf-8')
         return ask_phone(event)
@@ -251,8 +286,9 @@ def main() -> int:
     try:
         # No system proxy (a VPN may set one): this goes to this PC only.
         urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=1.0).close()
+        log(message['event'], message['session'], 'sent')
     except OSError:
-        pass  # Hoshi is not running: nothing to tell.
+        log(message['event'], message['session'], 'no Hoshi')  # Hoshi is not running: nothing to tell.
     return 0
 
 

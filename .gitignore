@@ -16,3 +16,10 @@ README_LOCAL_RU.md
 assets/*.vrm
 docs/MODEL_METADATA.json
 docs/history/archive_0.1.1/
+
+# Android app build outputs and machine-local SDK paths
+android/.gradle/
+android/.idea/
+android/.kotlin/
+android/local.properties
+*.apk

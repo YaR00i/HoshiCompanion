@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Временная иконка: золотая звёздочка ✦ на сливовом фоне (потом — рисунок автора). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#F4DCA8"
+        android:pathData="M54,26 C56,44 64,52 82,54 C64,56 56,64 54,82 C52,64 44,56 26,54 C44,52 52,44 54,26 Z" />
+    <path
+        android:fillColor="#FFFAF5"
+        android:pathData="M76,30 C76.6,34 78,35.4 82,36 C78,36.6 76.6,38 76,42 C75.4,38 74,36.6 70,36 C74,35.4 75.4,34 76,30 Z" />
+</vector>

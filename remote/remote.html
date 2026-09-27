@@ -245,6 +245,23 @@
 </div></div>
 
 <script>
+// «Чёрный ящик»: ошибка скрипта — красной строкой на экране и в журнал Хоши (logs/session.log),
+// чтобы было видно, почему пульт пустой (в приложении нет консоли браузера).
+const pageErrors = [];
+function reportError(text) {
+  text = String(text).slice(0, 300); if (pageErrors.includes(text) || pageErrors.length > 5) return;
+  pageErrors.push(text);
+  let bar = document.getElementById("errorBar");
+  if (!bar) { bar = document.createElement("div"); bar.id = "errorBar";
+    bar.style.cssText = "position:fixed;left:8px;right:8px;top:8px;z-index:9;background:#b04a4a;color:#fff;font:12px/1.35 monospace;padding:8px;border-radius:10px;white-space:pre-wrap";
+    document.body.append(bar); }
+  bar.textContent = pageErrors.join("\n");
+  try { if (typeof socket !== "undefined" && socket && socket.readyState === 1) socket.send(JSON.stringify({op: "page_error", text})); } catch (e) {}
+}
+window.addEventListener("error", (e) => reportError((e.message || "error") + " @" + (e.lineno || "?") + ":" + (e.colno || "?")));
+window.addEventListener("unhandledrejection", (e) => reportError("promise: " + (e.reason && e.reason.message || e.reason)));
+</script>
+<script>
 "use strict";
 const WS_URL = `ws://${location.hostname}:18771/hoshi-remote-v1`;
 let socket = null, token = null, catalog = {quick: [], groups: []}, state = {}, retry = 300;
@@ -314,7 +331,11 @@ function connect() {
     if (ws !== socket) return;
     lastHeard = Date.now();
     let m; try { m = JSON.parse(event.data); } catch (e) { return; }
-    if (m.op === "paired") { token = m.token; try { localStorage.setItem("hoshi-token", token); } catch (e) {} }
+    // В приложении «Хоши» для Android: отдать ему ключ — фоновая служба держит связь, пока экран не на виду.
+    // Отдельной строкой ДО цепочки if/else ниже, чтобы не «съесть» её ветки.
+    if (m.op === "paired") token = m.token;
+    if ((m.op === "paired" || m.op === "welcome") && token && window.HoshiApp) { try { window.HoshiApp.setToken(token); } catch (e) {} }
+    if (m.op === "paired") { try { localStorage.setItem("hoshi-token", token); } catch (e) {} }
     else if (m.op === "welcome" || m.op === "catalog") {
       catalog = m.catalog || catalog; showRemote(); renderHoshi(); renderPc(); renderSound(); renderBar();
       if (m.op === "welcome") {
@@ -325,7 +346,9 @@ function connect() {
         if (openApp === "windows") send({op: "run", command: "pc:windows", args: {}}); // «Окна» открыты — свежий список
       }
     }
-    else if (m.op === "state") { state = m; online(true, (m.hoshi && m.hoshi.status) || "На связи"); renderHoshi(); renderSound(); renderApps(); renderPending(); renderWindows(); }
+    else if (m.op === "state") { state = m; online(true, (m.hoshi && m.hoshi.status) || "На связи"); renderHoshi(); renderSound(); renderApps(); renderPending(); renderWindows();
+      // Приложению — что сейчас включено (звук, режимы), чтобы плитки и кнопки горели правильно.
+      if (window.HoshiApp && window.HoshiApp.onState) { try { window.HoshiApp.onState(JSON.stringify({sound: (m.sound || {}).current || "", selected: (m.hoshi || {}).selected || []})); } catch (e) {} } }
     else if (m.op === "history") showHistory(m);
     else if (m.op === "ran" && !m.ok) toast({not_allowed: "С телефона так нельзя", missing: "Не нашла этот файл на компьютере",
       nothing_to_cancel: "Нечего отменять", need_confirm: "Нужно подтвердить",
@@ -420,8 +443,52 @@ function renderPc() {
   if (!mine.length) root.append(el("div", "empty", "Добавь программы, папки и ссылки на компьютере: меню Хоши → Пульт с телефона → Мои действия"));
   else root.append(tiles(mine));
   if (system.length) { root.append(el("h2", "", "Компьютер")); root.append(tiles(system)); }
+  if (window.HoshiApp && window.HoshiApp.getQuickActions) renderQuickSetup(root);
   renderPending();
 }
+// «Быстрые кнопки телефона» (только в приложении «Хоши» для Android): до 3 кнопок в
+// уведомлении (видно на экране блокировки) и до 6 плиток в шторке. Выбор — из того,
+// что уже есть на пульте; «опасные» (с «Точно?») не предлагаются. Хранит приложение.
+function quickCandidates() {
+  const out = [];
+  for (const i of catalog.sound || []) out.push({command: i.command, title: i.title, icon: i.icon || "🔊"});
+  for (const i of (catalog.pc || []).filter((x) => !x.confirm)) out.push({command: i.command, title: i.title, icon: i.icon || "🚀"});
+  for (const i of catalog.quick || []) out.push({command: i.command, title: i.title, icon: i.icon || "✦"});
+  for (const g of catalog.groups || []) for (const i of g.commands) if (!i.confirm && !out.some((o) => o.command === i.command))
+    out.push({command: i.command, title: i.title, icon: i.icon || "✦"});
+  return out;
+}
+function renderQuickSetup(root) {
+  let saved = {notify: [], tiles: []};
+  try { saved = JSON.parse(window.HoshiApp.getQuickActions()); } catch (e) {}
+  const box = el("div", "app"); box.append(el("div", "app-head", "📱 Быстрые кнопки телефона"));
+  const save = () => { try { window.HoshiApp.setQuickActions(JSON.stringify(saved)); } catch (e) {} };
+  const section = (key, title, max, hint) => {
+    box.append(el("h2", "", title + " · " + saved[key].length + "/" + max));
+    const chosen = el("div", "chips");
+    for (const item of saved[key]) {
+      const c = el("button", "chip on", item.icon + " " + item.title + "  ✕");
+      c.onclick = () => { saved[key] = saved[key].filter((x) => x.command !== item.command); save(); renderPc(); };
+      chosen.append(c);
+    }
+    if (!saved[key].length) chosen.append(el("span", "empty", hint));
+    box.append(chosen);
+    const pick = el("details", "list"); const summary = el("summary", ""); summary.append(el("span", "", "＋ Добавить"));
+    pick.append(summary);
+    const options = el("div", "chips");
+    for (const item of quickCandidates()) {
+      if (saved[key].some((x) => x.command === item.command)) continue;
+      const c = el("button", "chip", item.icon + " " + item.title);
+      c.onclick = () => { if (saved[key].length >= max) { toast("Уже " + max + " — убери одну"); return; } saved[key].push(item); save(); renderPc(); };
+      options.append(c);
+    }
+    pick.append(options); box.append(pick);
+  };
+  section("notify", "В уведомлении и на экране блокировки", 3, "Пусто — выбери до 3 кнопок");
+  section("tiles", "Плитки в шторке «Хоши 1…6»", 6, "Пусто — выбери до 6; потом добавь плитки в шторке через «Изменить»");
+  root.append(box);
+}
+
 function tiles(items) {
   const box = el("div", "tiles");
   for (const item of items) {
@@ -600,6 +667,7 @@ function barItems() {
     if (app.id === "claude") {
       if (s.ask) { mark = "?"; kind = "waiting"; }
       else if (s.subtitle === "работает…") mark = "…";
+      else if (String(s.subtitle || "").startsWith("⚠")) { mark = "!"; kind = "waiting"; }
       else if (String(s.subtitle || "").startsWith("?")) { mark = "?"; kind = "waiting"; }
       else if (s.can_reply) { mark = "✓"; kind = "done"; }
     } else if (s.playing) mark = "▶";

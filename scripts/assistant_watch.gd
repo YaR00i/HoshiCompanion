@@ -47,7 +47,8 @@ const FORGET_AFTER: float = 3.0 * 3600.0
 ## Облачко «✓ закончил» над Хоши держится не дольше этого.
 const DONE_CLOUD_SECONDS: float = 600.0
 
-const STATUS_TEXT := {"working": "работает…", "done": "✓ закончил", "waiting": "? ждёт разрешения", "idle": "на связи"}
+const STATUS_TEXT := {"working": "работает…", "done": "✓ закончил", "waiting": "? ждёт разрешения", "idle": "на связи",
+	"failed": "⚠ прервался"}
 
 ## session id -> {folder, status, text, note, at (с), seen}
 var sessions: Dictionary = {}
@@ -187,6 +188,11 @@ func handle_event(message: Dictionary) -> void:
 		"UserPromptSubmit":
 			session["status"] = "working"
 			session["note"] = ""
+		"StopFailure":
+			# Ход оборвался (лимит использования или ошибка) — «работает» больше не правда.
+			session["status"] = "failed"
+			session["note"] = "Claude прервался: закончился лимит или ошибка связи. Когда можно — нажми «▶ Продолжай»."
+			session["seen"] = false
 		"Stop":
 			session["status"] = "done"
 			session["text"] = str(message.get("text", "")).left(MAX_TEXT)
@@ -414,7 +420,7 @@ func clouds() -> Array:
 			"working":
 				if status != "waiting":
 					status = "working"
-			"done":
+			"done", "failed":
 				if status.is_empty() and not bool(session["seen"]) and _clock - float(session["at"]) < DONE_CLOUD_SECONDS:
 					status = "done"
 	return [] if status.is_empty() else [{"app": "claude", "status": status}]
@@ -484,7 +490,7 @@ func card_state() -> Dictionary:
 	var session: Dictionary = sessions[id]
 	var state: Dictionary = {"title": session["folder"] if not str(session["folder"]).is_empty() else "Claude",
 		"subtitle": STATUS_TEXT.get(session["status"], ""), "badge": STATUS_TEXT.get(session["status"], ""),
-		"text": session["note"] if session["status"] == "waiting" else session["text"],
+		"text": session["note"] if session["status"] in ["waiting", "failed"] else session["text"],
 		"session": id, "can_reply": can_reply(id), "media": _public_media(session)}
 	if not ask.is_empty():
 		# Открытый вопрос/разрешение — наверху карточки (без самого соединения).

@@ -31,6 +31,8 @@ const WS_PORT: int = 18771
 const REMOTE_PATH: String = "/hoshi-remote-v1"
 const ADAPTER_PATH: String = "/hoshi-adapter-v1"
 const PAGE_PATH: String = "res://remote/remote.html"
+## Android-приложение «Хоши»: свежая сборка и её номер (кладёт `python tools/dev.py android`).
+const APP_DIR: String = "res://.workspace/android/"
 const MAX_PHONES: int = 4
 ## Слова в названии сети, по которым видно виртуальный адаптер или VPN.
 const VIRTUAL_WORDS: Array = ["vpn", "amnezia", "radmin", "wireguard", "tailscale", "zerotier", "hamachi",
@@ -304,6 +306,15 @@ func _respond(request_line: String) -> PackedByteArray:
 		kind = "application/manifest+json"
 		body = JSON.stringify({"name": "Хоши", "short_name": "Хоши", "start_url": "/", "display": "standalone",
 			"background_color": "#fff8f1", "theme_color": "#665479"}).to_utf8_buffer()
+	elif path == "/app/version.json" or path == "/app/hoshi.apk":
+		# Автообновление приложения на телефоне: номер версии и сама сборка.
+		var file_path: String = ProjectSettings.globalize_path(APP_DIR + path.get_file())
+		if FileAccess.file_exists(file_path):
+			body = FileAccess.get_file_as_bytes(file_path)
+			kind = "application/json; charset=utf-8" if path.ends_with(".json") else "application/vnd.android.package-archive"
+		if body.is_empty():
+			status = "404 Not Found"
+			body = "No app build yet".to_utf8_buffer()
 	elif path.begins_with("/media/"):
 		# Картинка/гифка/видео из ответа Claude: только по случайному адресу, который
 		# знают привязанные телефоны; сам путь к файлу телефон не видит.
@@ -423,6 +434,10 @@ func _handle(key: int, message: Dictionary) -> void:
 	if op == "ping":
 		# Heartbeat of a visible remote page; any message already refreshed "seen".
 		_send(key, {"op": "pong"})
+		return
+	if op == "page_error":
+		# Ошибка скрипта на странице пульта (телефон, приложение) — в журнал Хоши для разбора.
+		print("REMOTE_PAGE_ERROR ", str(message.get("text", "")).left(300).replace("\n", " "))
 		return
 	if not peer["authed"]:
 		match op:

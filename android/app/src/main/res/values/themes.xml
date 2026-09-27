@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="hoshi_plum">#665479</color>
+    <color name="hoshi_paper">#FBF5F1</color>
+    <color name="hoshi_gold">#F4DCA8</color>
+    <style name="Theme.Hoshi" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/hoshi_plum</item>
+        <item name="android:statusBarColor">@color/hoshi_plum</item>
+        <item name="android:windowBackground">@color/hoshi_paper</item>
+    </style>
+    <!-- Кнопка-«чип» быстрых кнопок в уведомлении. -->
+    <style name="HoshiQuickChip">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_marginEnd">6dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:paddingStart">6dp</item>
+        <item name="android:paddingEnd">6dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:background">@drawable/quick_chip</item>
+        <item name="android:textAppearance">@android:style/TextAppearance.Material.Notification.Title</item>
+    </style>
+</resources>

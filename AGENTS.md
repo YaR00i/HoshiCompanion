@@ -199,7 +199,19 @@
   requesting phone (never in broadcast state). Session ids are validated (hex/-).
   Clouds over Hoshi: assistant_watch.clouds() -> companion_ui -> assistant_clouds.gd (draw only,
   mouse-transparent, menu toggle "toggle_assistant_clouds", saved in companion.cfg); petting marks seen.
+  The --wait hooks need "timeout": 43200 in settings (Claude Code otherwise kills background hooks after
+  10 min); the waiter re-knocks every 5 min (HEARTBEAT) and logs to %LOCALAPPDATA%/HoshiCompanion/
+  claude_hook.log (time, event, 8-char session, outcome; never text). StopFailure is reported too.
   Phone packets may be up to 8 KB for this. Never change Claude's permission mode from the phone.
+- android/ (Kotlin app «Хоши», see docs/ANDROID_APP_RU.md): WebView of the live remote page, a
+  foreground service (same phone protocol: hello/ping/state, never sends commands) for Claude
+  notifications while the page is hidden, self-update from GET /app/version.json + /app/hoshi.apk
+  (remote_bus serves only these two files from .workspace/android/, built by `dev.py android`).
+  Quick buttons (0.6): the page (only inside the app, window.HoshiApp) lets the user pick up to 3
+  notification buttons and 6 quick-settings tiles from the existing catalog (never "confirm" items);
+  the app stores them and sends the same {"op":"run"} commands. The page reports {sound, selected} to
+  the app via HoshiApp.onState so tiles light up.
+  android/.gdignore keeps Godot from importing it; build outputs and local.properties are ignored.
 - Command "restart" (menu + phone, flag "confirm"): scripts/hoshi_restart.gd runs
   tools/restart_hoshi.py check (headless import like launch.cmd); only on success it starts the
   detached "relaunch" helper (waits for this PID, max 120 s, then starts the same Godot executable

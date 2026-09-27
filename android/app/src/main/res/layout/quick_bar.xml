@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Быстрые кнопки прямо в теле уведомления «Хоши на связи» — видны и в свёрнутом виде. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingTop="2dp"
+    android:paddingBottom="2dp">
+
+    <TextView
+        android:id="@+id/quick_status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textAppearance="@android:style/TextAppearance.Material.Notification.Info" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:orientation="horizontal">
+
+        <TextView android:id="@+id/quick_1" style="@style/HoshiQuickChip" />
+        <TextView android:id="@+id/quick_2" style="@style/HoshiQuickChip" />
+        <TextView android:id="@+id/quick_3" style="@style/HoshiQuickChip" />
+    </LinearLayout>
+</LinearLayout>
