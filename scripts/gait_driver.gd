@@ -76,6 +76,11 @@ func apply(frame: Dictionary, time: float, idle_shift: float = 0.0) -> void:
 		var reach: float = float(legs[side]["a"]) + float(legs[side]["b"]) - height_m * 0.0007
 		var vertical_reach: float = sqrt(maxf(0.0001, reach * reach - horizontal_sq))
 		drop = maxf(drop, upper_origin.y - ankle_target.y - vertical_reach)
+	if activity:
+		# Soft bounce: lowest when both feet are down, highest as the body passes
+		# over the standing foot. Only ever lowers the pelvis, so reach stays safe.
+		var u: float = float(frame.get("u", 0.0))
+		drop += height_m * 0.0065 * weight * (0.5 + 0.5 * cos(TAU * u))
 	if not activity:
 		sway = sin(time * 0.65) * height_m * 0.007 * idle_shift
 		drop = height_m * 0.005 * idle_shift

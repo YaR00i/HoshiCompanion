@@ -135,15 +135,41 @@ func _apply_walk_upper(frame: Dictionary, wave: float) -> void:
 	var weight: float = float(frame.get("weight", 0.0))
 	if weight <= 0.001:
 		return
+	# phase = PI * (step + u); the LEFT foot swings on even steps. On this rig +X on an
+	# upper arm swings it back, +Y on the hips turns the left hip back, +Z lifts the left hip.
 	var phase: float = float(frame.get("phase", 0.0))
-	var arm: float = -cos(phase) * 9.0 * weight
-	pose("chest", Vector3(weight * 2.5, sin(phase) * weight * 1.0, 0.0))
-	pose("leftUpperArm", Vector3(arm, -2.0, -73.0))
-	pose("leftLowerArm", Vector3(-3.0, -6.0, 8.0))
+	var s: float = sin(phase)
+	var c: float = cos(phase)
+	var w: float = weight
+	# Pelvis follows the swinging leg forward and dips a little on the swing side;
+	# the chest turns the other way so shoulders and hips counter-rotate like a real walk.
+	add_pose("hips", Vector3(0.0, c * 4.0, -s * 1.6) * w)
+	add_pose("spine", Vector3(1.4, -c * 1.2, s * 0.7) * w)
+	pose("chest", Vector3(w * 2.2, -c * 2.4 * w, s * 0.6 * w))
+	# Keep the gaze steady: undo what is left of the turn and add a tiny footfall nod.
+	add_pose("neck", Vector3(0.0, -c * 0.3, -s * 0.4) * w)
+	add_pose("head", Vector3(cos(phase * 2.0) * 0.6, 0.0, -s * 0.3) * w)
+	# Arms swing opposite to the legs; the elbow bends more on the forward swing.
+	var arm: float = -c * 11.0 * w
+	var left_forward: float = clampf(-arm / 11.0, 0.0, 1.0)
+	var right_forward: float = clampf(arm / 11.0, 0.0, 1.0)
+	pose("leftUpperArm", Vector3(arm, -2.0, -73.0 + 1.5 * w))
+	pose("leftLowerArm", Vector3(-3.0, -6.0 - 9.0 * left_forward * w, 8.0))
 	# An explicit greeting can still take priority during the short stop transition.
 	if wave < 0.1:
-		pose("rightUpperArm", Vector3(-arm, 2.0, 73.0))
-		pose("rightLowerArm", Vector3(-3.0, 6.0, -8.0))
+		pose("rightUpperArm", Vector3(-arm, 2.0, 73.0 - 1.5 * w))
+		pose("rightLowerArm", Vector3(-3.0, 6.0 + 9.0 * right_forward * w, -8.0))
+
+## Adds a rotation on top of the pose already set this frame (same frame as pose()).
+func add_pose(semantic: String, euler_degrees: Vector3) -> void:
+	if not bones.has(semantic):
+		return
+	var bone_id: int = int(bones[semantic])
+	if not parent_rest_rotations.has(bone_id):
+		return
+	var parent_q: Quaternion = parent_rest_rotations[bone_id]
+	var extra: Quaternion = parent_q.inverse() * Quaternion.from_euler(euler_degrees * (PI / 180.0)) * parent_q
+	skeleton.set_bone_pose_rotation(bone_id, (extra * skeleton.get_bone_pose_rotation(bone_id)).normalized())
 
 func _tick_fingers(wave: float) -> void:
 	for side in ["left", "right"]:

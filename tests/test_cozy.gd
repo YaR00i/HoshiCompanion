@@ -245,7 +245,7 @@ func _run() -> void:
 	_advance(190)
 	_check(not app.playground.active() and app.host.is_grounded(), "closing cozy corner returns avatar safely")
 	_check(app.playground.auto_choose_window(OS.get_process_id()), "smart rest can start bounded automatic search")
-	var deadline: int = Time.get_ticks_msec() + 5000
+	var deadline: int = Time.get_ticks_msec() + 8000
 	while app.playground.phase != "attached" and Time.get_ticks_msec() < deadline:
 		await create_timer(0.05).timeout
 		app._process(0.05)

@@ -170,7 +170,7 @@ func sample() -> Dictionary:
 	# Short double-support periods at either end. Swing has zero end velocity.
 	var swing_u: float = clampf((u - 0.08) / 0.84, 0.0, 1.0)
 	var swing_z: float = lerpf(_landing(index - 2), _landing(index), _ease(swing_u))
-	var lift: float = height_m * 0.033 * pow(sin(PI * swing_u), 2.0)
+	var lift: float = height_m * 0.040 * pow(sin(PI * swing_u), 2.0)
 	var swinging: Vector3 = Vector3(0.0, lift, swing_z - travelled_m)
 	var standing: Vector3 = Vector3(0.0, 0.0, _landing(index - 1) - travelled_m)
 	var left_swings: bool = index % 2 == 0

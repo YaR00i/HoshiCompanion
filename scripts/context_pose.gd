@@ -14,12 +14,28 @@ var height_m: float = 1.5
 var mode_age: float = 0.0
 var _carry_lag: Vector2 = Vector2.ZERO
 var facing_yaw: float = 0.0
+var _thigh_m: float = 0.0
+## When the overlay changes (jump -> land, fall -> land, carry -> fall...) the old pose
+## fades out while the new one fades in, so there is never a one-frame snap.
+const SWITCH_TIME: float = 0.14
+## Landing: absorb the impact into a squat (on the haunches), a short hold, then a careful rise.
+const LAND_TIME: float = 0.85
+var _prev_mode: String = ""
+var _prev_u: float = 1.0
+var _switch_age: float = 1.0
+var _shin_m: float = 0.0
 
 func setup(rig_driver, model_height: float) -> Dictionary:
 	rig = rig_driver
 	skeleton = rig.skeleton
 	height_m = model_height
 	available = skeleton != null and rig.bones.has("hips")
+	if available and rig.bones.has("leftUpperLeg") and rig.bones.has("leftLowerLeg") and rig.bones.has("leftFoot"):
+		var hip: Vector3 = skeleton.get_bone_global_rest(int(rig.bones["leftUpperLeg"])).origin
+		var knee: Vector3 = skeleton.get_bone_global_rest(int(rig.bones["leftLowerLeg"])).origin
+		var ankle: Vector3 = skeleton.get_bone_global_rest(int(rig.bones["leftFoot"])).origin
+		_thigh_m = hip.distance_to(knee)
+		_shin_m = knee.distance_to(ankle)
 	return {"available": available}
 
 func tick(delta: float, value: String, screen_velocity: Vector2 = Vector2.ZERO, normalized_progress: float = -1.0, impact_strength: float = 0.5, yaw_degrees: float = 0.0) -> void:
@@ -29,6 +45,12 @@ func tick(delta: float, value: String, screen_velocity: Vector2 = Vector2.ZERO, 
 	facing_yaw = yaw_degrees
 	requested = value if value in ["idle", "carry", "cursor_hang", "jump", "fall", "land", "portal", "side_left", "side_right"] else "idle"
 	if requested != "idle" and requested != pose_mode:
+		if pose_mode != "idle" and weight > 0.01 and requested != "cursor_hang":
+			_prev_mode = pose_mode
+			_prev_u = phase_progress()
+			_switch_age = 0.0
+		else:
+			_prev_mode = ""
 		pose_mode = requested
 		mode_age = 0.0
 		# Landing should read immediately at contact instead of fading in from zero.
@@ -36,8 +58,9 @@ func tick(delta: float, value: String, screen_velocity: Vector2 = Vector2.ZERO, 
 			weight = maxf(weight, 0.72)
 		elif requested == "cursor_hang":
 			weight = 0.0
-		else:
+		elif _prev_mode.is_empty():
 			weight = minf(weight, 0.30)
+	_switch_age += dt
 	if requested != "idle":
 		mode_age += dt
 	var goal: float = clampf(normalized_progress, 0.0, 1.0) if requested == "cursor_hang" else (0.0 if requested == "idle" else 1.0)
@@ -69,7 +92,7 @@ func phase_progress() -> float:
 		"fall":
 			return clampf(mode_age / 0.70, 0.0, 1.0)
 		"land":
-			return clampf(mode_age / 0.34, 0.0, 1.0)
+			return clampf(mode_age / LAND_TIME, 0.0, 1.0)
 	return 0.0
 
 func phase_label() -> String:
@@ -85,7 +108,7 @@ func phase_label() -> String:
 			if u < 0.76: return "tuck"
 			return "brace"
 		"land":
-			return "compress" if u < 0.52 else "recover"
+			return "compress" if u < 0.50 else "recover"
 	return pose_mode
 
 func apply(time: float) -> void:
@@ -95,7 +118,15 @@ func apply(time: float) -> void:
 	var sx: float = clampf(velocity.x / 900.0, -1.2, 1.2)
 	var sy: float = clampf(velocity.y / 900.0, -1.2, 1.2)
 	var u: float = phase_progress()
-	match pose_mode:
+	var blend: float = smoothstep(0.0, SWITCH_TIME, _switch_age) if not _prev_mode.is_empty() else 1.0
+	if blend < 1.0:
+		_apply_mode(_prev_mode, _prev_u, w * (1.0 - blend), time, sx, sy)
+	_apply_mode(pose_mode, u, w * blend, time, sx, sy)
+
+func _apply_mode(mode: String, u: float, w: float, time: float, sx: float, sy: float) -> void:
+	if w <= 0.0005:
+		return
+	match mode:
 		"cursor_hang":
 			var lag_x: float = clampf(_carry_lag.x, -1.2, 1.2)
 			var change_x: float = clampf((sx - lag_x) * 1.8, -1.2, 1.2)
@@ -156,26 +187,33 @@ func apply(time: float) -> void:
 			_add("rightLowerArm", Vector3(-6.0, 0.0, 7.0 + speed * 2.0) * w)
 			_dangle_legs(time, w, 0.85 + speed * 0.35)
 		"jump":
-			var anticipation: float = 1.0 - smoothstep(0.04, 0.19, u)
-			var takeoff: float = smoothstep(0.08, 0.24, u) * (1.0 - smoothstep(0.34, 0.50, u))
-			var flight: float = smoothstep(0.20, 0.38, u) * (1.0 - smoothstep(0.70, 0.92, u))
-			var prepare: float = smoothstep(0.68, 0.98, u)
-			var sway: float = sin(time * 7.0) * 1.2 * flight + sx * 2.0
-			_add("hips", Vector3(4.5 * anticipation - 2.0 * takeoff + 2.0 * prepare, 0.0, sway * 0.35) * w)
-			_add("spine", Vector3(9.0 * anticipation - 8.0 * flight + 5.0 * prepare, 0.0, sway) * w)
-			_add("chest", Vector3(5.5 * anticipation - 4.5 * flight + 3.0 * prepare, 0.0, -sway * 0.7) * w)
-			_add("neck", Vector3(2.0 * anticipation + 2.5 * prepare, -sx * 1.5, 0.0) * w)
-			_add("head", Vector3(4.0 * anticipation - 1.5 * flight + 4.0 * prepare, -sx * 2.0, -sway * 0.3) * w)
-			var arm_back: float = 8.0 * anticipation + 13.0 * takeoff + 9.0 * flight
-			var arm_open: float = 5.0 * anticipation + 12.0 * flight + 10.0 * prepare
-			_add("leftUpperArm", Vector3(arm_back, 0.0, -arm_open) * w)
-			_add("rightUpperArm", Vector3(arm_back, 0.0, arm_open) * w)
-			var leg_tuck: float = 18.0 * anticipation + 29.0 * takeoff + 27.0 * flight + 18.0 * prepare
-			var knee: float = -27.0 * anticipation - 45.0 * takeoff - 43.0 * flight - 30.0 * prepare
-			_add("leftUpperLeg", Vector3(leg_tuck, 0.0, -2.0) * w)
-			_add("rightUpperLeg", Vector3(leg_tuck, 0.0, 2.0) * w)
-			_add("leftLowerLeg", Vector3(knee, 0.0, 0.0) * w)
-			_add("rightLowerLeg", Vector3(knee, 0.0, 0.0) * w)
+			# On this rig: +X on a thigh swings the knee BACK, +X on a shin folds the foot
+			# back, +X on an upper arm swings it back, +Z opens the LEFT arm (-Z the right).
+			# Timeline (air_motion keeps her on the ground for the first 20%):
+			# crouch on the spot -> push off -> tuck in flight -> reach for the landing.
+			var crouch: float = smoothstep(0.0, 0.14, u) * (1.0 - smoothstep(0.17, 0.27, u))
+			var push: float = smoothstep(0.14, 0.22, u) * (1.0 - smoothstep(0.26, 0.42, u))
+			var flight: float = smoothstep(0.24, 0.40, u) * (1.0 - smoothstep(0.70, 0.90, u))
+			var prepare: float = smoothstep(0.68, 0.96, u)
+			var drift: float = sin(time * 6.0) * 0.8 * flight + sx * 2.0
+			_add("hips", Vector3(0.0, 0.0, drift * 0.3) * w)
+			_add("spine", Vector3(13.0 * crouch - 6.0 * push - 3.0 * flight + 4.0 * prepare, 0.0, drift) * w)
+			_add("chest", Vector3(5.0 * crouch - 3.0 * push - 2.0 * flight + 2.0 * prepare, 0.0, -drift * 0.6) * w)
+			# The head keeps looking where she is going while the body folds and opens.
+			_add("neck", Vector3(-3.0 * crouch + 1.0 * push, -sx * 1.5, 0.0) * w)
+			_add("head", Vector3(-5.0 * crouch + 2.0 * push + 1.0 * flight + 2.0 * prepare, -sx * 2.0, -drift * 0.3) * w)
+			var arm_x: float = 26.0 * crouch - 48.0 * push - 22.0 * flight - 10.0 * prepare
+			var arm_open: float = 4.0 * crouch + 8.0 * push + 12.0 * flight + 18.0 * prepare
+			_add("leftUpperArm", Vector3(arm_x, 0.0, arm_open) * w)
+			_add("rightUpperArm", Vector3(arm_x, 0.0, -arm_open) * w)
+			_add("leftLowerArm", Vector3(0.0, -10.0 * flight - 6.0 * prepare, 0.0) * w)
+			_add("rightLowerArm", Vector3(0.0, 10.0 * flight + 6.0 * prepare, 0.0) * w)
+			_legs(36.0 * crouch * w, 22.0 * crouch * w, true)
+			# In the air the knees come up (not planted); before touch-down they reach for the ground.
+			var tuck: float = 30.0 * flight + 12.0 * prepare
+			_legs(tuck * w, tuck * 0.75 * w, false)
+			_add("leftFoot", Vector3(-6.0 * push + 8.0 * flight, 0.0, 0.0) * w)
+			_add("rightFoot", Vector3(-6.0 * push + 8.0 * flight, 0.0, 0.0) * w)
 		"fall":
 			var severity: float = clampf(impact, 0.45, 1.25)
 			var alarm: float = clampf((severity - 0.50) / 0.35, 0.0, 1.0)
@@ -188,32 +226,40 @@ func apply(time: float) -> void:
 			_add("neck", Vector3(2.0 * tuck + 3.0 * brace, -sx * 2.0, 0.0) * w)
 			_add("head", Vector3(-8.0 * alarm * react + 3.0 * tuck + 4.0 * brace, -sx * 2.8, 0.0) * w)
 			var spread: float = (9.0 + 23.0 * alarm) * react + 8.0 * brace
-			_add("leftUpperArm", Vector3(-7.0 * react + 5.0 * brace, 0.0, -spread) * w)
-			_add("rightUpperArm", Vector3(-7.0 * react + 5.0 * brace, 0.0, spread) * w)
+			_add("leftUpperArm", Vector3(-7.0 * react + 5.0 * brace, 0.0, spread) * w)
+			_add("rightUpperArm", Vector3(-7.0 * react + 5.0 * brace, 0.0, -spread) * w)
+			# Knees come up in front of the body (thigh -X, shin +X), then reach down to brace.
 			var thigh: float = (11.0 + severity * 17.0) * tuck + 9.0 * brace
-			var shin: float = -(21.0 + severity * 24.0) * tuck - 18.0 * brace
-			_add("leftUpperLeg", Vector3(thigh, 0.0, -2.0) * w)
-			_add("rightUpperLeg", Vector3(thigh, 0.0, 2.0) * w)
+			var shin: float = (21.0 + severity * 24.0) * tuck + 18.0 * brace
+			_add("leftUpperLeg", Vector3(-thigh, 0.0, -2.0) * w)
+			_add("rightUpperLeg", Vector3(-thigh * 0.9, 0.0, 2.0) * w)
 			_add("leftLowerLeg", Vector3(shin, 0.0, 0.0) * w)
-			_add("rightLowerLeg", Vector3(shin, 0.0, 0.0) * w)
+			_add("rightLowerLeg", Vector3(shin * 1.05, 0.0, 0.0) * w)
 		"land":
 			var severity: float = clampf(impact, 0.35, 1.25)
-			var compress: float = 1.0 - smoothstep(0.16, 0.72, u)
-			var rebound: float = smoothstep(0.46, 0.66, u) * (1.0 - smoothstep(0.72, 1.0, u))
-			_add("hips", Vector3((5.0 + severity * 5.0) * compress - 1.5 * rebound, 0.0, sx * 1.5) * w)
-			_add("spine", Vector3((13.0 + severity * 8.0) * compress - 3.5 * rebound, 0.0, sx * 3.0) * w)
-			_add("chest", Vector3((8.0 + severity * 5.0) * compress - 2.0 * rebound, 0.0, -sx * 2.0) * w)
-			_add("neck", Vector3(4.0 * compress - 1.0 * rebound, 0.0, 0.0) * w)
-			_add("head", Vector3(5.0 * compress - 1.5 * rebound, 0.0, 0.0) * w)
-			var arm_open: float = (10.0 + severity * 5.0) * compress
-			_add("leftUpperArm", Vector3(4.0 * compress, 0.0, -arm_open) * w)
-			_add("rightUpperArm", Vector3(4.0 * compress, 0.0, arm_open) * w)
-			var thigh: float = (23.0 + severity * 14.0) * compress
-			var shin: float = -(35.0 + severity * 16.0) * compress
-			_add("leftUpperLeg", Vector3(thigh, 0.0, 0.0) * w)
-			_add("rightUpperLeg", Vector3(thigh, 0.0, 0.0) * w)
-			_add("leftLowerLeg", Vector3(shin, 0.0, 0.0) * w)
-			_add("rightLowerLeg", Vector3(shin, 0.0, 0.0) * w)
+			var hard: float = clampf((severity - 0.35) / 0.6, 0.0, 1.0)
+			# 0-26%: sink into a squat on the haunches, arms thrown forward for balance;
+			# 26-46%: stay down a moment; 46-100%: rise slowly and smoothly back to standing.
+			var sink: float = _ease_out(clampf(u / 0.26, 0.0, 1.0))
+			var rise: float = _smoother(clampf((u - 0.46) / 0.54, 0.0, 1.0))
+			var down: float = lerpf(0.18, 1.0, sink) * (1.0 - rise)
+			var arms: float = _ease_out(clampf(u / 0.18, 0.0, 1.0)) * (1.0 - _smoother(clampf((u - 0.40) / 0.55, 0.0, 1.0)))
+			var thigh: float = (58.0 + 14.0 * hard) * down
+			# Hips go back as the knees go forward, so the chest leans in to stay over the feet.
+			_legs(thigh * w, thigh * 0.55 * w, true)
+			_add("spine", Vector3(20.0 * down, 0.0, sx * 3.0 * down) * w)
+			_add("chest", Vector3(9.0 * down, 0.0, -sx * 2.0 * down) * w)
+			# Eyes stay forward while the body folds.
+			_add("neck", Vector3(-6.0 * down, 0.0, 0.0) * w)
+			_add("head", Vector3(-9.0 * down, 0.0, 0.0) * w)
+			var reach: float = 40.0 * arms + 6.0 * down
+			var open: float = 12.0 * arms * (1.0 - 0.5 * down) + 4.0 * down
+			_add("leftUpperArm", Vector3(-reach, 0.0, open) * w)
+			_add("rightUpperArm", Vector3(-reach, 0.0, -open) * w)
+			_add("leftLowerArm", Vector3(0.0, -14.0 * arms, 0.0) * w)
+			_add("rightLowerArm", Vector3(0.0, 14.0 * arms, 0.0) * w)
+			_add("leftHand", Vector3(-8.0 * arms, 0.0, 0.0) * w)
+			_add("rightHand", Vector3(-8.0 * arms, 0.0, 0.0) * w)
 		"portal":
 			var step: float = sin(time * 5.0) * 4.0
 			_add("spine", Vector3(-3.0, 0.0, step * 0.3) * w)
@@ -241,6 +287,34 @@ func apply(time: float) -> void:
 			_add("rightUpperArm", Vector3(-7.0, 0.0, -35.0) * w)
 			_add("rightLowerArm", Vector3(-8.0, 0.0, 28.0) * w)
 			_add("rightHand", Vector3(0.0, 0.0, 12.0) * w)
+
+## Bends the knees: thighs forward by `thigh_deg`, shins lean back by `shin_deg`, feet
+## stay level. When `planted`, the pelvis moves down and back by exactly what keeps the
+## ankles where they were, so the shoes do not slide on the ground.
+func _legs(thigh_deg: float, shin_deg: float, planted: bool) -> void:
+	if thigh_deg <= 0.01 and shin_deg <= 0.01:
+		return
+	for side in ["left", "right"]:
+		_add(side + "UpperLeg", Vector3(-thigh_deg, 0.0, 0.0))
+		_add(side + "LowerLeg", Vector3(thigh_deg + shin_deg, 0.0, 0.0))
+		_add(side + "Foot", Vector3(-shin_deg, 0.0, 0.0))
+	if not planted or _thigh_m <= 0.0:
+		return
+	var t: float = deg_to_rad(thigh_deg)
+	var k: float = deg_to_rad(shin_deg)
+	var drop: float = _thigh_m * (1.0 - cos(t)) + _shin_m * (1.0 - cos(k))
+	var back: float = _thigh_m * sin(t) - _shin_m * sin(k)
+	var hips: int = int(rig.bones["hips"])
+	var parent: int = skeleton.get_bone_parent(hips)
+	var parent_basis: Basis = skeleton.get_bone_global_pose(parent).basis if parent >= 0 else Basis.IDENTITY
+	skeleton.set_bone_pose_position(hips, skeleton.get_bone_pose_position(hips) + parent_basis.inverse() * Vector3(0.0, -drop, -back))
+
+static func _ease_out(x: float) -> float:
+	return 1.0 - pow(1.0 - clampf(x, 0.0, 1.0), 3.0)
+
+static func _smoother(x: float) -> float:
+	var v: float = clampf(x, 0.0, 1.0)
+	return v * v * v * (v * (v * 6.0 - 15.0) + 10.0)
 
 func _dangle_legs(time: float, w: float, amount: float) -> void:
 	var swing: float = sin(time * 2.7) * 5.0 * amount

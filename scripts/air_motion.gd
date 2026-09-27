@@ -10,7 +10,10 @@ var _arc_px: float = 48.0
 var _landing_time: float = 0.0
 var _impact_strength: float = 0.5
 var _screen_velocity: Vector2 = Vector2.ZERO
-const LANDING_DURATION: float = 0.34
+const LANDING_DURATION: float = 0.85
+## A jump first crouches on the spot; the pose layer sees this as the first 20% of progress.
+const CROUCH_TIME: float = 0.17
+const CROUCH_SHARE: float = 0.20
 
 func active() -> bool:
 	return mode != "idle"
@@ -23,7 +26,11 @@ func pose_mode() -> String:
 
 func pose_progress() -> float:
 	match mode:
-		"jump", "fall":
+		"jump":
+			if _age < CROUCH_TIME:
+				return CROUCH_SHARE * _age / CROUCH_TIME
+			return CROUCH_SHARE + (1.0 - CROUCH_SHARE) * clampf((_age - CROUCH_TIME) / maxf(_duration - CROUCH_TIME, 0.001), 0.0, 1.0)
+		"fall":
 			return clampf(_age / maxf(_duration, 0.001), 0.0, 1.0)
 		"land":
 			return clampf(_landing_time / LANDING_DURATION, 0.0, 1.0)
@@ -51,7 +58,7 @@ func begin_jump(from: Vector2, to: Vector2, body_pixels: float) -> void:
 	target = to
 	_age = 0.0
 	var distance: float = from.distance_to(to)
-	_duration = clampf(0.52 + distance / maxf(body_pixels, 1.0) * 0.18, 0.52, 0.82)
+	_duration = CROUCH_TIME + clampf(0.46 + distance / maxf(body_pixels, 1.0) * 0.16, 0.46, 0.72)
 	_arc_px = clampf(maxf(34.0, distance * 0.18), 34.0, body_pixels * 0.22)
 	_impact_strength = clampf(0.38 + distance / maxf(body_pixels, 1.0) * 0.12, 0.38, 0.64)
 	_screen_velocity = Vector2.ZERO
@@ -83,10 +90,12 @@ func tick(delta: float) -> Vector2:
 	match mode:
 		"jump":
 			_age += dt
-			var u: float = clampf(_age / _duration, 0.0, 1.0)
-			var eased: float = smoothstep(0.0, 1.0, u)
-			position = _start.lerp(target, eased)
-			position.y -= sin(PI * u) * _arc_px
+			# Feet stay put while she crouches, then a ballistic arc: nearly constant
+			# sideways speed and a parabola on top of the straight line to the target.
+			var u: float = clampf((_age - CROUCH_TIME) / maxf(_duration - CROUCH_TIME, 0.001), 0.0, 1.0)
+			var along: float = lerpf(u, smoothstep(0.0, 1.0, u), 0.35)
+			position = _start.lerp(target, along)
+			position.y -= 4.0 * u * (1.0 - u) * _arc_px
 			if u >= 1.0:
 				position = target
 				mode = "land"

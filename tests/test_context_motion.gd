@@ -28,14 +28,17 @@ func advance_context(stage, state, mode: String, velocity: Vector2, frames: int)
 func _run() -> void:
 	var air := Air.new()
 	air.begin_jump(Vector2(100, 500), Vector2(500, 300), 360.0)
-	var linear_mid_y: float = 400.0
 	var previous_progress: float = air.pose_progress()
 	var progress_monotonic: bool = true
-	for i in range(10):
+	air.tick(0.1)
+	check(air.position.distance_to(Vector2(100, 500)) < 0.01 and air.pose_progress() > 0.0, "jump crouches on the spot before take-off")
+	for i in range(7):
 		air.tick(0.03)
 		progress_monotonic = progress_monotonic and air.pose_progress() >= previous_progress
 		previous_progress = air.pose_progress()
-	check(air.position.y < linear_mid_y, "jump route rises above the straight line")
+	# Straight line from (100, 500) to (500, 300), evaluated at the current x.
+	var line_y: float = 500.0 - (air.position.x - 100.0) * 0.5
+	check(air.position.x > 100.0 and air.position.y < line_y - 10.0, "jump route rises above the straight line")
 	check(progress_monotonic and previous_progress > 0.0 and previous_progress < 1.0, "jump exposes monotonic normalized pose phase")
 	check(air.screen_velocity().length() > 1.0, "air motion exposes real screen-space velocity to pose layer")
 	for i in range(80):
