@@ -150,6 +150,36 @@ func _run() -> void:
 	_pump([again])
 	_check(not _find(_inbox(again), "welcome").is_empty(), "a paired phone reconnects without a code")
 
+	# Блокировка телефона: связь умирает молча, телефон возвращается с тем же ключом.
+	again.send_text(JSON.stringify({"op": "ping"}))
+	_pump([again])
+	_check(not _find(_inbox(again), "pong").is_empty(), "the remote page heartbeat gets an answer")
+	var woke: WebSocketPeer = _open("/hoshi-remote-v1")
+	woke.send_text(JSON.stringify({"op": "hello", "token": token}))
+	_pump([again, woke], 30)
+	_check(not _find(_inbox(woke), "welcome").is_empty() and again.get_ready_state() != WebSocketPeer.STATE_OPEN and bus.phone_count() == 1, "the same phone coming back replaces its old connection at once")
+	var strangers: Array = []
+	for index in range(bus.MAX_PHONES):
+		strangers.append(_open("/hoshi-remote-v1"))
+	_pump([woke] + strangers, 20)
+	var phone_peers: int = 0
+	for key in bus._peers:
+		if bus._peers[key]["role"] == "phone":
+			phone_peers += 1
+	_check(phone_peers == bus.MAX_PHONES and strangers[strangers.size() - 1].get_ready_state() == WebSocketPeer.STATE_OPEN, "a new phone is let in when places are taken, the quietest one makes room")
+	for stranger in strangers:
+		stranger.close()
+	_pump([woke] + strangers, 20)
+	for key in bus._peers:
+		if bus._peers[key]["role"] == "phone":
+			bus._peers[key]["seen"] = bus.PHONE_SILENCE + 1.0
+	_pump([woke], 10)
+	_check(bus.phone_count() == 0 and woke.get_ready_state() != WebSocketPeer.STATE_OPEN, "a phone that went silent (locked) is dropped to free its place")
+	again = _open("/hoshi-remote-v1")
+	again.send_text(JSON.stringify({"op": "hello", "token": token}))
+	_pump([again])
+	_check(not _find(_inbox(again), "welcome").is_empty(), "after that the phone reconnects straight away")
+
 	# Аддон YouTube (заглушка вместо расширения Chrome).
 	var addon: WebSocketPeer = _open("/hoshi-adapter-v1")
 	addon.send_text(JSON.stringify({"op": "adapter", "id": "youtube", "title": "YouTube",

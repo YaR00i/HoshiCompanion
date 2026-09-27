@@ -167,7 +167,11 @@
 <script>
 "use strict";
 const WS_URL = `ws://${location.hostname}:18771/hoshi-remote-v1`;
-let socket = null, token = null, catalog = {quick: [], groups: []}, state = {}, retry = 800;
+let socket = null, token = null, catalog = {quick: [], groups: []}, state = {}, retry = 300;
+// Связь переживает блокировку телефона: уходя в фон, страница сама закрывает её
+// (Хоши сразу освобождает место), при возвращении мгновенно подключается снова,
+// а нажатие во время переподключения не теряется.
+let welcomed = false, lastHeard = 0, retryTimer = 0, offlineTimer = 0, queued = null;
 try { token = localStorage.getItem("hoshi-token"); } catch (e) {}
 // Ссылка из QR-кода: #pair=123456 — привязаться без ввода кода.
 let linkCode = (location.hash.match(/pair=(\d{6})/) || [])[1] || "";
@@ -179,9 +183,26 @@ function toast(text) {
   const box = $("toast"); box.textContent = text; box.classList.add("show");
   clearTimeout(toast.t); toast.t = setTimeout(() => box.classList.remove("show"), 1500);
 }
-function send(message) { if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
-function run(command, args) { send({op: "run", command, args: args || {}}); if (navigator.vibrate) navigator.vibrate(10); }
-function online(yes, text) { $("dot").classList.toggle("off", !yes); if (text !== undefined) $("status").textContent = text; }
+function send(message) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+  socket.send(JSON.stringify(message)); return true;
+}
+function run(command, args) {
+  const message = {op: "run", command, args: args || {}};
+  if (!(welcomed && send(message))) { queued = {message, at: Date.now()}; wake(); }
+  if (navigator.vibrate) navigator.vibrate(10);
+}
+function online(yes, text) {
+  clearTimeout(offlineTimer);
+  $("dot").classList.toggle("off", !yes); if (text !== undefined) $("status").textContent = text;
+}
+// Короткое переподключение не мигает надписью: точка тускнеет сразу, «не на связи» —
+// только если связи нет дольше 4 секунд.
+function softOffline() {
+  $("dot").classList.add("off");
+  clearTimeout(offlineTimer);
+  offlineTimer = setTimeout(() => { $("status").textContent = "Хоши не на связи — жду…"; }, 4000);
+}
 function showPair(error) {
   $("remote").classList.add("hidden"); $("nav").classList.add("hidden");
   $("pair").classList.remove("hidden"); $("pairError").textContent = error || "";
@@ -197,18 +218,32 @@ for (const tabButton of document.querySelectorAll("nav button")) {
 }
 
 function connect() {
-  online(false, "Подключаюсь…");
-  socket = new WebSocket(WS_URL);
-  socket.onopen = () => {
-    retry = 800;
+  if (document.hidden) return; // подключимся, когда страницу снова откроют
+  clearTimeout(retryTimer);
+  welcomed = false;
+  const ws = new WebSocket(WS_URL);
+  socket = ws;
+  ws.onopen = () => {
+    if (ws !== socket) return;
+    retry = 300; lastHeard = Date.now();
     if (token) send({op: "hello", token});
     else if (linkCode) { send({op: "pair", code: linkCode}); linkCode = ""; }
     else showPair();
   };
-  socket.onmessage = (event) => {
+  ws.onmessage = (event) => {
+    if (ws !== socket) return;
+    lastHeard = Date.now();
     let m; try { m = JSON.parse(event.data); } catch (e) { return; }
     if (m.op === "paired") { token = m.token; try { localStorage.setItem("hoshi-token", token); } catch (e) {} }
-    else if (m.op === "welcome" || m.op === "catalog") { catalog = m.catalog || catalog; showRemote(); renderHoshi(); renderPc(); }
+    else if (m.op === "welcome" || m.op === "catalog") {
+      catalog = m.catalog || catalog; showRemote(); renderHoshi(); renderPc();
+      if (m.op === "welcome") {
+        welcomed = true;
+        // Нажатие, сделанное пока связь восстанавливалась, уходит сразу (если ему < 5 с).
+        if (queued && Date.now() - queued.at < 5000) send(queued.message);
+        queued = null;
+      }
+    }
     else if (m.op === "state") { state = m; online(true, (m.hoshi && m.hoshi.status) || "На связи"); renderHoshi(); renderApps(); renderPending(); }
     else if (m.op === "ran" && !m.ok) toast({not_allowed: "С телефона так нельзя", missing: "Не нашла этот файл на компьютере",
       nothing_to_cancel: "Нечего отменять", need_confirm: "Нужно подтвердить"}[m.reason] || "Сейчас не получилось");
@@ -221,8 +256,44 @@ function connect() {
       else if (m.reason === "too_fast") toast("Помедленнее :)");
     }
   };
-  socket.onclose = () => { online(false, "Хоши не на связи — жду…"); setTimeout(connect, retry); retry = Math.min(retry * 1.6, 8000); };
+  ws.onclose = () => {
+    if (ws !== socket) return;
+    socket = null; welcomed = false; softOffline();
+    if (!document.hidden) { retryTimer = setTimeout(connect, retry); retry = Math.min(retry * 1.6, 5000); }
+  };
 }
+
+function dropSocket() {
+  const ws = socket; socket = null; welcomed = false;
+  if (ws) { ws.onclose = null; try { ws.close(); } catch (e) {} }
+}
+
+// Страница снова на экране (разблокировали телефон, вернулись во вкладку, появилась сеть).
+function wake() {
+  if (document.hidden) return;
+  retry = 300;
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    // Связь может выглядеть живой, но умереть во сне: проверяем, ответит ли Хоши.
+    const asked = Date.now(); send({op: "ping"});
+    setTimeout(() => { if (socket && lastHeard < asked) { dropSocket(); softOffline(); connect(); } }, 1500);
+  } else if (!socket || socket.readyState !== WebSocket.CONNECTING) {
+    connect();
+  }
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { clearTimeout(retryTimer); dropSocket(); }
+  else wake();
+});
+window.addEventListener("pageshow", wake);
+window.addEventListener("online", wake);
+window.addEventListener("focus", wake);
+// Пульс, пока пульт на экране: замечает зависшую связь.
+setInterval(() => {
+  if (document.hidden || !socket || socket.readyState !== WebSocket.OPEN) return;
+  if (Date.now() - lastHeard > 9000) { dropSocket(); softOffline(); connect(); return; }
+  send({op: "ping"});
+}, 4000);
 
 function selected() { return new Set((state.hoshi && state.hoshi.selected) || []); }
 

@@ -33,6 +33,9 @@ const MAX_PEERS: int = 16
 const MAX_PHONE_PACKET: int = 4096
 const MAX_ADAPTER_PACKET: int = 65536
 const MAX_RUNS_PER_SECOND: float = 8.0
+## A visible remote page pings every 5 s. A phone that says nothing for this long (its
+## screen locked and the connection died silently) is dropped to free its place.
+const PHONE_SILENCE: float = 20.0
 
 var enabled: bool = false
 var pairing_code: String = ""
@@ -144,7 +147,9 @@ func tick(delta: float) -> void:
 	_serve_http(dt)
 	_accept_ws()
 	for key in _peers.keys():
-		_poll_peer(key, dt)
+		# A reconnecting phone may have closed another peer earlier in this loop.
+		if _peers.has(key):
+			_poll_peer(key, dt)
 	_state_clock += dt
 	if _state_clock >= 0.5:
 		_state_clock = 0.0
@@ -225,7 +230,7 @@ func _accept_ws() -> void:
 		if ws.accept_stream(stream) != OK:
 			stream.disconnect_from_host()
 			continue
-		_peers[_next_key] = {"ws": ws, "role": "", "authed": false, "host": host, "runs": 0.0, "age": 0.0}
+		_peers[_next_key] = {"ws": ws, "role": "", "authed": false, "host": host, "runs": 0.0, "age": 0.0, "seen": 0.0, "token": ""}
 		_next_key += 1
 
 func _poll_peer(key: int, dt: float) -> void:
@@ -233,6 +238,7 @@ func _poll_peer(key: int, dt: float) -> void:
 	var ws: WebSocketPeer = peer["ws"]
 	ws.poll()
 	peer["age"] += dt
+	peer["seen"] = float(peer["seen"]) + dt
 	peer["runs"] = maxf(0.0, float(peer["runs"]) - dt * MAX_RUNS_PER_SECOND)
 	match ws.get_ready_state():
 		WebSocketPeer.STATE_OPEN:
@@ -246,10 +252,14 @@ func _poll_peer(key: int, dt: float) -> void:
 				if packet.size() > limit or not ws.was_string_packet():
 					continue
 				var message: Variant = JSON.parse_string(packet.get_string_from_utf8())
+				peer["seen"] = 0.0
 				if message is Dictionary:
 					_handle(key, message)
 				if not _peers.has(key):
 					return
+			if peer["role"] == "phone" and float(peer["seen"]) > PHONE_SILENCE:
+				_drop_peer(key, 4000, "Silent")
+				return
 		WebSocketPeer.STATE_CLOSED:
 			if peer["role"] == "adapter":
 				adapters.drop_peer(key)
@@ -270,9 +280,17 @@ func _assign_role(key: int) -> void:
 			if _peers[other]["role"] == "phone":
 				phones += 1
 		if phones >= MAX_PHONES:
-			peer["ws"].close(1013, "Too many phones")
-			_peers.erase(key)
-			return
+			# Places are usually taken by connections of locked phones that died silently:
+			# make room by dropping the one that has been quiet the longest.
+			var quietest: int = -1
+			for other in _peers:
+				if other != key and _peers[other]["role"] == "phone" and (quietest < 0 or float(_peers[other]["seen"]) > float(_peers[quietest]["seen"])):
+					quietest = other
+			if quietest < 0:
+				peer["ws"].close(1013, "Too many phones")
+				_peers.erase(key)
+				return
+			_drop_peer(quietest, 4000, "Replaced")
 		peer["role"] = "phone"
 	else:
 		peer["ws"].close(1008, "Wrong path")
@@ -290,6 +308,10 @@ func _handle(key: int, message: Dictionary) -> void:
 	if peer["role"] == "adapter":
 		_handle_adapter(key, op, message)
 		return
+	if op == "ping":
+		# Heartbeat of a visible remote page; any message already refreshed "seen".
+		_send(key, {"op": "pong"})
+		return
 	if not peer["authed"]:
 		match op:
 			"pair":
@@ -297,6 +319,7 @@ func _handle(key: int, message: Dictionary) -> void:
 					var token: String = _new_token()
 					tokens.append(token)
 					peer["authed"] = true
+					peer["token"] = token
 					_send(key, {"op": "paired", "token": token})
 					_welcome(key)
 					new_pairing_code() # один код — один телефон
@@ -309,6 +332,8 @@ func _handle(key: int, message: Dictionary) -> void:
 			"hello":
 				if str(message.get("token", "")) in tokens:
 					peer["authed"] = true
+					peer["token"] = str(message.get("token", ""))
+					_drop_same_phone(key)
 					_welcome(key)
 				else:
 					_send(key, {"op": "error", "reason": "need_pairing"})
@@ -425,6 +450,18 @@ func _broadcast_state(force: bool) -> void:
 	for key in _peers:
 		if _peers[key]["role"] == "phone" and _peers[key]["authed"]:
 			_peers[key]["ws"].send_text(text)
+
+## The same phone came back (after its screen was locked): close its old connection
+## right away instead of keeping a dead one around.
+func _drop_same_phone(key: int) -> void:
+	for other in _peers.keys():
+		if other != key and _peers[other]["role"] == "phone" and str(_peers[other]["token"]) == str(_peers[key]["token"]):
+			_drop_peer(other, 4000, "Replaced")
+
+func _drop_peer(key: int, code: int, reason: String) -> void:
+	if _peers.has(key):
+		_peers[key]["ws"].close(code, reason)
+		_peers.erase(key)
 
 func _new_token() -> String:
 	var crypto := Crypto.new()
