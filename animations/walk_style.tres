@@ -1,0 +1,31 @@
+[gd_resource type="Resource" format=3]
+
+[ext_resource type="Script" path="res://scripts/walk_style.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+step_length = 0.2799999974668026
+speed = 0.2550000036135316
+foot_lift = 0.027000000933185192
+push_off = 36.5
+heel_strike = 21.5
+leg_kick = 0.0220000010449439
+kick_height = 0.1440000068396328
+back_hold = 0.15999999642372129
+rear_release = 0.2899999935179948
+bounce = 0.01100000052247195
+hip_turn = 17.5000002607703
+hip_tilt = 8.900000132620324
+torso_lean = -1.7999998033046882
+chest_pitch = 3.9000002816319252
+kick_lean = 1.300000019371508
+footfall_dip = 2.600000038743016
+side_lean = 5.800000086426728
+shoulder_turn = 12.0
+head_tilt = 3.700000055134292
+arm_forward = 12.5
+arm_back = 16.0
+arm_open = 14.0
+elbow_bend = 10.5
+arm_lag = 1.05000001564622
+hand_flop = 25.5

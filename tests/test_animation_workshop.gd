@@ -149,5 +149,48 @@ func _run() -> void:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(temporary))
 	workshop.queue_free()
 	await process_frame
+	await _check_walk_workshop()
 	print("HOSHI_ANIMATION_WORKSHOP_RESULT checks=", checks, " failures=", failures)
 	quit(0 if failures == 0 else 1)
+
+## Walk workshop: sliders edit the shared WalkStyle live and the walking pose follows.
+func _check_walk_workshop() -> void:
+	var WalkStyle = load("res://scripts/walk_style.gd")
+	var saved: Resource = ResourceLoader.load(WalkStyle.PATH, "", ResourceLoader.CACHE_MODE_IGNORE)
+	var fresh: Resource = WalkStyle.defaults()
+	var names: PackedStringArray = WalkStyle.tunables()
+	# The saved file is the user's own tuning: only check it loads and stays in range.
+	var in_range: bool = saved != null and names.size() >= 20
+	for info in fresh.get_property_list():
+		if int(info["hint"]) == PROPERTY_HINT_RANGE and names.has(str(info["name"])):
+			var parts: PackedStringArray = str(info["hint_string"]).split(",")
+			var value: float = float(saved.get(str(info["name"])))
+			in_range = in_range and value >= float(parts[0]) - 0.0001 and value <= float(parts[1]) + 0.0001
+	_check(in_range, "saved walk style loads with every value inside its slider range (" + str(names.size()) + " sliders)")
+	var walk = load("res://scenes/walk_workshop.tscn").instantiate()
+	root.add_child(walk)
+	for index in range(40):
+		await process_frame
+	_check(walk.stage != null and walk.stage.is_loaded and walk.sliders.size() == names.size(), "walk workshop loads Hoshi with a slider for every style value")
+	var original: float = float(walk.style.arm_forward)
+	# Drive frames by hand so the check never depends on real frame timing.
+	walk.set_process(false)
+	walk.walker.reset(0.0, 0.0)
+	walk.stage.travel_offset_px = 0.0
+	for index in range(40):
+		walk._process(1.0 / 30.0)
+	_check(walk.walker.mode == "walk" and float(walk.walker.sample()["weight"]) > 0.9, "walk workshop keeps Hoshi walking")
+	# The moment of the step where the left arm is furthest forward.
+	var reach_frame: Dictionary = {"mode": "walk", "weight": 1.0, "phase": float(walk.style.arm_lag), "u": 0.0,
+		"left": Vector3.ZERO, "right": Vector3.ZERO, "pitch_left": 0.0, "pitch_right": 0.0}
+	walk.stage.animate(0.0, walk.state, Vector2.ZERO, reach_frame)
+	var hand_before: Vector3 = walk.stage.rig.world_point("leftHand")
+	(walk.sliders["arm_forward"] as HSlider).value = 38.0
+	(walk.sliders["arm_back"] as HSlider).value = 32.0
+	_check(is_equal_approx(float(walk.style.arm_forward), 38.0) and walk.dirty, "moving a slider edits the live walk style")
+	walk.stage.animate(0.0, walk.state, Vector2.ZERO, reach_frame)
+	_check(walk.stage.rig.world_point("leftHand").distance_to(hand_before) > 0.03, "the walking pose follows the slider immediately")
+	walk._revert()
+	_check(is_equal_approx(float(walk.style.arm_forward), original) and not walk.dirty, "revert restores the saved walk style")
+	walk.queue_free()
+	await process_frame

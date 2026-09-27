@@ -18,6 +18,8 @@ def interactive_args(mode: str) -> list[str]:
         return ['--editor', 'res://scenes/animation_authoring_3d.tscn']
     if mode == 'workshop':
         return ['res://scenes/animation_workshop.tscn']
+    if mode == 'walk_workshop':
+        return ['res://scenes/walk_workshop.tscn']
     args = ['--', '--desktop' if mode == 'desktop' else '--preview']
     if mode == 'walk':
         args.append('--walk-demo')
@@ -55,7 +57,7 @@ def run_step(engine: str, log_dir: Path, label: str, args: list[str], timeout: i
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=['check', 'import', 'test', 'commands', 'supports', 'focus', 'remote', 'pc', 'smoke', 'preview', 'desktop', 'editor', 'walk', 'capture', 'posture', 'poses', 'shelf', 'shelf_windows', 'shelf_demo', 'external_windows', 'edge_life', 'edge_views', 'cozy_windows', 'cozy_native', 'clickthrough', 'place', 'context', 'context_views', 'surface', 'hair_collision', 'animation_workshop', 'animation_authoring', 'workshop', 'workshop_editor'])
+    parser.add_argument('mode', choices=['check', 'import', 'test', 'commands', 'supports', 'focus', 'remote', 'pc', 'smoke', 'preview', 'desktop', 'editor', 'walk', 'capture', 'posture', 'poses', 'shelf', 'shelf_windows', 'shelf_demo', 'external_windows', 'edge_life', 'edge_views', 'cozy_windows', 'cozy_native', 'clickthrough', 'place', 'context', 'context_views', 'surface', 'hair_collision', 'animation_workshop', 'animation_authoring', 'workshop', 'workshop_editor', 'walk_workshop'])
     opts = parser.parse_args()
     engine = (ROOT / 'godot_path.txt').read_text(encoding='utf-8-sig').strip()
     if not Path(engine).is_file():
@@ -66,7 +68,7 @@ def main() -> int:
     version = subprocess.run([engine, '--version'], capture_output=True, text=True, timeout=15)
     summary = {'engine': version.stdout.strip(), 'mode': opts.mode, 'log_dir': str(log_dir), 'steps': []}
     stages = []
-    if opts.mode in ['check', 'import', 'test', 'commands', 'supports', 'focus', 'remote', 'pc', 'preview', 'desktop', 'editor', 'workshop_editor', 'walk', 'capture', 'posture', 'poses', 'shelf', 'shelf_windows', 'shelf_demo', 'external_windows', 'edge_life', 'edge_views', 'cozy_windows', 'cozy_native', 'clickthrough', 'place', 'context', 'context_views', 'surface', 'hair_collision', 'animation_workshop', 'animation_authoring', 'workshop']:
+    if opts.mode in ['check', 'import', 'test', 'commands', 'supports', 'focus', 'remote', 'pc', 'preview', 'desktop', 'editor', 'workshop_editor', 'walk', 'capture', 'posture', 'poses', 'shelf', 'shelf_windows', 'shelf_demo', 'external_windows', 'edge_life', 'edge_views', 'cozy_windows', 'cozy_native', 'clickthrough', 'place', 'context', 'context_views', 'surface', 'hair_collision', 'animation_workshop', 'animation_authoring', 'workshop', 'walk_workshop']:
         stages.append(('import', ['--headless', '--import']))
     if opts.mode in ['check', 'test']:
         stages.append(('runtime', ['--headless', '--script', 'res://tests/test_runtime.gd']))
@@ -130,7 +132,7 @@ def main() -> int:
     (ROOT / '.workspace' / 'last_check.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
     if not summary['passed']:
         return 1
-    if opts.mode in ['preview', 'desktop', 'editor', 'workshop_editor', 'walk', 'shelf_demo', 'workshop']:
+    if opts.mode in ['preview', 'desktop', 'editor', 'workshop_editor', 'walk', 'shelf_demo', 'workshop', 'walk_workshop']:
         args = interactive_args(opts.mode)
         process = subprocess.Popen([engine, '--path', str(ROOT), '--log-file', str(log_dir / 'session.log'), *args], cwd=ROOT)
         print('Started Godot PID=' + str(process.pid), flush=True)

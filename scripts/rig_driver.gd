@@ -1,6 +1,7 @@
 @tool
 extends RefCounted
 const HairSprings = preload("res://scripts/hair_spring_driver.gd")
+const WalkStyle = preload("res://scripts/walk_style.gd")
 ## Procedural, low-amplitude body rig. Rotations are applied relative to each
 ## authored local REST transform. Never use identity as the resting bone pose.
 ## Axes below are in the skeleton's rest space (VRM 1.0 avatar faces +Z).
@@ -141,24 +142,40 @@ func _apply_walk_upper(frame: Dictionary, wave: float) -> void:
 	var s: float = sin(phase)
 	var c: float = cos(phase)
 	var w: float = weight
-	# Pelvis follows the swinging leg forward and dips a little on the swing side;
-	# the chest turns the other way so shoulders and hips counter-rotate like a real walk.
-	add_pose("hips", Vector3(0.0, c * 4.0, -s * 1.6) * w)
-	add_pose("spine", Vector3(1.4, -c * 1.2, s * 0.7) * w)
-	pose("chest", Vector3(w * 2.2, -c * 2.4 * w, s * 0.6 * w))
-	# Keep the gaze steady: undo what is left of the turn and add a tiny footfall nod.
-	add_pose("neck", Vector3(0.0, -c * 0.3, -s * 0.4) * w)
-	add_pose("head", Vector3(cos(phase * 2.0) * 0.6, 0.0, -s * 0.3) * w)
-	# Arms swing opposite to the legs; the elbow bends more on the forward swing.
-	var arm: float = -c * 11.0 * w
-	var left_forward: float = clampf(-arm / 11.0, 0.0, 1.0)
-	var right_forward: float = clampf(arm / 11.0, 0.0, 1.0)
-	pose("leftUpperArm", Vector3(arm, -2.0, -73.0 + 1.5 * w))
-	pose("leftLowerArm", Vector3(-3.0, -6.0 - 9.0 * left_forward * w, 8.0))
+	# Every amount below is a WalkStyle slider (walk workshop), in degrees.
+	var st = WalkStyle.active()
+	# One bounce per step: `step_bob` is 1 when a foot lands, -1 while passing over it.
+	var step_bob: float = cos(phase * 2.0)
+	# Pelvis follows the swinging leg forward and dips on the swing side; the chest turns
+	# the other way so shoulders and hips counter-rotate like a real walk.
+	add_pose("hips", Vector3(0.0, c * st.hip_turn, -s * st.hip_tilt) * w)
+	# Torso leans over the standing leg and gives a little on each footfall.
+	var kick: float = float(frame.get("kick", 0.0))
+	add_pose("spine", Vector3(st.torso_lean + step_bob * st.footfall_dip + kick * st.kick_lean, -c * st.shoulder_turn * 0.5, s * st.side_lean) * w)
+	pose("chest", Vector3(st.chest_pitch + step_bob * st.footfall_dip * 0.67, -c * st.shoulder_turn, s * st.side_lean * 0.6) * w)
+	# Head keeps looking ahead, tilts side to side with the steps and nods a moment after
+	# each footfall (lagging like a heavier head on a springy neck).
+	add_pose("neck", Vector3(0.0, -c * 0.3, -s * st.head_tilt * 0.35) * w)
+	add_pose("head", Vector3(cos(phase * 2.0 - st.head_lag) * st.head_nod, 0.0, -sin(phase - st.head_lag * 0.57) * st.head_tilt) * w)
+	# Arms swing opposite to the legs, a little behind them (a loose pendulum driven by the
+	# shoulders), with separate forward/back reach; the elbow bends more on the forward
+	# swing. +X on an upper arm swings it back.
+	var swing: float = -cos(phase - st.arm_lag)
+	var left_arm: float = swing * (st.arm_forward if swing < 0.0 else st.arm_back) * w
+	var right_arm: float = -swing * (st.arm_forward if swing > 0.0 else st.arm_back) * w
+	var left_forward: float = clampf(-swing, 0.0, 1.0)
+	var right_forward: float = clampf(swing, 0.0, 1.0)
+	# Arms held away from the body; loose hands trail the swing and flick at its ends.
+	var open_arms: float = st.arm_open * w
+	var flop: float = -cos(phase - st.arm_lag - 0.9) * st.hand_flop * w
+	pose("leftUpperArm", Vector3(left_arm, -2.0, -73.0 + open_arms))
+	pose("leftLowerArm", Vector3(-3.0, -6.0 - st.elbow_bend * left_forward * w, 8.0))
+	add_pose("leftHand", Vector3(flop, 0.0, 0.0))
 	# An explicit greeting can still take priority during the short stop transition.
 	if wave < 0.1:
-		pose("rightUpperArm", Vector3(-arm, 2.0, 73.0 - 1.5 * w))
-		pose("rightLowerArm", Vector3(-3.0, 6.0 + 9.0 * right_forward * w, -8.0))
+		pose("rightUpperArm", Vector3(right_arm, 2.0, 73.0 - open_arms))
+		pose("rightLowerArm", Vector3(-3.0, 6.0 + st.elbow_bend * right_forward * w, -8.0))
+		add_pose("rightHand", Vector3(-flop, 0.0, 0.0))
 
 ## Adds a rotation on top of the pose already set this frame (same frame as pose()).
 func add_pose(semantic: String, euler_degrees: Vector3) -> void:

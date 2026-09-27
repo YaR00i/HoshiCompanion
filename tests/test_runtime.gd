@@ -293,19 +293,27 @@ func _check_walk_runtime(stage) -> void:
 	_check(stage.gait.available, "walk IK maps both complete legs on the actual Hoshi")
 	if not stage.gait.available:
 		return
+	# Walk checks use the default style, not whatever the user saved in the workshop.
+	var WalkStyle = load("res://scripts/walk_style.gd")
+	var user_style: Resource = WalkStyle.active()
+	WalkStyle.set_active(WalkStyle.defaults())
 	var state = State.new()
 	state.seed_random(50)
 	state.autonomy_enabled = false
 	var max_error: float = 0.0
 	var max_slide: float = 0.0
 	var max_lift: float = 0.0
+	var max_push: float = 0.0
+	var max_strike: float = 0.0
+	var min_sole: float = 1.0
 	for fps in [30, 60]:
 		for direction in [-1, 1]:
 			var walker = Locomotion.new()
 			var goal: float = float(direction) * 240.0
 			_check(walker.request(0.0, goal, Vector2(-400.0, 400.0), stage.meters_per_pixel(), stage.model_height, 0.0), "accept a walk at %d FPS / direction %d" % [fps, direction])
 			var previous_frame: Dictionary = {}
-			var previous_feet: Array[Vector3] = []
+			var previous_contacts: Array[Vector3] = []
+			var previous_pivots: Array[String] = []
 			var all_finite: bool = true
 			var in_bounds: bool = true
 			for index in range(1800):
@@ -317,6 +325,8 @@ func _check_walk_runtime(stage) -> void:
 				stage.travel_offset_px = walker.x_px
 				stage.animate(dt, state, Vector2.ZERO, frame)
 				var feet: Array[Vector3] = [stage.rig.world_point("leftFoot"), stage.rig.world_point("rightFoot")]
+				var contacts: Array[Vector3] = [stage.rig.skeleton.global_transform * stage.gait.last_contacts[0], stage.rig.skeleton.global_transform * stage.gait.last_contacts[1]]
+				var pivots: Array[String] = stage.gait.last_pivots.duplicate()
 				in_bounds = in_bounds and walker.x_px >= minf(0.0, goal) - 0.001 and walker.x_px <= maxf(0.0, goal) + 0.001
 				for side in range(2):
 					all_finite = all_finite and feet[side].is_finite()
@@ -325,20 +335,31 @@ func _check_walk_runtime(stage) -> void:
 						max_error = maxf(max_error, feet[side].distance_to(expected))
 						var offset: Vector3 = frame["left" if side == 0 else "right"]
 						max_lift = maxf(max_lift, offset.y)
+						var pitch: float = float(frame["pitch_left" if side == 0 else "pitch_right"])
+						max_push = maxf(max_push, pitch)
+						max_strike = maxf(max_strike, -pitch)
+						if offset.y < 0.001:
+							min_sole = minf(min_sole, contacts[side].y)
 				if frame["mode"] == "walk" and previous_frame.get("mode", "") == "walk" and frame["step"] == previous_frame["step"]:
+					# The standing foot may roll (heel -> flat -> ball), but the point of the sole
+					# that touches the floor must not slide while it keeps the same pivot.
 					var support: int = 1 if int(frame["step"]) % 2 == 0 else 0
-					max_slide = maxf(max_slide, feet[support].distance_to(previous_feet[support]))
+					if pivots[support] == previous_pivots[support]:
+						max_slide = maxf(max_slide, contacts[support].distance_to(previous_contacts[support]))
 				previous_frame = frame
-				previous_feet = feet
+				previous_contacts = contacts
+				previous_pivots = pivots
 				if not walker.active():
 					break
 			_check(not walker.active() and absf(walker.x_px - goal) < 0.001, "walk finishes exactly at target, %d FPS / %d" % [fps, direction])
 			_check(all_finite and in_bounds, "walk stays finite and inside the lane")
 			_check(absf(walker.yaw) < 0.001, "walk returns to front-facing idle")
 	_check(max_error < 0.003, "actual Skeleton3D ankle IK error below 3 mm")
-	_check(max_slide < 0.003, "actual world-space support foot slides less than 3 mm per frame")
+	_check(max_slide < 0.003, "actual world-space support sole contact slides less than 3 mm per frame")
 	_check(max_lift > stage.model_height * 0.02, "swinging foot lifts clear of the ground")
-	walking_metrics = {"max_ankle_target_error_m": max_error, "max_stance_frame_drift_m": max_slide, "max_foot_lift_m": max_lift}
+	_check(max_push > deg_to_rad(15.0) and max_strike > deg_to_rad(8.0), "feet roll heel-to-toe instead of landing flat")
+	_check(absf(min_sole) < 0.004, "rolling sole stays on the floor, never below it (" + str(snappedf(min_sole, 0.0001)) + " m)")
+	walking_metrics = {"max_ankle_target_error_m": max_error, "max_stance_frame_drift_m": max_slide, "max_foot_lift_m": max_lift, "max_push_off_deg": rad_to_deg(max_push), "max_heel_strike_deg": rad_to_deg(max_strike)}
 	var stopped = Locomotion.new()
 	stopped.request(0.0, 240.0, Vector2(-400.0, 400.0), stage.meters_per_pixel(), stage.model_height, 0.0)
 	for index in range(300):
@@ -353,6 +374,57 @@ func _check_walk_runtime(stage) -> void:
 	for index in range(180):
 		stopped.tick(1.0 / 60.0)
 	_check(not stopped.active() and is_equal_approx(stopped.x_px, stop_x), "stop settles the feet without continuing the path")
+	# Playful leg kick: the swinging foot overshoots its landing spot, then lands on it.
+	var style = WalkStyle.active()
+	style.leg_kick = 0.06
+	var kicker = Locomotion.new()
+	kicker.request(0.0, 400.0, Vector2(-500.0, 500.0), stage.meters_per_pixel(), stage.model_height, 0.0)
+	var overshoot: float = 0.0
+	var landed_error: float = 1.0
+	var watched_step: int = 2
+	for index in range(900):
+		kicker.tick(1.0 / 60.0)
+		var kick_frame: Dictionary = kicker.sample()
+		if kicker.mode != "walk" or int(kick_frame["step"]) != watched_step:
+			if kicker.mode == "walk" and int(kick_frame["step"]) > watched_step:
+				break
+			continue
+		var swinging_left: bool = watched_step % 2 == 0
+		var foot_z: float = (kick_frame["left" if swinging_left else "right"] as Vector3).z + kicker.travelled_m
+		var landing_z: float = kicker._landing(watched_step)
+		overshoot = maxf(overshoot, foot_z - landing_z)
+		if float(kick_frame["u"]) > 0.93:
+			landed_error = absf(foot_z - landing_z)
+	# Long strides with the back foot held behind: the pelvis height must glide, never
+	# jump when a foot lands or lifts off (it used to pop by 3-6 cm in one frame).
+	var stride_style: Resource = WalkStyle.defaults()
+	for key in {"step_length": 0.34, "speed": 0.345, "back_hold": 0.22, "push_off": 40.0, "bounce": 0.0, "hip_turn": 12.0, "hip_tilt": 6.7}:
+		stride_style.set(key, {"step_length": 0.34, "speed": 0.345, "back_hold": 0.22, "push_off": 40.0, "bounce": 0.0, "hip_turn": 12.0, "hip_tilt": 6.7}[key])
+	WalkStyle.set_active(stride_style)
+	var glide_state = State.new()
+	glide_state.autonomy_enabled = false
+	var glider = Locomotion.new()
+	glider.request(0.0, 400.0, Vector2(-500.0, 500.0), stage.meters_per_pixel(), stage.model_height, 0.0)
+	var previous_hips: float = -1.0
+	var max_hip_step: float = 0.0
+	for index in range(1200):
+		glider.tick(1.0 / 60.0)
+		glide_state.tick(1.0 / 60.0)
+		var glide_frame: Dictionary = glider.sample()
+		stage.yaw = glider.yaw
+		stage.travel_offset_px = glider.x_px
+		stage.animate(1.0 / 60.0, glide_state, Vector2.ZERO, glide_frame)
+		var hips_y: float = stage.rig.world_point("hips").y
+		if glider.mode == "walk" and previous_hips >= 0.0:
+			max_hip_step = maxf(max_hip_step, absf(hips_y - previous_hips))
+		previous_hips = hips_y if glider.mode == "walk" else -1.0
+		if not glider.active():
+			break
+	stage.travel_offset_px = 0.0
+	stage.yaw = 0.0
+	_check(max_hip_step < 0.005, "pelvis glides with long held-back strides, no per-step pop (" + str(snappedf(max_hip_step * 1000.0, 0.1)) + " mm/frame)")
+	WalkStyle.set_active(user_style)
+	_check(overshoot > stage.model_height * 0.02 and landed_error < 0.002, "leg kick throws the foot past its landing spot and still lands on it")
 	var invalid = Locomotion.new()
 	_check(not invalid.request(0.0, 1.0, Vector2(-100.0, 100.0), 0.004, 1.5, 0.0), "too-short routes are rejected")
 	stage.travel_offset_px = 0.0
