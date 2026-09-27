@@ -316,9 +316,9 @@ function renderHoshi() {
       for (const item of group.commands) {
         let b;
         if (tab === "play") { b = el("button", "tile"); b.append(el("span", "icon", item.icon || "✦"), el("span", "", item.title)); }
-        else b = el("button", "chip", item.title);
+        else b = el("button", "chip", (item.confirm && item.icon ? item.icon + " " : "") + item.title);
         if (on.has(item.command)) b.classList.add("on");
-        b.onclick = () => run(item.command); box.append(b);
+        b.onclick = () => item.confirm ? confirmThen(item) : run(item.command); box.append(b);
       }
       root.append(box);
     }

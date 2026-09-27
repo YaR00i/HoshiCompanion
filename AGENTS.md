@@ -160,4 +160,9 @@
   connected (1 s poll, 3 s probe when closed). Privacy (user-approved 2026-09-27): file NAME,
   position, duration, play state, player volume/mute only; never filepath/filedir. Commands only on a human press.
   test_mpc_adapter.gd and test_remote.gd keep mpc/sound in dry_run — tests never touch real apps.
+- Command "restart" (menu + phone, flag "confirm"): scripts/hoshi_restart.gd runs
+  tools/restart_hoshi.py check (headless import like launch.cmd); only on success it starts the
+  detached "relaunch" helper (waits for this PID, max 120 s, then starts the same Godot executable
+  with --path/--log-file and this run's arguments) and closes through the normal portal outro.
+  A new version with script errors never closes Hoshi. Tests use dry_run.
 

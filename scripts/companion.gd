@@ -21,6 +21,7 @@ const SessionLifecycle = preload("res://scripts/session_lifecycle.gd")
 const SupportPort = preload("res://scripts/support_port.gd")
 const FocusTracker = preload("res://scripts/focus_tracker.gd")
 const RemoteBus = preload("res://scripts/remote_bus.gd")
+const HoshiRestart = preload("res://scripts/hoshi_restart.gd")
 const DEFAULT_AVATAR: String = "res://assets/Hoshi_v1.vrm"
 
 var host = Host.new()
@@ -42,6 +43,10 @@ var lifecycle = SessionLifecycle.new()     # вход и уход через з�
 var support_port = SupportPort.new()       # что опорам можно попросить у Хоши
 var focus = FocusTracker.new()             # какое окно активно (только в режиме «Моё окно»)
 var remote = RemoteBus.new()               # пульт с телефона и аддоны приложений
+var restarter = HoshiRestart.new()         # «Перезапустить Хоши» с новыми файлами
+## Короткая надпись для шапки пульта (перезапуск: «Проверяю новую версию…»).
+var _remote_note: String = ""
+var _remote_note_left: float = 0.0
 var stage
 var ui
 var background: ColorRect
@@ -237,6 +242,7 @@ func _process(delta: float) -> void:
 	remote.tick(dt)
 	# Звуковой помощник отвечает не сразу; работает и при выключенном пульте (окно на ПК).
 	remote.sound.tick(dt, remote.phone_count() > 0)
+	_tick_restart(dt)
 	# Код одноразовый: после привязки телефона окно сразу показывает новый QR.
 	if ui.remote_window != null and ui.remote_window.visible and ui.remote_code_version != remote.code_version:
 		_show_remote_info()
@@ -527,14 +533,49 @@ func remote_snapshot() -> Dictionary:
 	var where: String = "floor"
 	if playground.active():
 		where = "cozy" if playground.cozy_mode else ("window" if playground.external_mode else "shelf")
-	return {"name": "Хоши", "status": ui.status.text if ui != null and ui.status != null else "",
+	var status_text: String = _remote_note if not _remote_note.is_empty() else (ui.status.text if ui != null and ui.status != null else "")
+	return {"name": "Хоши", "status": status_text,
 		"where": where, "dozing": state.dozing, "mood": state.mood, "selected": selected}
+
+## «Перезапустить Хоши»: сначала проверить новую версию, потом закрыться — помощник
+## откроет её снова. С ошибкой в новой версии Хоши остаётся (см. hoshi_restart.gd).
+func _begin_restart() -> void:
+	var reason: String = restarter.begin()
+	if reason.is_empty():
+		_note("Проверяю новую версию…", 0.0)
+	else:
+		_note(HoshiRestart.reason_text(reason), 8.0)
+
+func _tick_restart(dt: float) -> void:
+	if _remote_note_left > 0.0:
+		_remote_note_left -= dt
+		if _remote_note_left <= 0.0:
+			_remote_note = ""
+	var result: String = restarter.tick(dt)
+	if result == "ready":
+		_note("Перезапускаюсь — сейчас вернусь", 0.0)
+		_quit()
+	elif not result.is_empty():
+		_note(HoshiRestart.reason_text(result), 8.0)
+
+## Надпись в пузыре Хоши и в шапке пульта; seconds = 0 — пока не сменится.
+func _note(text: String, seconds: float) -> void:
+	_remote_note = text
+	_remote_note_left = seconds
+	remote_say(text)
 
 ## Окно «Пульт с телефона»: адрес, код и QR-код со ссылкой для привязки.
 func _show_remote_info() -> void:
-	var addresses: PackedStringArray = remote.addresses()
-	var qr_text: String = remote.pairing_url(addresses[0]) if remote.enabled and not addresses.is_empty() else ""
-	ui.show_remote_info(remote.enabled, addresses, remote.pairing_code, remote.phone_count(), remote.last_error, qr_text, remote.code_version)
+	var choices: Array = remote.address_choices()
+	var chosen: Dictionary = remote.qr_choice(choices)
+	var qr_text: String = remote.pairing_url(chosen["url"]) if remote.enabled and not chosen.is_empty() else ""
+	ui.show_remote_info(remote.enabled, choices, str(chosen.get("ip", "")), remote.pairing_code, remote.phone_count(), remote.last_error, qr_text, remote.code_version, remote.skipped_networks(), _choose_remote_address)
+
+## В окне «Пульт с телефона» выбрали адрес для QR — запомнить и перерисовать QR.
+func _choose_remote_address(ip: String) -> void:
+	remote.qr_address = ip
+	_save_settings()
+	_show_remote_info()
 
 ## Реплика Хоши на действие с пульта («Открываю: Blender»).
 func remote_say(text: String) -> void:
@@ -566,6 +607,9 @@ func _on_action(command: Variant) -> void:
 	if action == "quit":
 		_quit()
 		return
+	if action == "restart":
+		_begin_restart()
+		return
 	if action == "open_preview":
 		_switch_mode(true)
 		return
@@ -596,7 +640,7 @@ func _on_action(command: Variant) -> void:
 		elif remote.start():
 			_show_remote_info()
 		else:
-			ui.show_remote_info(false, PackedStringArray(), "", 0, remote.last_error)
+			ui.show_remote_info(false, [], "", "", 0, remote.last_error)
 		ui.remote_enabled = remote.enabled
 		ui.refresh(state, walker.label(), walker.active())
 		_save_settings()

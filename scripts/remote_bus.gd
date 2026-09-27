@@ -31,6 +31,9 @@ const REMOTE_PATH: String = "/hoshi-remote-v1"
 const ADAPTER_PATH: String = "/hoshi-adapter-v1"
 const PAGE_PATH: String = "res://remote/remote.html"
 const MAX_PHONES: int = 4
+## Слова в названии сети, по которым видно виртуальный адаптер или VPN.
+const VIRTUAL_WORDS: Array = ["vpn", "amnezia", "radmin", "wireguard", "tailscale", "zerotier", "hamachi",
+	"openvpn", "virtual", "vethernet", "hyper-v", "vmware", "virtualbox", "wsl", "tunnel", "teredo"]
 const MAX_PEERS: int = 16
 const MAX_PHONE_PACKET: int = 4096
 const MAX_ADAPTER_PACKET: int = 65536
@@ -53,6 +56,8 @@ var sound = SoundOutputs.new()
 ## Плеер MPC-BE — встроенный аддон (карточка как у YouTube).
 var mpc = MpcAdapter.new()
 var last_error: String = ""
+## Адрес (IP) для QR, выбранный в окне «Пульт с телефона»; пусто — первый обычный.
+var qr_address: String = ""
 ## Для тестов: слушать только 127.0.0.1 и на других портах.
 var loopback_only: bool = false
 var http_port: int = HTTP_PORT
@@ -119,13 +124,54 @@ func forget_phones() -> void:
 			_peers[key]["ws"].close(4001, "Forgotten")
 	new_pairing_code()
 
-## Адреса, по которым телефон может открыть пульт.
+## Адреса, по которым телефон может открыть пульт (сначала обычные сети, потом VPN).
 func addresses() -> PackedStringArray:
 	var result := PackedStringArray()
-	for address in IP.get_local_addresses():
-		if address.contains(".") and is_home_address(address) and not address.begins_with("127.") and not address.begins_with("169.254."):
-			result.append("http://%s:%d/" % [address, http_port])
+	for choice in address_choices():
+		result.append(choice["url"])
 	return result
+
+## Адреса пульта с названием сети: [{url, ip, network, virtual}]. Сначала обычные
+## сети (домашний Ethernet/Wi-Fi), потом виртуальные и VPN — они помечены, а не спрятаны.
+func address_choices() -> Array:
+	var real: Array = []
+	var virtual: Array = []
+	for iface in IP.get_local_interfaces():
+		var network: String = str(iface.get("friendly", iface.get("name", ""))).left(60)
+		for address in iface.get("addresses", []):
+			if _usable_address(str(address)):
+				var item: Dictionary = {"url": "http://%s:%d/" % [address, http_port], "ip": str(address),
+					"network": network, "virtual": is_virtual_network(network)}
+				(virtual if item["virtual"] else real).append(item)
+	return real + virtual
+
+## Адрес для QR: выбранный в окне (qr_address), иначе первый. Пусто — адресов нет.
+func qr_choice(choices: Array) -> Dictionary:
+	for choice in choices:
+		if choice["ip"] == qr_address:
+			return choice
+	return choices[0] if not choices.is_empty() else {}
+
+## Сети с адресом IPv4 вне домашней сети (например, Radmin VPN 26.x): пульт через них
+## не пустит телефон — показываем, почему их нет в списке. [{ip, network}]
+func skipped_networks() -> Array:
+	var result: Array = []
+	for iface in IP.get_local_interfaces():
+		for address in iface.get("addresses", []):
+			var ip: String = str(address)
+			if ip.contains(".") and not is_home_address(ip) and not ip.begins_with("127."):
+				result.append({"ip": ip, "network": str(iface.get("friendly", iface.get("name", ""))).left(60)})
+	return result
+
+static func is_virtual_network(network: String) -> bool:
+	var lower: String = network.to_lower()
+	for word in VIRTUAL_WORDS:
+		if lower.contains(word):
+			return true
+	return false
+
+func _usable_address(address: String) -> bool:
+	return address.contains(".") and is_home_address(address) and not address.begins_with("127.") and not address.begins_with("169.254.")
 
 ## Только домашняя/локальная сеть и сам ПК.
 static func is_home_address(address: String) -> bool:
@@ -461,7 +507,10 @@ func refresh_catalog() -> void:
 			_send(key, {"op": "catalog", "catalog": remote_catalog()})
 
 func _item(command: String) -> Dictionary:
-	return {"command": command, "title": Commands.short_title(command), "icon": Commands.icon(command)}
+	var item: Dictionary = {"command": command, "title": Commands.short_title(command), "icon": Commands.icon(command)}
+	if Commands.has_flag(command, "confirm"):
+		item["confirm"] = true
+	return item
 
 func _state_message() -> Dictionary:
 	var app = _app()

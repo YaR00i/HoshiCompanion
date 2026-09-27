@@ -23,6 +23,7 @@ extends RefCounted
 ##                 pauses_places — ставит автономный выбор места на паузу;
 ##                 keeps_intent  — не сбрасывает очередь посадки/сна;
 ##                 keeps_walk    — не останавливает текущую прогулку;
+##                 confirm       — пульт спрашивает «Точно?» перед нажатием;
 ##   animation — id движения из motion_library.gd. Если это клип
 ##               ("kind": "clip"), его можно править в Godot:
 ##               scenes/animation_authoring_3d.tscn.
@@ -109,6 +110,7 @@ const LIST := {
 	"light_editor": {"title": "Настроить свет, тени и обводку…", "group": "tools", "menu_id": 150, "sources": ["user"]},
 	"light_reset": {"title": "Сбросить настройки света", "group": "tools", "menu_id": 151, "sources": ["user"]},
 	"quit": {"title": "Закрыть Хоши", "group": "app", "menu_id": 199, "sources": ["user"]},
+	"restart": {"title": "Перезапустить Хоши", "group": "app", "menu_id": 198, "flags": ["confirm"], "sources": ["user", "remote"]},
 	# Пульт с телефона (домашняя сеть)
 	"toggle_remote": {"title": "Пульт с телефона", "group": "remote", "menu_id": 180, "sources": ["user"]},
 	"remote_info": {"title": "Адрес и код для телефона…", "group": "remote", "menu_id": 181, "sources": ["user"]},
@@ -150,10 +152,11 @@ const REMOTE_GROUPS: Array = [
 	["move", "Движение", "play"], ["place", "Места", "play"], ["surface", "На окне", "play"],
 	["rhythm", "Ритм дня", "modes"], ["rest_place", "Где отдыхать", "modes"],
 	["seated_mode", "Занятие сидя", "modes"], ["autonomy", "Самостоятельность", "modes"],
+	["app", "Программа", "modes"],
 ]
 ## Значки для пульта (плитки и быстрые кнопки).
 const ICONS := {
-	"wave": "👋", "pet": "🤍", "doze": "😴", "walk": "🚶", "stop": "✋", "sit": "🪑", "stand": "🧍",
+	"restart": "🔄", "wave": "👋", "pet": "🤍", "doze": "😴", "walk": "🚶", "stop": "✋", "sit": "🪑", "stand": "🧍",
 	"cozy_corner": "🏠", "return_floor": "⬇️", "surface_walk": "↔️", "surface_scoot": "🔀",
 	"side_left": "⬅️", "side_right": "➡️", "side_return": "⤴️",
 	"edge_sketch": "✏️", "edge_fold": "⭐", "edge_admire_star": "🌟",
@@ -162,7 +165,7 @@ const ICONS := {
 ## Короткие подписи для маленьких кнопок (иначе — обычный title).
 const SHORT_TITLES := {
 	"wave": "Помахать", "pet": "Погладить", "cozy_corner": "Уголок", "walk": "Пройтись", "stop": "Стоп",
-	"doze": "Дремать", "return_floor": "На пол", "sit": "Сесть", "stand": "Встать",
+	"doze": "Дремать", "return_floor": "На пол", "restart": "Перезапустить", "sit": "Сесть", "stand": "Встать",
 	"surface_walk": "По краю", "surface_scoot": "Подвинуться", "side_left": "Левый бок", "side_right": "Правый бок",
 	"side_return": "Сесть обратно", "edge_sketch": "Рисовать", "edge_fold": "Звёздочка", "edge_admire_star": "Любоваться",
 	"mood_neutral": "Спокойная", "mood_happy": "Радостная", "mood_relaxed": "Расслабленная",

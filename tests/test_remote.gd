@@ -5,6 +5,7 @@ extends SceneTree
 const RemoteBus = preload("res://scripts/remote_bus.gd")
 const Commands = preload("res://scripts/hoshi_commands.gd")
 const QR = preload("res://scripts/qr_code.gd")
+const HoshiRestart = preload("res://scripts/hoshi_restart.gd")
 
 class StubApp extends RefCounted:
 	var ran: Array[String] = []
@@ -105,6 +106,23 @@ func _run() -> void:
 	var version_before: int = bus.code_version
 	var link: String = bus.pairing_url("http://192.168.1.23:18770/")
 	_check(link == "http://192.168.1.23:18770/#pair=" + bus.pairing_code, "QR link carries the address and the one-time code")
+	# Адреса пульта подписаны сетью; VPN помечены; выбранный адрес для QR запоминается.
+	_check(RemoteBus.is_virtual_network("AmneziaVPN") and RemoteBus.is_virtual_network("Radmin VPN") and RemoteBus.is_virtual_network("vEthernet (WSL)") and not RemoteBus.is_virtual_network("Ethernet") and not RemoteBus.is_virtual_network("Беспроводная сеть"), "VPN and virtual networks are recognised by name")
+	var choices: Array = [{"url": "http://192.168.0.94:18870/", "ip": "192.168.0.94", "network": "Ethernet", "virtual": false},
+		{"url": "http://10.8.1.2:18870/", "ip": "10.8.1.2", "network": "AmneziaVPN", "virtual": true}]
+	bus.qr_address = ""
+	_check(bus.qr_choice(choices)["ip"] == "192.168.0.94", "QR uses the first ordinary network by default")
+	bus.qr_address = "10.8.1.2"
+	_check(bus.qr_choice(choices)["network"] == "AmneziaVPN", "QR uses the address chosen in the window")
+	bus.qr_address = "10.9.9.9"
+	_check(bus.qr_choice(choices)["ip"] == "192.168.0.94" and bus.qr_choice([]).is_empty(), "a chosen address that is gone falls back to the first one")
+	bus.qr_address = ""
+	var real_ok: bool = true
+	for choice in bus.address_choices():
+		real_ok = real_ok and RemoteBus.is_home_address(choice["ip"]) and not choice["ip"].begins_with("169.254.") and choice["url"] == "http://%s:18870/" % choice["ip"] and not str(choice["network"]).is_empty()
+	for item in bus.skipped_networks():
+		real_ok = real_ok and not RemoteBus.is_home_address(item["ip"])
+	_check(real_ok, "this PC's addresses are home-network only, each with its network name")
 	var modules: Array = QR.encode(link)
 	_check(modules.size() == 29 and modules[0][0] and modules[0][6] and not modules[1][1] and modules[3][3] and modules[28][0], "QR code is built with finder squares (version 3)")
 	_check(QR.to_image(link, 6, 4).get_width() == (29 + 8) * 6 and QR.encode("x".repeat(400)).is_empty(), "QR image size; too long text is refused")
@@ -213,5 +231,25 @@ func _run() -> void:
 	_pump([again], 20)
 	_check(bus.tokens.is_empty() and again.get_ready_state() != WebSocketPeer.STATE_OPEN, "forget phones disconnects them")
 	bus.stop()
+	_check_restart()
 	print("HOSHI_REMOTE_RESULT checks=%d failures=%d" % [checks, failures])
 	quit(1 if failures > 0 else 0)
+
+## «Перезапустить Хоши»: на пульте с «Точно?»; новая версия с ошибкой — не закрываемся.
+func _check_restart() -> void:
+	var restart_item: Dictionary = {}
+	for group in RemoteBus.new().remote_catalog()["groups"]:
+		for item in group["commands"]:
+			if item["command"] == "restart":
+				restart_item = item
+	_check(Commands.allows("restart", "remote") and restart_item.get("confirm", false) and restart_item.get("icon", "") == "🔄", "restart is on the phone and asks for confirmation")
+	var restarter = HoshiRestart.new()
+	restarter.dry_run = true
+	_check(restarter.begin() == "" and restarter.status == "checking" and restarter.begin() == "busy", "restart first checks the new version, once at a time")
+	_check(restarter.finish({"ok": false, "error": "script_errors"}) == "script_errors" and restarter.executed.size() == 1 and restarter.status == "", "a new version with script errors does not close Hoshi")
+	restarter.begin()
+	_check(restarter.finish({"ok": true}) == "ready", "a good new version lets Hoshi close")
+	var relaunch: Array = restarter.executed[-1]
+	var dash: int = relaunch.find("--")
+	_check(relaunch[0] == "relaunch" and relaunch.has(str(OS.get_process_id())) and dash > 0 and relaunch[dash + 1] == "--path", "the waiting helper restarts the same project after this Hoshi exits")
+	_check(HoshiRestart.relaunch_args()[0] == "--path" and HoshiRestart.relaunch_args().has("--log-file"), "new Hoshi gets the project folder and the session log")

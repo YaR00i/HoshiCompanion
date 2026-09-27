@@ -46,6 +46,8 @@ var _sound_source
 var _sound_changed: Callable
 var _remote_text: Label
 var _remote_qr: TextureRect
+var _remote_addresses: VBoxContainer
+var _remote_text_after: Label
 ## Какой код сейчас показан в окне (remote_bus.code_version).
 var remote_code_version: int = -1
 var edge_pick: OptionButton
@@ -709,12 +711,14 @@ func _refresh_sound_outputs() -> void:
 		_sound_list.add_child(row)
 
 ## Окно «Пульт с телефона»: адрес страницы и код привязки крупно.
-func show_remote_info(enabled: bool, addresses: PackedStringArray, code: String, phones: int, error: String = "", qr_text: String = "", code_version: int = -1) -> void:
+## choices — [{url, ip, network, virtual}] из remote_bus.address_choices(); chosen_ip — адрес
+## в QR; skipped — сети вне домашней ([{ip, network}]); on_choose(ip) — выбрали адрес для QR.
+func show_remote_info(enabled: bool, choices: Array, chosen_ip: String, code: String, phones: int, error: String = "", qr_text: String = "", code_version: int = -1, skipped: Array = [], on_choose: Callable = Callable()) -> void:
 	remote_code_version = code_version
 	if remote_window == null:
 		remote_window = Window.new()
 		remote_window.title = "Пульт Хоши с телефона"
-		remote_window.size = Vector2i(440, 600)
+		remote_window.size = Vector2i(460, 700)
 		remote_window.unresizable = true
 		remote_window.always_on_top = true
 		remote_window.theme = theme
@@ -728,7 +732,7 @@ func show_remote_info(enabled: bool, addresses: PackedStringArray, code: String,
 		panel_bg.add_theme_stylebox_override("panel", style)
 		remote_window.add_child(panel_bg)
 		var column := VBoxContainer.new()
-		column.add_theme_constant_override("separation", 10)
+		column.add_theme_constant_override("separation", 8)
 		panel_bg.add_child(column)
 		_remote_qr = TextureRect.new()
 		_remote_qr.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
@@ -737,10 +741,19 @@ func show_remote_info(enabled: bool, addresses: PackedStringArray, code: String,
 		_remote_text = _label("", 14, INK)
 		_remote_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		column.add_child(_remote_text)
-	var lines: PackedStringArray = []
+		_remote_addresses = VBoxContainer.new()
+		_remote_addresses.add_theme_constant_override("separation", 2)
+		column.add_child(_remote_addresses)
+		_remote_text_after = _label("", 14, INK)
+		_remote_text_after.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		column.add_child(_remote_text_after)
 	var qr: Image = QRCode.to_image(qr_text, 7, 3, INK, Color.WHITE) if enabled and not qr_text.is_empty() else null
 	_remote_qr.texture = ImageTexture.create_from_image(qr) if qr != null else null
 	_remote_qr.visible = qr != null
+	for child in _remote_addresses.get_children():
+		child.queue_free()
+	var lines: PackedStringArray = []
+	var after: PackedStringArray = []
 	if qr != null:
 		lines.append("Наведи камеру телефона на QR-код и открой ссылку —")
 		lines.append("пульт привяжется сам. Или вручную:")
@@ -750,17 +763,34 @@ func show_remote_info(enabled: bool, addresses: PackedStringArray, code: String,
 		lines.append("Меню → Пульт с телефона → Пульт включён.")
 	else:
 		lines.append("1. Телефон в той же домашней Wi-Fi сети.")
-		lines.append("2. Открой в браузере телефона:")
-		for address in addresses:
-			lines.append("      " + address)
-		if addresses.is_empty():
-			lines.append("      (не нашла адрес в домашней сети — проверь Wi-Fi)")
-		lines.append("3. Введи код:  " + code.substr(0, 3) + " " + code.substr(3))
-		lines.append("")
-		lines.append("Привязано телефонов сейчас на связи: %d" % phones)
-		lines.append("Если Windows спросит про доступ к сети — разреши для частной сети.")
+		lines.append("2. Открой в браузере телефона" + (" (● — адрес в QR, нажми другой, чтобы сменить):" if choices.size() > 1 else ":"))
+		var group := ButtonGroup.new()
+		for choice in choices:
+			var pick := CheckBox.new()
+			pick.button_group = group
+			pick.button_pressed = choice["ip"] == chosen_ip
+			pick.text = "%s  —  %s%s" % [choice["url"], choice["network"], "  · VPN/виртуальная" if choice["virtual"] else ""]
+			pick.tooltip_text = "Использовать этот адрес в QR-коде"
+			if choice["virtual"]:
+				pick.add_theme_color_override("font_color", MUTED)
+			var ip: String = choice["ip"]
+			pick.pressed.connect(func():
+				if on_choose.is_valid() and ip != chosen_ip:
+					on_choose.call(ip))
+			_remote_addresses.add_child(pick)
+		if choices.is_empty():
+			_remote_addresses.add_child(_label("      (не нашла адрес в домашней сети — проверь Wi-Fi)", 13, MUTED))
+		for item in skipped:
+			_remote_addresses.add_child(_label("      не подходит: %s (%s) — не домашняя сеть" % [item["network"], item["ip"]], 11, MUTED))
+		after.append("3. Введи код:  " + code.substr(0, 3) + " " + code.substr(3))
+		after.append("")
+		after.append("Привязано телефонов сейчас на связи: %d" % phones)
+		after.append("Если Windows спросит про доступ к сети — разреши для частной сети.")
 	_remote_text.text = "\n".join(lines)
-	remote_window.popup_centered()
+	_remote_text_after.text = "\n".join(after)
+	_remote_text_after.visible = not after.is_empty()
+	if not remote_window.visible:
+		remote_window.popup_centered()
 
 func _build_light_window() -> void:
 	light_window = Window.new()
@@ -949,6 +979,7 @@ func _build_menu() -> void:
 	_submenu(tools, "Частота кадров  ›", "FPSMenu", [["30 FPS · экономно", "fps_30"], ["60 FPS · плавнее", "fps_60"]])
 	_submenu(tools, "Проверка краёв окна  ›", "DiagnosticsMenu", [["Видимые края · 1 кадр · 4 с", "scan_window_visual"], ["Структура · без снимка · 4 с", "scan_window_structure"]])
 	menu.add_separator()
+	_add_menu_item(menu, "Перезапустить Хоши", "restart")
 	_add_menu_item(menu, "Закрыть Хоши", "quit")
 	menu.id_pressed.connect(_on_menu_id)
 

@@ -78,6 +78,7 @@ func read() -> void:
 	app.state.walk_enabled = bool(config.get_value("behavior", "walk", true))
 	app.state.autonomy_enabled = bool(config.get_value("behavior", "autonomy", true))
 	app.remote.tokens = PackedStringArray(config.get_value("remote", "tokens", PackedStringArray()))
+	app.remote.qr_address = str(config.get_value("remote", "qr_address", ""))
 	remote_wanted = bool(config.get_value("remote", "enabled", false))
 	var place_mode: String = str(config.get_value("behavior", "place_mode", "off"))
 	app.state.place_mode = place_mode if place_mode in ["off", "cozy", "smart", "focus"] else "off"
@@ -130,6 +131,7 @@ func save() -> void:
 	config.set_value("render", "fps", app.frame_rate)
 	config.set_value("remote", "enabled", app.remote.enabled)
 	config.set_value("remote", "tokens", app.remote.tokens)
+	config.set_value("remote", "qr_address", app.remote.qr_address)
 	config.set_value("render", "light_position", light_position)
 	for key in ["shadow_strength", "shadow_color", "edge_strength", "edge_color", "edge_width",
 		"outline_strength", "outline_color", "outline_width"]:
