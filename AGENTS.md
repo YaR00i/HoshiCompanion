@@ -160,6 +160,17 @@
   connected (1 s poll, 3 s probe when closed). Privacy (user-approved 2026-09-27): file NAME,
   position, duration, play state, player volume/mute only; never filepath/filedir. Commands only on a human press.
   test_mpc_adapter.gd and test_remote.gd keep mpc/sound in dry_run — tests never touch real apps.
+- scripts/assistant_watch.gd + tools/claude_hook.py: Claude Code async command hooks (user-level
+  ~/.claude/settings.json, user-approved 2026-09-27) post notes to 127.0.0.1:18772/assistant; the
+  receiver accepts only loopback POST /assistant, keeps sessions in memory only and shows a built-in
+  "claude" card (peer -2). Allowed data: event, session id, project FOLDER NAME (never the path),
+  notification type/text, last assistant message. Never user prompts, transcripts or files.
+  Hoshi closed => the hook silently exits. Tests use port 18872.
+  Phone replies (user-approved 2026-09-27, a deliberate exception to "phones press only ready
+  buttons"): a second Stop hook `claude_hook.py --wait` with asyncRewake holds POST {"event":"Wait"}
+  open; "app:claude:reply" {text<=2000, session} releases it with the text, the hook exits 2 and
+  Claude Code wakes Claude with it. UserPromptSubmit/SessionEnd/Hoshi exit release it empty.
+  Phone packets may be up to 8 KB for this. Never change Claude's permission mode from the phone.
 - Command "restart" (menu + phone, flag "confirm"): scripts/hoshi_restart.gd runs
   tools/restart_hoshi.py check (headless import like launch.cmd); only on success it starts the
   detached "relaunch" helper (waits for this PID, max 120 s, then starts the same Godot executable

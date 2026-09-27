@@ -24,6 +24,7 @@ const Adapters = preload("res://scripts/app_adapters.gd")
 const PcActions = preload("res://scripts/pc_actions.gd")
 const SoundOutputs = preload("res://scripts/sound_outputs.gd")
 const MpcAdapter = preload("res://scripts/mpc_adapter.gd")
+const AssistantWatch = preload("res://scripts/assistant_watch.gd")
 
 const HTTP_PORT: int = 18770
 const WS_PORT: int = 18771
@@ -35,7 +36,8 @@ const MAX_PHONES: int = 4
 const VIRTUAL_WORDS: Array = ["vpn", "amnezia", "radmin", "wireguard", "tailscale", "zerotier", "hamachi",
 	"openvpn", "virtual", "vethernet", "hyper-v", "vmware", "virtualbox", "wsl", "tunnel", "teredo"]
 const MAX_PEERS: int = 16
-const MAX_PHONE_PACKET: int = 4096
+## Ответ Claude с телефона — до 2000 символов (кириллица — по 2 байта).
+const MAX_PHONE_PACKET: int = 8192
 const MAX_ADAPTER_PACKET: int = 65536
 const MAX_RUNS_PER_SECOND: float = 8.0
 ## A visible remote page pings every 5 s. A phone that says nothing for this long (its
@@ -55,6 +57,8 @@ var pc = PcActions.new()
 var sound = SoundOutputs.new()
 ## Плеер MPC-BE — встроенный аддон (карточка как у YouTube).
 var mpc = MpcAdapter.new()
+## ИИ-помощники на ПК (Claude Code): записки от хуков, карточка «Claude».
+var assistants = AssistantWatch.new()
 var last_error: String = ""
 ## Адрес (IP) для QR, выбранный в окне «Пульт с телефона»; пусто — первый обычный.
 var qr_address: String = ""
@@ -204,6 +208,7 @@ func tick(delta: float) -> void:
 			_poll_peer(key, dt)
 	mpc.tick(dt, phone_count() > 0)
 	_sync_mpc()
+	_sync_assistants()
 	if not sound.notice.is_empty():
 		_say(sound.notice)
 		sound.notice = ""
@@ -441,6 +446,10 @@ func run(command: String, args: Variant = {}) -> String:
 			return "unknown_app_command"
 		if int(target["peer"]) == MpcAdapter.PEER:
 			return mpc.run(target["name"], _clean_args(args))
+		if int(target["peer"]) == AssistantWatch.PEER:
+			# Ответ Claude с телефона (решение 2026-09-27): длиннее обычных аргументов.
+			var reply: Dictionary = args if args is Dictionary else {}
+			return assistants.reply(str(reply.get("text", "")), str(reply.get("session", "")))
 		_send(int(target["peer"]), {"op": "run", "command": target["name"], "args": _clean_args(args)})
 		return ""
 	if not Commands.allows(command, "remote"):
@@ -459,6 +468,15 @@ func _sync_mpc() -> void:
 		adapters.announce(MpcAdapter.PEER, mpc.announcement())
 	else:
 		adapters.update_state(MpcAdapter.PEER, mpc.card_state())
+
+## Claude работал — его карточка на пульте; сессий нет — карточки нет.
+func _sync_assistants() -> void:
+	if not assistants.active():
+		adapters.drop_peer(AssistantWatch.PEER)
+	elif not adapters.adapters.has(AssistantWatch.ID):
+		adapters.announce(AssistantWatch.PEER, assistants.announcement())
+	else:
+		adapters.update_state(AssistantWatch.PEER, assistants.card_state())
 
 func _say(text: String) -> void:
 	var app = _app()

@@ -134,6 +134,9 @@ func _ready() -> void:
 	if settings.remote_wanted and not _test_mode and not host.headless:
 		remote.start()
 		ui.remote_enabled = remote.enabled
+	# Записки Claude Code (хук) — только с этого ПК; работает и при выключенном пульте.
+	if not _test_mode and not host.headless:
+		remote.assistants.start()
 	if args.has("--chat-voice-bridge"):
 		chat_voice_bridge.start()
 	ui.model_ready(stage.model_name(), result)
@@ -243,6 +246,7 @@ func _process(delta: float) -> void:
 	# Звуковой помощник отвечает не сразу; работает и при выключенном пульте (окно на ПК).
 	remote.sound.tick(dt, remote.phone_count() > 0)
 	_tick_restart(dt)
+	remote.assistants.tick(dt)
 	# Код одноразовый: после привязки телефона окно сразу показывает новый QR.
 	if ui.remote_window != null and ui.remote_window.visible and ui.remote_code_version != remote.code_version:
 		_show_remote_info()
@@ -875,6 +879,7 @@ func _exit_tree() -> void:
 	playground.ledge_probe.close()
 	focus.stop()
 	remote.stop()
+	remote.assistants.stop()
 	surface_probe.close()
 
 # --- Тонкие переходники: старые имена, которыми пользуются опоры и тесты ---

@@ -90,6 +90,13 @@
   .item .title { font-size: 13px; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .item .sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .item.current .title::before { content: "▶ "; color: var(--gold); }
+  .answer { margin-top: 10px; padding: 10px 12px; border-radius: 14px; background: var(--paper); border: 1px solid var(--line);
+    font-size: 13px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 45vh; overflow-y: auto; }
+  .quick-replies { margin-top: 10px; }
+  .reply { display: flex; gap: 8px; align-items: flex-end; margin-top: 10px; }
+  .reply textarea { flex: 1; min-height: 44px; max-height: 30vh; resize: vertical; padding: 10px 12px; border-radius: 14px;
+    border: 1px solid var(--line); background: #fff; color: var(--ink); font: inherit; font-size: 14px; }
+  .reply button { padding: 11px 16px; border-radius: 999px; background: var(--plum); color: #fff; font-weight: 600; }
   .empty { text-align: center; color: var(--muted); font-size: 13px; padding: 18px 10px 4px; }
 
   /* вкладки */
@@ -250,7 +257,8 @@ function connect() {
     else if (m.op === "state") { state = m; online(true, (m.hoshi && m.hoshi.status) || "На связи"); renderHoshi(); renderSound(); renderApps(); renderPending(); }
     else if (m.op === "ran" && !m.ok) toast({not_allowed: "С телефона так нельзя", missing: "Не нашла этот файл на компьютере",
       nothing_to_cancel: "Нечего отменять", need_confirm: "Нужно подтвердить",
-      not_available: "Это устройство сейчас не на связи"}[m.reason] || "Сейчас не получилось");
+      not_available: "Это устройство сейчас не на связи",
+      not_waiting: "Claude сейчас не ждёт ответа — напиши, когда он закончит", unknown_session: "Эта сессия Claude уже закрыта"}[m.reason] || "Сейчас не получилось");
     else if (m.op === "error") {
       if (m.reason === "need_pairing") {
         token = null; try { localStorage.removeItem("hoshi-token"); } catch (e) {}
@@ -303,6 +311,9 @@ function selected() { return new Set((state.hoshi && state.hoshi.selected) || []
 
 function renderHoshi() {
   const on = selected();
+  const key = JSON.stringify([catalog.quick, catalog.groups, [...on]]);
+  if (renderHoshi.key === key) return; // ничего не поменялось — не трогаем страницу
+  renderHoshi.key = key;
   const quick = $("quick"); quick.textContent = "";
   for (const item of catalog.quick || []) {
     const b = el("button", "round"); const face = el("span", "face", item.icon || "✦");
@@ -369,10 +380,13 @@ function renderPending() {
 // Карточка «Звук»: куда идёт звук компьютера. Кнопки задаются на ПК
 // (меню Хоши → Пульт с телефона → Звук на пульте); выключенное устройство — серое.
 function renderSound() {
-  const root = $("sound"); root.textContent = "";
+  const root = $("sound");
   const items = catalog.sound || [];
-  if (!items.length) return;
   const s = state.sound || {};
+  const key = JSON.stringify([items, s]);
+  if (renderSound.key === key) return; // ничего не поменялось — не трогаем страницу
+  renderSound.key = key; root.textContent = "";
+  if (!items.length) return;
   const available = new Set(s.available || []);
   const card = el("div", "app");
   card.append(el("div", "app-head", "Звук"));
@@ -400,6 +414,7 @@ function clock(s) {
 // чтобы раскрытые списки не сворачивались и не мигали.
 const appViews = {};      // id -> {signature, card, fill, times, buttons}
 const openLists = {};     // "app:list" -> раскрыт ли список
+const drafts = {};        // app id -> недописанный ответ (Claude), переживает перестройку карточки
 
 function renderApps() {
   const root = $("apps");
@@ -410,15 +425,28 @@ function renderApps() {
     return;
   }
   const alive = new Set(apps.map((a) => a.id));
-  for (const id in appViews) if (!alive.has(id)) delete appViews[id];
-  root.textContent = "";
+  for (const id in appViews) if (!alive.has(id)) { appViews[id].card.remove(); delete appViews[id]; }
+  // Карточки не вынимаем из страницы без нужды: иначе окошко ответа Claude и сама
+  // страница теряют прокрутку при каждом обновлении (время плеера — раз в секунду).
+  for (const node of [...root.children]) if (!Object.values(appViews).some((v) => v.card === node)) node.remove();
+  let previous = null;
   for (const app of apps) {
     const s = app.state || {};
-    const signature = JSON.stringify([app.commands, s.title, s.subtitle, s.thumbnail, s.hint, s.lists]);
+    const signature = JSON.stringify([app.commands, s.title, s.subtitle, s.thumbnail, s.hint, s.lists, s.text, s.can_reply, s.session]);
     let view = appViews[app.id];
-    if (!view || view.signature !== signature) view = appViews[app.id] = buildApp(app, signature);
+    if (!view || view.signature !== signature) {
+      const fresh = buildApp(app, signature);
+      const scroll = view && view.card.querySelector(".answer");
+      const kept = scroll ? scroll.scrollTop : 0;
+      if (view) view.card.replaceWith(fresh.card);
+      view = appViews[app.id] = fresh;
+      const again = view.card.querySelector(".answer");
+      if (again && kept) again.scrollTop = kept;
+    }
     updateApp(view, app);
-    root.append(view.card);
+    const place = previous ? previous.nextSibling : root.firstChild;
+    if (view.card !== place) root.insertBefore(view.card, place);
+    previous = view.card;
   }
 }
 
@@ -429,12 +457,34 @@ function buildApp(app, signature) {
   const head = el("div", "app-head"); view.playing = el("span", "");
   head.append(el("span", "", app.title), view.playing); card.append(head);
   if (s.title) {
-    const now = el("div", "now"); const thumb = el("div", "thumb");
-    if (s.thumbnail) thumb.style.backgroundImage = `url("${String(s.thumbnail).replace(/"/g, "")}")`;
+    const now = el("div", "now");
+    if (s.thumbnail) { const thumb = el("div", "thumb"); thumb.style.backgroundImage = `url("${String(s.thumbnail).replace(/"/g, "")}")`; now.append(thumb); }
     const text = el("div", "text"); text.append(el("div", "title", s.title)); if (s.subtitle) text.append(el("div", "sub", s.subtitle));
-    now.append(thumb, text); card.append(now);
+    now.append(text); card.append(now);
   } else card.append(el("div", "empty", s.hint || "Ничего не играет"));
   const byName = {}; for (const c of app.commands) byName[c.command.split(":")[2]] = c;
+  if (s.text) card.append(el("div", "answer", s.text));
+  // Ответ Claude с телефона: поле есть, только пока Claude ждёт (его хук на связи).
+  if (s.can_reply && byName.reply) {
+    const box = el("div", "reply"); const input = el("textarea"); const send = el("button", "", "Отправить");
+    input.placeholder = "Ответить Claude…"; input.maxLength = 2000; input.value = drafts[app.id] || "";
+    input.addEventListener("input", () => { drafts[app.id] = input.value; });
+    send.onclick = () => {
+      const text = input.value.trim(); if (!text) return;
+      run(byName.reply.command, {text, session: s.session});
+      drafts[app.id] = ""; input.value = ""; toast("Отправила Claude");
+    };
+    // Быстрые ответы: «!» — пинг (Claude отвечает одной строкой, ничего не начиная; см. CLAUDE.md).
+    const quick = el("div", "chips quick-replies");
+    // «💾 Коммить» — единственная кнопка, которая разрешает локальный коммит (правило в CLAUDE.md).
+    for (const [label, text] of [["👋 Ты тут?", "!"], ["▶ Продолжай", "Продолжай"], ["✓ Ок", "Ок"], ["💾 Коммить", "💾 Коммить (кнопка пульта)"]]) {
+      const chip = el("button", "chip", label);
+      chip.onclick = () => { run(byName.reply.command, {text, session: s.session}); toast("Отправила Claude"); };
+      quick.append(chip);
+    }
+    card.append(quick);
+    box.append(input, send); card.append(box);
+  }
   if (s.title) {
     const prog = el("div", "progress"); const bar = el("div", "bar"); view.fill = el("i"); bar.append(view.fill);
     if (byName.seek_to) {
@@ -480,7 +530,7 @@ function buildApp(app, signature) {
 
 function updateApp(view, app) {
   const s = app.state || {}, icons = s.icons || {}, active = new Set(s.active || []);
-  view.playing.textContent = s.playing ? "▶ играет" : (s.title ? "⏸ пауза" : "");
+  view.playing.textContent = s.badge !== undefined ? s.badge : (s.playing ? "▶ играет" : (s.title ? "⏸ пауза" : ""));
   view.duration = s.duration || 0;
   if (view.progress) {
     view.progress.classList.toggle("hidden", !(s.duration > 0));
