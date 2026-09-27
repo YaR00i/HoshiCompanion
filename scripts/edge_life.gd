@@ -18,6 +18,9 @@ var weights: Dictionary = {
 	"fold": 0.0,
 	"admire_star": 0.0,
 }
+## Linear blend state behind `weights`; the published weights are eased (smoothstep)
+## so every gesture starts and settles softly instead of jumping in at full speed.
+var _blend: Dictionary = {}
 var sketch_progress: float = 0.0
 var gesture_progress: Dictionary = {}
 var _gesture_age: Dictionary = {}
@@ -34,6 +37,10 @@ var _forced_kind: String = ""
 var _forced_left: float = 0.0
 var _forced_release: float = 0.0
 var _previous_goal: String = "calm"
+## Rhythmic gestures fade out slower when they simply end (no one interrupted),
+## so she settles instead of stopping.
+const FADE_RATE: float = 2.6
+const GENTLE_FADE_RATE: float = 1.1
 var _rng := RandomNumberGenerator.new()
 
 func seed_random(value: int) -> void:
@@ -43,6 +50,7 @@ func tick(delta: float, state, suspended: bool = false, cozy: bool = false) -> D
 	var dt: float = clampf(delta, 0.0, 0.1)
 	var allowed: bool = state.posture.kind == "edge" and state.posture.mode == "seated" and state.motion_enabled and not state.dozing and not suspended
 	var goal: String = "calm"
+	var interrupted: bool = not allowed or state.notice_weight > 0.1 or state.welcome_weight > 0.1 or state.pet_weight > 0.1 or state.wave_weight > 0.1
 	if (state.notice_weight > 0.1 or state.welcome_weight > 0.1 or state.pet_weight > 0.1 or state.wave_weight > 0.1) and forced_active():
 		cancel_forced()
 	if allowed and not cozy and _forced_kind in ["sketch", "fold", "admire_star"]:
@@ -69,8 +77,8 @@ func tick(delta: float, state, suspended: bool = false, cozy: bool = false) -> D
 				choices.erase(_last)
 			kind = choices[_rng.randi_range(0, choices.size() - 1)]
 			_last = kind
-			_left = _duration(kind)
-			_wait = _left + _pause(state.activity)
+			_left = _run_length(kind, state.activity, cozy)
+			_wait = _left + _pause(state.activity, kind)
 		if _left > 0.0:
 			goal = kind
 	else:
@@ -81,7 +89,8 @@ func tick(delta: float, state, suspended: bool = false, cozy: bool = false) -> D
 	if state.notice_weight > 0.1 or state.welcome_weight > 0.1 or state.pet_weight > 0.1 or state.wave_weight > 0.1:
 		goal = "calm"
 	if goal != _previous_goal:
-		if weights.has(goal) and goal != "sketch":
+		# A loop that is still visible keeps its phase, so coming back to it never pops.
+		if weights.has(goal) and goal != "sketch" and not (SeatedMotion.loops(goal) and float(weights[goal]) > 0.05):
 			_gesture_age[goal] = 0.0
 		_previous_goal = goal
 	if goal == "sketch":
@@ -108,20 +117,30 @@ func tick(delta: float, state, suspended: bool = false, cozy: bool = false) -> D
 	for gesture in weights:
 		if gesture == "sketch":
 			continue
-		if gesture == goal:
+		var looping: bool = SeatedMotion.loops(gesture)
+		if looping and (gesture == goal or float(weights[gesture]) >= 0.01):
+			# Loops keep running while they play AND while they fade out.
+			_gesture_age[gesture] = fposmod(float(_gesture_age.get(gesture, 0.0)) + dt, _duration(gesture))
+		elif gesture == goal:
 			_gesture_age[gesture] = minf(float(_gesture_age.get(gesture, 0.0)) + dt, _duration(gesture))
 		elif float(weights[gesture]) < 0.01:
 			_gesture_age[gesture] = 0.0
 		gesture_progress[gesture] = clampf(float(_gesture_age.get(gesture, 0.0)) / _duration(gesture), 0.0, 1.0)
 	for key in weights:
-		weights[key] = lerpf(float(weights[key]), 1.0 if key == goal else 0.0, 1.0 - exp(-dt * 2.6))
+		var rate: float = FADE_RATE
+		if key != goal and goal == "calm" and not interrupted and SeatedMotion.loops(str(key)):
+			rate = GENTLE_FADE_RATE
+		var raw: float = lerpf(float(_blend.get(key, 0.0)), 1.0 if key == goal else 0.0, 1.0 - exp(-dt * rate))
+		_blend[key] = raw
+		weights[key] = smoothstep(0.0, 1.0, raw)
 	return weights.duplicate()
 
 func request_gesture(value: String) -> bool:
 	if not weights.has(value):
 		return false
 	_forced_kind = value
-	_gesture_age[value] = 0.0
+	if not (SeatedMotion.loops(value) and float(weights[value]) > 0.05):
+		_gesture_age[value] = 0.0
 	_forced_left = _forced_duration(value)
 	_forced_release = 0.0
 	if value == "sketch":
@@ -180,9 +199,27 @@ func _duration(value: String) -> float:
 		return float(SeatedMotion.DURATIONS[value])
 	return 3.0
 
-func _pause(activity: String) -> float:
+## How long one autonomous run lasts. Loops repeat a few times instead of playing once;
+## in the quiet corner the sway goes on for a long, calm while.
+func _run_length(value: String, activity: String, cozy: bool = false) -> float:
+	var length: float = _duration(value)
+	if not SeatedMotion.loops(value):
+		return length
+	var cycles: int = 1
+	if value == "sway":
+		match activity:
+			"quiet": cycles = _rng.randi_range(5, 8) if cozy else _rng.randi_range(4, 7)
+			"playful": cycles = _rng.randi_range(1, 2)
+			_: cycles = _rng.randi_range(2, 4)
+	else:
+		cycles = _rng.randi_range(1, 2)
+	return length * float(cycles)
+
+func _pause(activity: String, value: String = "") -> float:
 	match activity:
-		"quiet": return _rng.randf_range(18.0, 32.0)
+		"quiet":
+			# After a long sway she just sits and breathes a little before the next thing.
+			return _rng.randf_range(6.0, 12.0) if value == "sway" else _rng.randf_range(18.0, 32.0)
 		"playful": return _rng.randf_range(7.0, 15.0)
 	return _rng.randf_range(12.0, 24.0)
 

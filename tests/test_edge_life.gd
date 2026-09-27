@@ -119,6 +119,8 @@ func _run() -> void:
 	app.stage.edge_life._left = 0.0
 	app.stage.edge_life._wait = 0.0
 	app.stage.edge_life.seed_random(909)
+	# A gesture left over from the normal mode may still be fading out; count quiet choices only.
+	frames(45)
 	var quiet_seen: Dictionary = {}
 	var quiet_only_soft: bool = true
 	for i in range(12000):

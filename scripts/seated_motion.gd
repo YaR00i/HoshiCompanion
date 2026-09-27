@@ -6,16 +6,21 @@ const SketchMotion = preload("res://scripts/sketch_motion.gd")
 const PropTracks = preload("res://scripts/prop_track_schema.gd")
 
 const DURATIONS := {
-	"swing": 8.0,
+	"swing": 7.25,
 	"lean": 14.0,
 	"peek": 4.0,
-	"balance": 3.5,
-	"sway": 6.5,
-	"hum": 5.5,
-	"nod": 3.8,
+	"balance": 3.6,
+	"sway": 8.0,
+	"hum": 5.35,
+	"nod": 5.25,
 	"fold": 8.5,
 	"admire_star": 3.6,
 }
+
+## Rhythmic clips are seamless loops: they repeat while the gesture lasts and keep
+## moving while they fade out, so there is never a frozen last frame.
+## tools/rebake_seated_loops.gd rebuilds them from the reference motion in edge_pose.gd.
+const LOOPING: Array[String] = ["sway", "swing", "hum", "nod", "balance"]
 
 const CLIPS := {
 	"swing": preload("res://animations/swing.tres"),
@@ -34,6 +39,9 @@ static func kinds() -> Array[String]:
 	for kind in DURATIONS:
 		result.append(kind)
 	return result
+
+static func loops(kind: String) -> bool:
+	return kind in LOOPING
 
 static func path_for(kind: String) -> String:
 	return "res://animations/%s.tres" % kind if DURATIONS.has(kind) else ""

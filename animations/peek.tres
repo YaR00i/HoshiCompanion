@@ -60,6 +60,6 @@ tracks/6/type = "rotation_3d"
 tracks/6/imported = false
 tracks/6/enabled = true
 tracks/6/path = NodePath("Bones/head/Голова")
-tracks/6/interp = 1
+tracks/6/interp = 2
 tracks/6/loop_wrap = true
 tracks/6/keys = PackedFloat32Array(0, 1, 0.12182759, 0.02594583, -0.0034707484, 0.9922061, 4, 1, 0.12201917, 0.025030715, -0.003460857, 0.99220604)

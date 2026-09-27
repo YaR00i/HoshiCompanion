@@ -1,6 +1,8 @@
 extends SceneTree
 ## Produces readable, reduced copies of authored clips in .workspace for review.
 ## Never overwrites the originals or their saved user corrections.
+## Error is measured for LINEAR interpolation: do not apply its output to the looping
+## cubic seated clips (see docs/ANIMATION_WORKSHOP_RU.md, "Плавность и петли").
 
 const SketchMotion = preload("res://scripts/sketch_motion.gd")
 const PropTracks = preload("res://scripts/prop_track_schema.gd")

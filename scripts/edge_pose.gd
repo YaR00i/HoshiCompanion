@@ -8,6 +8,14 @@ var seat_point: Vector3 = Vector3.ZERO
 # Separate ledge contact calibration: do not alter the accepted floor seat.
 var seat_offset_ratio: float = 0.078
 var ankle_targets: Array[Vector3] = []
+# Rhythm of the reference (procedural) seated gestures. Every frequency is a whole
+# number of cycles per clip length in seated_motion.gd, so baked clips loop seamlessly.
+const SWAY_W: float = TAU * 2.0 / 8.0
+const SWAY_SLOW_W: float = TAU / 8.0
+const SWING_W: float = TAU * 3.0 / 7.25
+const HUM_W: float = TAU * 2.0 / 5.35
+const NOD_W: float = TAU / 5.25
+const BALANCE_W: float = TAU / 3.6
 
 func setup(floor_driver) -> void:
 	driver = floor_driver
@@ -66,15 +74,15 @@ func apply(amount: float, time: float, wave: float, motion: bool, life: Dictiona
 	var fold_show: float = smoothstep(0.70, 0.83, fold_progress) * (1.0 - smoothstep(0.93, 1.0, fold_progress))
 	var admire_progress: float = clampf(float(life.get("admire_progress", 0.0)), 0.0, 1.0)
 	var admire_show: float = smoothstep(0.0, 0.23, admire_progress) * (1.0 - smoothstep(0.80, 1.0, admire_progress))
-	var balance_wave: float = sin(time * 1.75) * balance
+	var balance_wave: float = sin(time * BALANCE_W) * balance
 	# Two close but non-identical waves keep sway from reading as a metronome.
-	var sway_spine: float = (sin(time * 1.55) * 0.82 + sin(time * 0.73 + 0.65) * 0.18) * sway
-	var sway_chest: float = sin(time * 1.55 - 0.20) * sway
-	var sway_head: float = sin(time * 1.55 - 0.38) * sway
-	var hum_side: float = sin(time * 2.35 + 0.15) * hum
-	var hum_bob: float = sin(time * 4.70 + 0.55) * hum
-	var nod_cycle: float = sin(time * 4.80) * (0.82 + sin(time * 1.15 + 0.4) * 0.18) * nod
-	var nod_side: float = sin(time * 2.40 + 0.9) * nod
+	var sway_spine: float = (sin(time * SWAY_W) * 0.82 + sin(time * SWAY_SLOW_W + 0.65) * 0.18) * sway
+	var sway_chest: float = sin(time * SWAY_W - 0.20) * sway
+	var sway_head: float = sin(time * SWAY_W - 0.38) * sway
+	var hum_side: float = sin(time * HUM_W + 0.15) * hum
+	var hum_bob: float = sin(time * HUM_W * 2.0 + 0.55) * hum
+	var nod_cycle: float = sin(time * NOD_W * 4.0) * (0.82 + sin(time * NOD_W + 0.4) * 0.18) * nod
+	var nod_side: float = sin(time * NOD_W * 2.0 + 0.9) * nod
 	var h: float = driver.height_m
 	var skel: Skeleton3D = driver.skeleton
 	var hip: Vector3 = driver.hips_rest
@@ -100,8 +108,8 @@ func apply(amount: float, time: float, wave: float, motion: bool, life: Dictiona
 		peek * 14.0 + lean * 9.0 + hum_bob * 0.35 + nod_cycle * 3.80 + sketch * float(sketch_channels.get("head_pitch", 11.0 * (1.0 - sketch_show) - 3.0 * sketch_show)) + fold * (10.0 * (1.0 - fold_show) - 4.0 * fold_show) - admire_star * admire_show * 3.0 + head_correction,
 		peek * 3.0 - balance_wave * 2.0 - hum_side * 0.18 + nod_side * 0.35,
 		-balance_wave * 2.2 - sway_head * 0.95 - hum_side * 0.12 - nod_side * 0.25))
-	var left_hum: float = sin(time * 4.70 + 0.20) * hum
-	var right_hum: float = sin(time * 4.70 + 0.55) * hum
+	var left_hum: float = sin(time * HUM_W * 2.0 + 0.20) * hum
+	var right_hum: float = sin(time * HUM_W * 2.0 + 0.55) * hum
 	driver._add_rotation("leftShoulder", Vector3(-left_hum * 0.35 - nod_cycle * 0.18, 0.0, -left_hum * 0.55))
 	driver._add_rotation("rightShoulder", Vector3(-right_hum * 0.35 - nod_cycle * 0.18, 0.0, right_hum * 0.55))
 	ankle_targets.clear()
@@ -111,11 +119,11 @@ func apply(amount: float, time: float, wave: float, motion: bool, life: Dictiona
 		var a: float = float(leg["a"])
 		var b: float = float(leg["b"])
 		var kick: float = (0.10 + sin(time * 1.3 + float(side) * 0.8) * 0.055) if motion else 0.10
-		kick += sin(time * 2.6 + float(side) * PI) * 0.28 * swing
+		kick += sin(time * SWING_W + float(side) * PI) * 0.28 * swing
 		# Sway carries a relaxed, slower counter-swing through the dangling legs.
 		# It stays well below the dedicated playful "swing" gesture.
-		kick += sin(time * 1.55 + float(side) * PI) * 0.150 * sway
-		kick += sin(time * 2.35 + float(side) * 0.65) * 0.006 * hum
+		kick += sin(time * SWAY_W + float(side) * PI) * 0.125 * sway
+		kick += sin(time * HUM_W + float(side) * 0.65) * 0.006 * hum
 		var endpoint: Vector3 = start + Vector3(0.0, -a * 0.045 - b * cos(kick), a * 0.999 + b * sin(kick))
 		var target: Vector3 = (leg["rest_ankle"] as Vector3).lerp(endpoint, p)
 		ankle_targets.append(target)
