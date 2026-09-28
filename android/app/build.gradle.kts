@@ -13,8 +13,8 @@ android {
         targetSdk = 35
         // Поднимать при каждой новой сборке: по нему приложение узнаёт, что пора обновиться
         // (tools/dev.py android читает его и кладёт в version.json рядом с APK).
-        versionCode = 10
-        versionName = "0.10"
+        versionCode = 11
+        versionName = "0.11"
     }
 
     buildTypes {

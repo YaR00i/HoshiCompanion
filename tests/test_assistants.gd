@@ -68,6 +68,9 @@ func _run() -> void:
 	_note(watch, "Stop", "0123abcd-4567-89ef-0123-456789abcdef", {"app": "codex", "text": "Готово в Codex"})
 	_check(watch.card_state("codex")["text"] == "Готово в Codex" and watch.card_state()["session"] == "s1" and watch.sessions.has("codex:0123abcd-4567-89ef-0123-456789abcdef"), "Codex answer stays on its own card")
 	_check(watch.clouds().size() == 2 and watch.clouds()[0]["app"] == "claude" and watch.clouds()[1]["app"] == "codex", "each assistant has its own cloud")
+	_note(watch, "UserPromptSubmit", "0123abcd-4567-89ef-0123-456789abcdef", {"app": "codex"})
+	_note(watch, "Interrupt", "0123abcd-4567-89ef-0123-456789abcdef", {"app": "codex"})
+	_check(watch.card_state("codex")["badge"] == "⚠ прервался" and watch.card_state("codex")["text"].contains("остановлен") and watch.card_state()["session"] == "s1", "an interrupted Codex turn is reported without changing Claude")
 	watch.handle_event({"app": "codex", "event": "SessionEnd", "session": "0123abcd-4567-89ef-0123-456789abcdef"})
 	_check(not watch.active("codex") and watch.active("claude"), "closing Codex does not close Claude")
 	# Облачко над Хоши: одно на помощника; «ждёт» важнее «работает»; ✓ тает.

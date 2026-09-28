@@ -14,6 +14,11 @@
 [ext_resource type="Animation" path="res://animations/nod.tres" id="12"]
 [ext_resource type="Animation" path="res://animations/fold.tres" id="13"]
 [ext_resource type="Animation" path="res://animations/admire_star.tres" id="14"]
+[ext_resource type="Animation" path="res://animations/touch_leg.tres" id="touch_leg"]
+[ext_resource type="Animation" path="res://animations/touch_arm.tres" id="touch_arm"]
+[ext_resource type="Animation" path="res://animations/touch_belly.tres" id="touch_belly"]
+[ext_resource type="Animation" path="res://animations/touch_chest.tres" id="touch_chest"]
+[ext_resource type="Animation" path="res://animations/touch_hips.tres" id="touch_hips"]
 
 [sub_resource type="Animation" id="Animation_vnn87"]
 length = 0.001
@@ -58,7 +63,12 @@ _data = {
 &"hum": ExtResource("11"),
 &"nod": ExtResource("12"),
 &"fold": ExtResource("13"),
-&"admire_star": ExtResource("14")
+&"admire_star": ExtResource("14"),
+&"touch_leg": ExtResource("touch_leg"),
+&"touch_arm": ExtResource("touch_arm"),
+&"touch_belly": ExtResource("touch_belly"),
+&"touch_chest": ExtResource("touch_chest"),
+&"touch_hips": ExtResource("touch_hips")
 }
 
 [node name="HoshiAnimationAuthoring" type="Node3D" unique_id=1143414317]
@@ -163,6 +173,139 @@ script = ExtResource("5")
 [node name="spine" type="Node3D" parent="Bones"]
 [node name="Спина" type="Marker3D" parent="Bones/spine"]
 gizmo_extents = 0.012
+script = ExtResource("5")
+
+[node name="hips" type="Node3D" parent="Bones"]
+[node name="Таз" type="Marker3D" parent="Bones/hips"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="leftUpperLeg" type="Node3D" parent="Bones"]
+[node name="Левое бедро" type="Marker3D" parent="Bones/leftUpperLeg"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="rightUpperLeg" type="Node3D" parent="Bones"]
+[node name="Правое бедро" type="Marker3D" parent="Bones/rightUpperLeg"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="leftThumbMetacarpal" type="Node3D" parent="Bones"]
+[node name="Левый большой 1" type="Marker3D" parent="Bones/leftThumbMetacarpal"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="leftThumbProximal" type="Node3D" parent="Bones"]
+[node name="Левый большой 2" type="Marker3D" parent="Bones/leftThumbProximal"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="leftThumbDistal" type="Node3D" parent="Bones"]
+[node name="Левый большой 3" type="Marker3D" parent="Bones/leftThumbDistal"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="leftIndexProximal" type="Node3D" parent="Bones"]
+[node name="Левый указательный 1" type="Marker3D" parent="Bones/leftIndexProximal"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="leftIndexIntermediate" type="Node3D" parent="Bones"]
+[node name="Левый указательный 2" type="Marker3D" parent="Bones/leftIndexIntermediate"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="leftIndexDistal" type="Node3D" parent="Bones"]
+[node name="Левый указательный 3" type="Marker3D" parent="Bones/leftIndexDistal"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="leftMiddleProximal" type="Node3D" parent="Bones"]
+[node name="Левый средний 1" type="Marker3D" parent="Bones/leftMiddleProximal"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="leftMiddleIntermediate" type="Node3D" parent="Bones"]
+[node name="Левый средний 2" type="Marker3D" parent="Bones/leftMiddleIntermediate"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="leftMiddleDistal" type="Node3D" parent="Bones"]
+[node name="Левый средний 3" type="Marker3D" parent="Bones/leftMiddleDistal"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="leftRingProximal" type="Node3D" parent="Bones"]
+[node name="Левый безымянный 1" type="Marker3D" parent="Bones/leftRingProximal"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="leftRingIntermediate" type="Node3D" parent="Bones"]
+[node name="Левый безымянный 2" type="Marker3D" parent="Bones/leftRingIntermediate"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="leftRingDistal" type="Node3D" parent="Bones"]
+[node name="Левый безымянный 3" type="Marker3D" parent="Bones/leftRingDistal"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="leftLittleProximal" type="Node3D" parent="Bones"]
+[node name="Левый мизинец 1" type="Marker3D" parent="Bones/leftLittleProximal"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="leftLittleIntermediate" type="Node3D" parent="Bones"]
+[node name="Левый мизинец 2" type="Marker3D" parent="Bones/leftLittleIntermediate"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="leftLittleDistal" type="Node3D" parent="Bones"]
+[node name="Левый мизинец 3" type="Marker3D" parent="Bones/leftLittleDistal"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="rightThumbMetacarpal" type="Node3D" parent="Bones"]
+[node name="Правый большой 1" type="Marker3D" parent="Bones/rightThumbMetacarpal"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="rightThumbProximal" type="Node3D" parent="Bones"]
+[node name="Правый большой 2" type="Marker3D" parent="Bones/rightThumbProximal"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="rightThumbDistal" type="Node3D" parent="Bones"]
+[node name="Правый большой 3" type="Marker3D" parent="Bones/rightThumbDistal"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="rightIndexProximal" type="Node3D" parent="Bones"]
+[node name="Правый указательный 1" type="Marker3D" parent="Bones/rightIndexProximal"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="rightIndexIntermediate" type="Node3D" parent="Bones"]
+[node name="Правый указательный 2" type="Marker3D" parent="Bones/rightIndexIntermediate"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="rightIndexDistal" type="Node3D" parent="Bones"]
+[node name="Правый указательный 3" type="Marker3D" parent="Bones/rightIndexDistal"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="rightMiddleProximal" type="Node3D" parent="Bones"]
+[node name="Правый средний 1" type="Marker3D" parent="Bones/rightMiddleProximal"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="rightMiddleIntermediate" type="Node3D" parent="Bones"]
+[node name="Правый средний 2" type="Marker3D" parent="Bones/rightMiddleIntermediate"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="rightMiddleDistal" type="Node3D" parent="Bones"]
+[node name="Правый средний 3" type="Marker3D" parent="Bones/rightMiddleDistal"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="rightRingProximal" type="Node3D" parent="Bones"]
+[node name="Правый безымянный 1" type="Marker3D" parent="Bones/rightRingProximal"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="rightRingIntermediate" type="Node3D" parent="Bones"]
+[node name="Правый безымянный 2" type="Marker3D" parent="Bones/rightRingIntermediate"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="rightRingDistal" type="Node3D" parent="Bones"]
+[node name="Правый безымянный 3" type="Marker3D" parent="Bones/rightRingDistal"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="rightLittleProximal" type="Node3D" parent="Bones"]
+[node name="Правый мизинец 1" type="Marker3D" parent="Bones/rightLittleProximal"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="rightLittleIntermediate" type="Node3D" parent="Bones"]
+[node name="Правый мизинец 2" type="Marker3D" parent="Bones/rightLittleIntermediate"]
+gizmo_extents = 0.008
+script = ExtResource("5")
+[node name="rightLittleDistal" type="Node3D" parent="Bones"]
+[node name="Правый мизинец 3" type="Marker3D" parent="Bones/rightLittleDistal"]
+gizmo_extents = 0.008
 script = ExtResource("5")
 
 [node name="Props" type="Node3D" parent="." unique_id=594621729]

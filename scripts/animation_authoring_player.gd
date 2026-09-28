@@ -5,13 +5,14 @@ extends AnimationPlayer
 const SketchMotion = preload("res://scripts/sketch_motion.gd")
 const SeatedMotion = preload("res://scripts/seated_motion.gd")
 const PropTracks = preload("res://scripts/prop_track_schema.gd")
+const TouchMotion = preload("res://scripts/touch_motion.gd")
 
 @export_tool_button("Проверить и сохранить выбранный клип", "Save") var save_clip = save_animation
 @export_tool_button("Показать ключи выбранного клипа", "Animation") var show_keys = show_key_map
 
 func selected_clip_name() -> String:
 	var selected: String = assigned_animation
-	return selected if selected == "sketch" or SeatedMotion.DURATIONS.has(selected) else ""
+	return selected if selected == "sketch" or SeatedMotion.DURATIONS.has(selected) or TouchMotion.is_touch(selected) else ""
 
 func show_key_map() -> void:
 	if not Engine.is_editor_hint():
@@ -121,8 +122,8 @@ func save_animation() -> bool:
 		_notify("Сначала выбери клип на шкале анимации.", true)
 		return false
 	var clip: Animation = get_animation(selected)
-	var path: String = SketchMotion.CLIP_PATH if selected == "sketch" else SeatedMotion.path_for(selected)
-	var problem: String = SketchMotion.validation_error(clip) if selected == "sketch" else SeatedMotion.validation_error(selected, clip)
+	var path: String = SketchMotion.CLIP_PATH if selected == "sketch" else (TouchMotion.path_for(selected) if TouchMotion.is_touch(selected) else SeatedMotion.path_for(selected))
+	var problem: String = SketchMotion.validation_error(clip) if selected == "sketch" else (TouchMotion.validation_error(selected, clip) if TouchMotion.is_touch(selected) else SeatedMotion.validation_error(selected, clip))
 	if not problem.is_empty():
 		_notify("Клип не сохранён: " + problem, true)
 		return false

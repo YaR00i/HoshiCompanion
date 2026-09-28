@@ -24,6 +24,9 @@ class CodexIntegrationTests(unittest.TestCase):
         message = codex_hook.clean(event)
         self.assertEqual(message['folder'], 'HoshiCompanion')
         self.assertNotIn('PRIVATE', json.dumps(message))
+        interrupted = codex_hook.clean(dict(event, hook_event_name='Interrupt'))
+        self.assertEqual(interrupted['event'], 'Interrupt')
+        self.assertNotIn('text', interrupted)
         output = io.StringIO()
         with patch.object(codex_hook, 'post', side_effect=[(204, b''), (200, json.dumps({'text': 'Продолжай'}).encode('utf-8'))]), \
              patch.object(codex_hook, 'log'), contextlib.redirect_stdout(output):

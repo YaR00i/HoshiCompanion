@@ -23,7 +23,7 @@ WAIT_SECONDS = 65  # Hoshi releases the waiter after 60 seconds.
 ASK_SECONDS = 32
 PHONE_MARK = 'Сообщение от пользователя с телефона (пульт Хоши):'
 LOG_LIMIT = 200 * 1024
-EVENTS = {'SessionStart', 'UserPromptSubmit', 'Stop', 'SessionEnd'}
+EVENTS = {'SessionStart', 'UserPromptSubmit', 'Stop', 'Interrupt', 'SessionEnd'}
 
 
 def log(event: str, session: str, outcome: str) -> None:
@@ -145,6 +145,8 @@ def main() -> int:
             post(message)
         except OSError:
             pass  # Hoshi is closed; Codex continues normally.
+        if message['event'] == 'Interrupt':
+            print('{}')  # Interrupt expects JSON; its output cannot restart the turn.
     return 0
 
 

@@ -13,6 +13,10 @@ const BONE_TARGET_NAMES := {
 	"leftShoulder": "Левая ключица", "leftUpperArm": "Левое плечо", "leftLowerArm": "Левое предплечье", "leftHand": "Левая кисть",
 	"rightShoulder": "Правая ключица", "rightUpperArm": "Правое плечо", "rightLowerArm": "Правое предплечье", "rightHand": "Правая кисть",
 	"leftLowerLeg": "Левая голень", "leftFoot": "Левая стопа", "rightLowerLeg": "Правая голень", "rightFoot": "Правая стопа",
+	# Для реакций на касание (touch_motion.gd): таз, бёдра, пальцы (1 — у ладони).
+	"hips": "Таз", "leftUpperLeg": "Левое бедро", "rightUpperLeg": "Правое бедро",
+	"leftThumbMetacarpal": "Левый большой 1", "leftThumbProximal": "Левый большой 2", "leftThumbDistal": "Левый большой 3", "leftIndexProximal": "Левый указательный 1", "leftIndexIntermediate": "Левый указательный 2", "leftIndexDistal": "Левый указательный 3", "leftMiddleProximal": "Левый средний 1", "leftMiddleIntermediate": "Левый средний 2", "leftMiddleDistal": "Левый средний 3", "leftRingProximal": "Левый безымянный 1", "leftRingIntermediate": "Левый безымянный 2", "leftRingDistal": "Левый безымянный 3", "leftLittleProximal": "Левый мизинец 1", "leftLittleIntermediate": "Левый мизинец 2", "leftLittleDistal": "Левый мизинец 3",
+	"rightThumbMetacarpal": "Правый большой 1", "rightThumbProximal": "Правый большой 2", "rightThumbDistal": "Правый большой 3", "rightIndexProximal": "Правый указательный 1", "rightIndexIntermediate": "Правый указательный 2", "rightIndexDistal": "Правый указательный 3", "rightMiddleProximal": "Правый средний 1", "rightMiddleIntermediate": "Правый средний 2", "rightMiddleDistal": "Правый средний 3", "rightRingProximal": "Правый безымянный 1", "rightRingIntermediate": "Правый безымянный 2", "rightRingDistal": "Правый безымянный 3", "rightLittleProximal": "Правый мизинец 1", "rightLittleIntermediate": "Правый мизинец 2", "rightLittleDistal": "Правый мизинец 3",
 }
 static var clip: Animation = preload(CLIP_PATH)
 

@@ -214,8 +214,10 @@
   one-minute synchronous Stop hook. Never send paths, tool calls/results or reasoning to the
   phone. Keep the existing Codex `notify` setting untouched. PermissionRequest may use the
   same 30-second phone decision; do not change Codex approval policy from the phone.
+  Interrupt clears the working state; the Android foreground service uses the same
+  notification path for Claude and Codex with independent status and alert IDs.
 - android/ (Kotlin app «Хоши», see docs/ANDROID_APP_RU.md): WebView of the live remote page, a
-  foreground service (same phone protocol: hello/ping/state, never sends commands) for Claude
+  foreground service (same phone protocol: hello/ping/state, never sends commands) for assistant
   notifications while the page is hidden, self-update from GET /app/version.json + /app/hoshi.apk
   (remote_bus serves only these two files from .workspace/android/, built by `dev.py android`).
   Quick buttons (0.6): the page (only inside the app, window.HoshiApp) lets the user pick up to 3

@@ -12,6 +12,7 @@ const PaperStar = preload("res://scripts/paper_star_prop.gd")
 const AnimatedProp = preload("res://scripts/animated_prop.gd")
 const SketchMotion = preload("res://scripts/sketch_motion.gd")
 const PropTracks = preload("res://scripts/prop_track_schema.gd")
+const TouchMotion = preload("res://scripts/touch_motion.gd")
 const MODEL_PATH: String = "res://assets/Hoshi_v1.vrm"
 
 var rig
@@ -126,6 +127,11 @@ func _update_preview() -> void:
 	# The editor timeline can be paused while still assigning the selected clip.
 	var time: float = player.current_animation_position
 	var progress: float = clampf(time / clip.length, 0.0, 1.0)
+	if TouchMotion.is_touch(selected):
+		_update_touch_preview(clip, time)
+		return
+	$PreviewRoot.rotation = Vector3.ZERO
+	rig.skeleton.reset_bone_poses() # после клипа касания не оставлять повёрнутые большие пальцы
 	$Targets.visible = selected == "sketch"
 	$Corrections.visible = selected != "sketch"
 	$Bones.visible = selected != "sketch" and show_bone_controls
@@ -221,6 +227,40 @@ func _update_preview() -> void:
 			"rotation_degrees": target.rotation_degrees,
 			"scale": target.scale,
 		})
+
+## Реакция на касание (touch_*): Хоши стоит; у каждой кости с дорожкой — стрелка
+## в её позе до собственного поворота (после родителей), поворот стрелки = ключ.
+## Channels: touch_yaw — поворот тела, hips_offset — сдвиг таза (доли роста).
+## Лицо (face_happy/face_angry) в просмотре не показывается — только в Хоши.
+func _update_touch_preview(clip: Animation, time: float) -> void:
+	$Targets.visible = false
+	$Corrections.visible = false
+	$Bones.visible = show_bone_controls
+	for anchor_node in $Props.get_children():
+		(anchor_node as Node3D).visible = false
+	$PreviewRoot.rotation = Vector3(0.0, deg_to_rad($Channels.touch_yaw), 0.0)
+	var skeleton: Skeleton3D = rig.skeleton
+	skeleton.reset_bone_poses() # иначе кости, которые поза не сбрасывает (большой палец), копили бы поворот
+	rig.tick(0.0, time, Vector2.ZERO, 0.0, 0.0, 0.0, false)
+	var hips: int = int(rig.bones["hips"])
+	var parent: int = skeleton.get_bone_parent(hips)
+	var parent_basis: Basis = skeleton.get_bone_global_pose(parent).basis if parent >= 0 else Basis.IDENTITY
+	skeleton.set_bone_pose_position(hips, skeleton.get_bone_pose_position(hips) + parent_basis.inverse() * ($Channels.hips_offset * model_height))
+	var ordered: Array = []
+	for bone_anchor in $Bones.get_children():
+		var semantic: String = str(bone_anchor.name)
+		var has_track: bool = rig.bones.has(semantic) and clip.find_track(NodePath(SketchMotion.bone_path(semantic)), Animation.TYPE_ROTATION_3D) >= 0
+		(bone_anchor as Node3D).visible = show_bone_controls and has_track
+		if has_track:
+			ordered.append([int(rig.bones[semantic]), bone_anchor])
+	ordered.sort_custom(func(a, b): return a[0] < b[0]) # родители раньше детей
+	for item in ordered:
+		var bone_id: int = item[0]
+		var bone_anchor: Node3D = item[1]
+		bone_anchor.global_transform = skeleton.global_transform * skeleton.get_bone_global_pose(bone_id)
+		var marker: Node3D = bone_anchor.get_node_or_null(NodePath(SketchMotion.BONE_TARGET_NAMES[str(bone_anchor.name)])) as Node3D
+		if marker != null:
+			skeleton.set_bone_pose_rotation(bone_id, (skeleton.get_bone_pose_rotation(bone_id) * marker.quaternion).normalized())
 
 func _clip_key_snapshot(clip: Animation) -> Array:
 	var keys: Array = [clip.get_instance_id(), clip.length, clip.get_track_count()]

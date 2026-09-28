@@ -32,7 +32,7 @@ import java.util.concurrent.TimeUnit
  * не даёт), и живёт всё время; пока пульт на виду (pageVisible), она молчит —
  * связь держит страница (у Хоши один телефон = одно соединение).
  * Тот же протокол, что у страницы (remote_bus.gd): hello с ключом, ping раз в 10 с,
- * сообщения state. Следит только за карточкой Claude и присылает уведомления:
+ * сообщения state. Следит за карточками Claude и Codex и присылает уведомления:
  * «закончил ✓», «ждёт ответа ?», «прервался ⚠». Постоянное тихое уведомление
  * «Хоши на связи» — требование Android для такой службы.
  *
@@ -49,7 +49,8 @@ class HoshiService : Service() {
     private var socket: WebSocket? = null
     private var running = false
     private var retry = 2000L
-    private var lastClaude = ""
+    /** Последнее состояние каждой карточки: один помощник не скрывает события другого. */
+    private val lastAssistant = mutableMapOf<String, String>()
     /** Открытые плееры: id ("mpc", "youtube") -> его уведомление и сессия. */
     private val players = mutableMapOf<String, Player>()
 
@@ -95,6 +96,7 @@ class HoshiService : Service() {
         if (pageVisible) {
             socket?.close(1000, "page on screen")
             socket = null
+            lastAssistant.clear() // открытый пульт уже показывает новые ответы; при скрытии берём свежую точку отсчёта
             notifyOngoing("Хоши на связи")
         } else if (socket == null) {
             retry = 2000L
@@ -171,31 +173,33 @@ class HoshiService : Service() {
         }
     }
 
-    /** Карточка Claude поменялась — сказать об этом уведомлением (только о переменах). */
+    /** Карточка помощника поменялась — уведомить один раз о завершении, вопросе или сбое. */
     private fun onState(message: JSONObject) {
+        if (pageVisible) return
         val apps = message.optJSONArray("apps") ?: return
         for (i in 0 until apps.length()) {
             val app = apps.optJSONObject(i) ?: continue
-            if (app.optString("id") != "claude") continue
-            val state = app.optJSONObject("state") ?: return
+            val id = app.optString("id")
+            val name = ASSISTANTS[id] ?: continue
+            val state = app.optJSONObject("state") ?: continue
             val ask = state.optJSONObject("ask")
             val status = when {
                 ask != null -> "ask:" + ask.optString("id")
                 else -> state.optString("subtitle")
             }
-            if (status == lastClaude) return
-            val first = lastClaude.isEmpty()
-            lastClaude = status
-            if (first) return // сразу после подключения — не звенеть о старом
-            val folder = state.optString("title", "Claude")
+            val signature = state.optString("session") + "|" + status
+            if (signature == lastAssistant[id]) continue
+            val first = !lastAssistant.containsKey(id)
+            lastAssistant[id] = signature
+            if (first) continue // сразу после подключения — не звенеть о старом
+            val folder = state.optString("title", name)
             when {
                 ask != null && ask.optString("kind") == "permission" ->
-                    alert("Claude просит разрешение", "$folder: ${ask.optString("tool")} · код ${ask.optString("id")}")
-                ask != null -> alert("Claude спрашивает", folder + ": " + firstQuestion(ask))
-                status.startsWith("✓") -> alert("Claude закончил ✓", folder + ": " + state.optString("text").take(140))
-                status.startsWith("⚠") -> alert("Claude прервался ⚠", "$folder: лимит или ошибка — можно нажать «Продолжай»")
+                    alert(id, "$name просит разрешение", "$folder: ${ask.optString("tool")} · код ${ask.optString("id")}")
+                ask != null -> alert(id, "$name спрашивает", folder + ": " + firstQuestion(ask))
+                status.startsWith("✓") -> alert(id, "$name закончил ✓", folder + ": " + state.optString("text").take(140))
+                status.startsWith("⚠") -> alert(id, "$name прервался ⚠", folder + ": " + state.optString("text").take(140))
             }
-            return
         }
     }
 
@@ -354,7 +358,7 @@ class HoshiService : Service() {
         this, 0, Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
-    private fun alert(title: String, text: String) {
+    private fun alert(app: String, title: String, text: String) {
         val notification = NotificationCompat.Builder(this, ALERTS)
             .setSmallIcon(R.drawable.ic_stat_hoshi)
             .setContentTitle(title)
@@ -364,7 +368,7 @@ class HoshiService : Service() {
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
-        manager().notify(ALERT_ID, notification)
+        manager().notify(if (app == "codex") CODEX_ALERT_ID else CLAUDE_ALERT_ID, notification)
     }
 
     private var ongoingText = "Хоши на связи"
@@ -414,7 +418,7 @@ class HoshiService : Service() {
 
     private fun channels() {
         manager().createNotificationChannel(NotificationChannel(ONGOING, "Хоши на связи", NotificationManager.IMPORTANCE_MIN))
-        manager().createNotificationChannel(NotificationChannel(ALERTS, "Claude и приложения", NotificationManager.IMPORTANCE_HIGH))
+        manager().createNotificationChannel(NotificationChannel(ALERTS, "Помощники и приложения", NotificationManager.IMPORTANCE_HIGH))
         manager().createNotificationChannel(NotificationChannel(PLAYER, "Плеер (MPC-BE, YouTube)", NotificationManager.IMPORTANCE_LOW))
         // Отдельный канал «Быстрые кнопки»: у старого «Хоши на связи» важность MIN — такие не видны на экране блокировки.
         manager().createNotificationChannel(NotificationChannel(QUICK, "Хоши на связи и быстрые кнопки", NotificationManager.IMPORTANCE_LOW))
@@ -434,7 +438,9 @@ class HoshiService : Service() {
         private val PLAYERS = listOf("mpc", "youtube", "tabs")
         private val BUTTONS = listOf("back", "toggle", "forward", "next")
         private const val ONGOING_ID = 1
-        private const val ALERT_ID = 2
+        private val ASSISTANTS = mapOf("claude" to "Claude", "codex" to "Codex")
+        private const val CLAUDE_ALERT_ID = 2
+        private const val CODEX_ALERT_ID = 4
         private const val PING_EVERY = 10_000L
 
         /** Пульт на экране (ставит MainActivity; общий на всё приложение). */

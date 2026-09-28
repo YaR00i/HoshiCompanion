@@ -325,7 +325,7 @@ func animate(delta: float, state, gaze: Vector2, walk_frame: Dictionary = {}) ->
 		return
 	_tick_cinematic(delta, state.time)
 	edge_overlay.visible = (edge_strength > 0.001 or outline_strength > 0.001) and not cinematic_active()
-	pivot.rotation.y = deg_to_rad(yaw)
+	pivot.rotation.y = deg_to_rad(yaw + touch.yaw_offset()) # касание груди — отворачивается
 	pivot.position = Vector3(travel_offset_px * meters_per_pixel(), 0.0, _cinematic_z)
 	_update_toon_light()
 	var life_frame: Dictionary = edge_life.tick(delta, state, edge_suspended, cozy_corner_active)
@@ -477,6 +477,9 @@ func body_zone(point: Vector2) -> Dictionary:
 	# Голова — только выше шеи (круг головы иначе захватывает верх груди).
 	if head_contact_hit(point) and point.y < neck.y:
 		return {"zone": "head", "side": "left"}
+	# Таз: полоса у тазобедренных суставов (шорты) — кружится на одной ножке.
+	if absf(point.x - hips.x) < body_pixels * 0.10 and point.y > hips.y - body_pixels * 0.035 and point.y < hips.y + body_pixels * 0.09:
+		return {"zone": "hips", "side": "left" if point.x >= hips.x else "right"}
 	# Туловище: полоса между шеей и тазом — грудь выше середины, ниже — животик.
 	if absf(point.x - lerpf(neck.x, hips.x, 0.5)) < body_pixels * 0.075 and point.y >= neck.y and point.y <= hips.y:
 		return {"zone": "chest" if point.y < lerpf(neck.y, hips.y, 0.5) else "belly", "side": "left"}

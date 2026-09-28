@@ -215,6 +215,33 @@ func _run() -> void:
 			extra_scale_clip.track_set_path(scale_track, NodePath("Targets/right_hand"))
 			extra_scale_clip.scale_track_insert_key(scale_track, 0.0, Vector3.ONE)
 		_check(SketchMotion.valid(extra_scale_clip) and not SketchMotion.sample_animation(extra_scale_clip, 0.5).is_empty(), "an incidental hand scale key does not disable the sketch clip")
+		# Реакции на касание (touch_*): стоя, поворот тела, стрелки пальцев, проверка сохранения.
+		var TouchMotion = load("res://scripts/touch_motion.gd")
+		var touch_ok: bool = true
+		for zone in TouchMotion.ZONES:
+			var touch_clip: Animation = player.get_animation(TouchMotion.clip_name(zone))
+			touch_ok = touch_ok and touch_clip != null and TouchMotion.validation_error(TouchMotion.clip_name(zone), touch_clip).is_empty()
+		_check(touch_ok and player.selected_clip_name() != "" , "all touch clips are in the editor and pass the save check")
+		player.assigned_animation = "touch_chest"
+		player.seek(1.6, true)
+		scene._update_preview()
+		_check(player.selected_clip_name() == "touch_chest" and absf(rad_to_deg(scene.get_node("PreviewRoot").rotation.y)) > 100.0, "touch_chest turns her back in the preview (body turn channel)")
+		var finger_anchor: Node3D = scene.get_node("Bones/rightMiddleProximal")
+		var finger_marker: Node3D = finger_anchor.get_node("Правый средний 1")
+		var finger_bone: int = int(scene.rig.bones["rightMiddleProximal"])
+		var finger_before: Quaternion = scene.rig.skeleton.get_bone_pose_rotation(finger_bone)
+		_check(finger_anchor.visible, "a finger joint of the fist has its own editable control")
+		finger_marker.rotate_object_local(Vector3.FORWARD, deg_to_rad(20.0))
+		scene._update_preview()
+		_check(rad_to_deg(finger_before.angle_to(scene.rig.skeleton.get_bone_pose_rotation(finger_bone))) > 10.0, "rotating the finger control bends that finger in the preview")
+		scene._update_preview()
+		scene._update_preview()
+		_check(rad_to_deg(finger_before.angle_to(scene.rig.skeleton.get_bone_pose_rotation(finger_bone))) < 30.0, "the preview does not accumulate rotations frame after frame")
+		player.seek(1.6, true)
+		player.assigned_animation = "sway"
+		player.seek(3.0, true)
+		scene._update_preview()
+		_check(is_zero_approx(scene.get_node("PreviewRoot").rotation.y), "seated clips reset the body turn")
 	await process_frame
 	print("HOSHI_ANIMATION_AUTHORING_RESULT checks=", checks, " failures=", failures)
 	quit(0 if failures == 0 else 1)

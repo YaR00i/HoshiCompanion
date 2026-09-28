@@ -201,8 +201,8 @@ func handle_event(message: Dictionary) -> void:
 		return
 	var id: String = _key(app, raw_id)
 	var event: String = str(message.get("event", ""))
-	if event in ["SessionEnd", "UserPromptSubmit"]:
-		_release(id, "") # на ПК написали сами / сессия закрылась — ждун больше не нужен
+	if event in ["SessionEnd", "UserPromptSubmit", "Interrupt"]:
+		_release(id, "") # новый вопрос, прерывание или закрытие — ждун больше не нужен
 	if event == "SessionEnd":
 		sessions.erase(id)
 		_transcripts.erase(id)
@@ -225,6 +225,12 @@ func handle_event(message: Dictionary) -> void:
 			# Ход оборвался (лимит использования или ошибка) — «работает» больше не правда.
 			session["status"] = "failed"
 			session["note"] = ("Codex" if app == "codex" else "Claude") + " прервался: закончился лимит или ошибка связи. Когда можно — нажми «▶ Продолжай»."
+			session["seen"] = false
+		"Interrupt":
+			if app != "codex":
+				return
+			session["status"] = "failed"
+			session["note"] = "Ход остановлен до завершения. Если нужно, напиши новое сообщение в Codex."
 			session["seen"] = false
 		"Stop":
 			session["status"] = "done"

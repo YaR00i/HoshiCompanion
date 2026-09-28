@@ -497,11 +497,12 @@ func _check_touch_reactions(stage) -> void:
 		"leg": stage.body_zone(cam.unproject_position(stage.rig.world_point("rightLowerLeg"))),
 		"chest": stage.body_zone(cam.unproject_position(stage.rig.world_point(chest_bone))),
 		"belly": stage.body_zone(cam.unproject_position(stage.rig.world_point("spine"))),
+		"hips": stage.body_zone(cam.unproject_position(stage.rig.world_point("hips")) + Vector2(0.0, stage.body_pixels * 0.04)),
 	}
 	var zones_ok: bool = true
 	for key in zones:
 		zones_ok = zones_ok and zones[key]["zone"] == key
-	_check(zones_ok and zones["leg"]["side"] == "right" and zones["arm"]["side"] == "left", "a tap is sorted by place: head, hand, leg (with side), chest, belly — %s" % str(zones))
+	_check(zones_ok and zones["leg"]["side"] == "right" and zones["arm"]["side"] == "left", "a tap is sorted by place: head, hand, leg (with side), chest, belly, hips — %s" % str(zones))
 	var touch = stage.touch
 	touch.cancel()
 	touch._cooldown = 0.0
@@ -513,6 +514,12 @@ func _check_touch_reactions(stage) -> void:
 		touch.tick(1.0 / 30.0)
 	_check(not touch.active() and touch.face().is_empty(), "the reaction ends by itself")
 	_check(not touch.start("head") and not touch.start("nose"), "head and unknown places keep their own reactions")
+	var TouchMotion = load("res://scripts/touch_motion.gd")
+	var clips_ok: bool = true
+	for zone in TouchMotion.ZONES:
+		clips_ok = clips_ok and TouchMotion.clip_for(zone) != null
+	var chest_frame: Dictionary = TouchMotion.sample(TouchMotion.clip_for("chest"), 1.6)
+	_check(clips_ok and absf(float(chest_frame["yaw"])) > 100.0 and chest_frame["bones"].has("rightMiddleProximal"), "standing touch reactions play editable clips (animations/touch_*.tres)")
 
 ## Единая карта экранов: как у пользователя — главный в центре, боковые с полом
 ## на 89 px выше, четвёртый над правым (без своего пола).
