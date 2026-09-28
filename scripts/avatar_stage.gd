@@ -7,6 +7,7 @@ const PostureDriver = preload("res://scripts/posture_driver.gd")
 const EdgePose = preload("res://scripts/edge_pose.gd")
 const EdgeLife = preload("res://scripts/edge_life.gd")
 const IdleLife = preload("res://scripts/idle_life.gd")
+const TouchReactions = preload("res://scripts/touch_reactions.gd")
 const ContextPose = preload("res://scripts/context_pose.gd")
 const MagicDoor = preload("res://scripts/magic_door.gd")
 const Expressions = preload("res://scripts/expression_driver.gd")
@@ -30,6 +31,8 @@ var posture_driver = PostureDriver.new()
 var edge_pose = EdgePose.new()
 var edge_life = EdgeLife.new()
 var idle_life = IdleLife.new()
+## Реакции на касание по месту: ножка, ручка, животик, грудь (touch_reactions.gd).
+var touch = TouchReactions.new()
 var context_pose = ContextPose.new()
 var door
 var edge_suspended: bool = false
@@ -214,6 +217,7 @@ func load_model(path: String) -> Dictionary:
 	edge_pose.setup(posture_driver)
 	var context_report: Dictionary = context_pose.setup(rig, model_height)
 	var idle_report: Dictionary = idle_life.setup(rig)
+	touch.setup(rig, posture_driver)
 	door.setup(model_height)
 	door.hide_door()
 	var face_report: Dictionary = expressions.setup(avatar, loaded["source"], loaded["state"])
@@ -353,6 +357,8 @@ func animate(delta: float, state, gaze: Vector2, walk_frame: Dictionary = {}) ->
 	else:
 		posture_driver.apply(seated, state.time, state.wave_weight, state.motion_enabled)
 	idle_life.apply(state.time)
+	touch.tick(delta)
+	touch.apply(state.time, state.posture.amount > 0.5)
 	var active_context: String = "portal" if cinematic_active() else context_action
 	context_pose.tick(delta, active_context, context_velocity, context_progress, context_impact, yaw)
 	context_pose.apply(state.time)
@@ -385,6 +391,8 @@ func animate(delta: float, state, gaze: Vector2, walk_frame: Dictionary = {}) ->
 	if cozy_corner_active and not edge_suspended:
 		var paper_show: float = smoothstep(0.70, 0.83, edge_life.fold_progress) * (1.0 - smoothstep(0.93, 1.0, edge_life.fold_progress))
 		face_weights["happy"] = maxf(float(face_weights.get("happy", 0.0)), float(life_frame.get("fold", 0.0)) * paper_show * 0.42 + float(life_frame.get("admire_star", 0.0)) * 0.38)
+	for key in touch.face():
+		face_weights[key] = maxf(float(face_weights.get(key, 0.0)), float(touch.face()[key]))
 	expressions.apply(face_weights)
 	pet_effect.tick(delta, head_pixel() + state.pet_follow * body_pixels * 0.09 + Vector2(0.0, -body_pixels * 0.055), state.pet_contact_active)
 
@@ -458,6 +466,34 @@ func _tick_cinematic(delta: float, time_value: float) -> void:
 
 func meters_per_pixel() -> float:
 	return model_height / maxf(body_pixels, 1.0)
+
+## Куда нажали: {"zone": "head|arm|leg|belly|chest|body", "side": "left|right"}.
+## По проекциям костей на окно (только своё окно Хоши).
+func body_zone(point: Vector2) -> Dictionary:
+	if not is_loaded:
+		return {"zone": "body", "side": "left"}
+	var neck: Vector2 = camera.unproject_position(rig.world_point("neck")) if rig.bones.has("neck") else head_pixel()
+	var hips: Vector2 = camera.unproject_position(rig.world_point("hips")) if rig.bones.has("hips") else neck
+	# Голова — только выше шеи (круг головы иначе захватывает верх груди).
+	if head_contact_hit(point) and point.y < neck.y:
+		return {"zone": "head", "side": "left"}
+	# Туловище: полоса между шеей и тазом — грудь выше середины, ниже — животик.
+	if absf(point.x - lerpf(neck.x, hips.x, 0.5)) < body_pixels * 0.075 and point.y >= neck.y and point.y <= hips.y:
+		return {"zone": "chest" if point.y < lerpf(neck.y, hips.y, 0.5) else "belly", "side": "left"}
+	var best: Dictionary = {"zone": "body", "side": "left"}
+	var best_distance: float = INF
+	for limb in [["arm", ["UpperArm", "LowerArm", "Hand"], 0.07], ["leg", ["UpperLeg", "LowerLeg", "Foot"], 0.08]]:
+		for which in ["left", "right"]:
+			var chain: Array = []
+			for part in limb[1]:
+				if rig.bones.has(which + part):
+					chain.append(camera.unproject_position(rig.world_point(which + part)))
+			for index in range(chain.size() - 1):
+				var distance: float = point.distance_to(Geometry2D.get_closest_point_to_segment(point, chain[index], chain[index + 1]))
+				if distance < body_pixels * float(limb[2]) and distance < best_distance:
+					best_distance = distance
+					best = {"zone": limb[0], "side": which}
+	return best
 
 func head_pixel() -> Vector2:
 	if not is_loaded:

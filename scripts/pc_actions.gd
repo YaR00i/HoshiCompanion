@@ -350,6 +350,25 @@ func screen_off() -> void:
 	var script: String = "Add-Type -Namespace W -Name M -MemberDefinition '[DllImport(\"user32.dll\")] public static extern int PostMessage(int h, int m, int w, int l);'; [W.M]::PostMessage(0xFFFF, 0x0112, 0xF170, 2)"
 	_exec("powershell.exe", ["-NoProfile", "-WindowStyle", "Hidden", "-EncodedCommand", Marshalls.raw_to_base64(script.to_utf16_buffer())])
 
+## Окна помощников для облачков над Хоши: какие программы поднимать по нажатию.
+const ASSISTANT_EXES := {"claude": ["claude.exe"], "codex": ["chatgpt.exe", "codex.exe"]}
+
+## Нажали на облачко помощника — поднять его окно (только по имени программы,
+## заголовки не читаем). Пусто — отправили, иначе причина.
+func front_app(app_id: String) -> String:
+	var exes: Array = ASSISTANT_EXES.get(app_id, [])
+	if exes.is_empty():
+		return "unknown_app"
+	var command: Array = ["front_app", str(OS.get_process_id()), ",".join(exes)]
+	if dry_run:
+		executed.append(command)
+		return ""
+	var helper: String = ProjectSettings.globalize_path(PLACE_HELPER)
+	if OS.get_name() != "Windows" or not FileAccess.file_exists(helper):
+		return "no_helper"
+	OS.create_process(_python(), PackedStringArray([helper] + command))
+	return ""
+
 ## Окно, запущенное с расстановкой, ещё ставится (сценарий ждёт его).
 func placing() -> bool:
 	return _place_io != null

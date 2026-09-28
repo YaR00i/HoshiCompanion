@@ -55,6 +55,16 @@ var _place_map: Control
 ## «Переставить окно»: открытые окна, схема экранов, положение.
 var move_window: Window
 var _move_source
+## Окно «Экраны для прогулок»: где Хоши гуляет сама.
+var screens_window: Window
+var _screens_host
+var _screens_changed: Callable
+var _screens_map: MonitorMap
+var _screens_text: Label
+## Экраны, как их нумерует Windows (pc_actions.monitors) — чтобы номера совпадали.
+var _screens_windows: Array = []
+## «Характер» Хоши коротко («бодрая, любопытная») — в строке быстрого меню.
+var character_text: String = ""
 ## Окно «Сценарии» (одна кнопка пульта — несколько шагов).
 var scenes_window: Window
 var _scenes_bus
@@ -88,7 +98,16 @@ var _remote_text_after: Label
 var remote_code_version: int = -1
 var edge_pick: OptionButton
 var _walk_available: bool = false
+## Меню «все действия» на экране — одна панель: раздел открывается в ней же,
+## вверху «‹ Назад» (как меню телефона). Раньше подменю открывались каскадом
+## отдельными окнами и у края экрана наезжали друг на друга и пропадали.
 var menu: PopupMenu
+## Дерево пунктов (как было): галочки, названия, отключения — здесь; панель
+## показывает нужный уровень этого дерева.
+var menu_tree: PopupMenu
+var _nav_stack: Array = []   # [{menu: PopupMenu, title: String}]
+const NAV_BACK: int = 9000
+const NAV_SUB: int = 9100
 var quick_menu: PopupPanel
 var _menus_by_action: Dictionary = {}
 var light_window: Window
@@ -400,7 +419,8 @@ func refresh(state, status_override: String = "", walking: bool = false) -> void
 	for pair in [["toggle_auto_rest", state.rest_enabled], ["toggle_auto_walk", state.walk_enabled], ["toggle_autonomy", state.autonomy_enabled], ["toggle_look", state.look_enabled], ["toggle_motion", state.motion_enabled], ["toggle_hair", state.hair_enabled], ["toggle_bubbles", bubbles_enabled], ["toggle_assistant_clouds", clouds_enabled], ["toggle_clickthrough", clickthrough_enabled], ["toggle_remote", remote_enabled]]:
 		_set_action_checked(str(pair[0]), bool(pair[1]))
 	_set_action_text("doze", "Разбудить" if state.dozing or state.sleep_requested else "Подремать сидя")
-	quick_menu.set_snapshot(state, status.text, not walk_button.disabled, not stop_button.disabled, remote_enabled)
+	var line: String = status.text + (" · " + character_text if not character_text.is_empty() else "")
+	quick_menu.set_snapshot(state, line, not walk_button.disabled, not stop_button.disabled, remote_enabled)
 
 func menu_open() -> bool:
 	return quick_menu.visible or menu.visible
@@ -413,8 +433,80 @@ func _build_quick_menu() -> void:
 	add_child(quick_menu)
 	quick_menu.action_requested.connect(_emit_action)
 	quick_menu.advanced_requested.connect(func(at: Vector2i):
-		menu.position = at
-		menu.popup())
+		open_menu(at))
+
+## Открыть «все действия» с верхнего уровня.
+func open_menu(at: Vector2i) -> void:
+	_nav_stack = [{"menu": menu_tree, "title": ""}]
+	_render_nav()
+	menu.position = at
+	menu.popup()
+	_fit_nav()
+
+func _build_nav_panel() -> void:
+	menu = PopupMenu.new()
+	menu.name = "CompanionMenu"
+	_style_popup(menu)
+	menu.hide_on_item_selection = false
+	menu.hide_on_checkable_item_selection = false
+	add_child(menu)
+	menu.id_pressed.connect(_on_nav_id)
+
+## Показать текущий уровень дерева в панели.
+func _render_nav() -> void:
+	var level: Dictionary = _nav_stack.back()
+	var source: PopupMenu = level["menu"]
+	menu.clear()
+	if _nav_stack.size() > 1:
+		menu.add_item("‹  Назад", NAV_BACK)
+		menu.add_item(str(level["title"]), 999)
+		menu.set_item_disabled(menu.item_count - 1, true)
+		menu.add_separator()
+	for index in range(source.item_count):
+		if source.is_item_separator(index):
+			menu.add_separator(source.get_item_text(index))
+			continue
+		var text: String = source.get_item_text(index)
+		var id: int = source.get_item_id(index)
+		if not source.get_item_submenu(index).is_empty():
+			menu.add_item(text, NAV_SUB + index)
+		elif source.is_item_radio_checkable(index):
+			menu.add_radio_check_item(text, id)
+		elif source.is_item_checkable(index):
+			menu.add_check_item(text, id)
+		else:
+			menu.add_item(text, id)
+		var at: int = menu.item_count - 1
+		menu.set_item_checked(at, source.is_item_checked(index))
+		menu.set_item_disabled(at, source.is_item_disabled(index))
+		menu.set_item_tooltip(at, source.get_item_tooltip(index))
+	menu.reset_size()
+
+## Панель не должна вылезать за экран, когда уровень длиннее или шире.
+func _fit_nav() -> void:
+	var screen: int = DisplayServer.get_screen_from_rect(Rect2(menu.position, Vector2.ONE))
+	var area: Rect2i = DisplayServer.screen_get_usable_rect(screen if screen >= 0 else DisplayServer.SCREEN_PRIMARY)
+	menu.position = Vector2i(clampi(menu.position.x, area.position.x, maxi(area.position.x, area.end.x - menu.size.x)),
+		clampi(menu.position.y, area.position.y, maxi(area.position.y, area.end.y - menu.size.y)))
+
+func _on_nav_id(id: int) -> void:
+	if id == NAV_BACK:
+		if _nav_stack.size() > 1:
+			_nav_stack.pop_back()
+		_render_nav()
+		_fit_nav()
+		return
+	if id >= NAV_SUB:
+		var source: PopupMenu = _nav_stack.back()["menu"]
+		var index: int = id - NAV_SUB
+		var child: PopupMenu = source.get_node_or_null(NodePath(source.get_item_submenu(index))) as PopupMenu
+		if child != null:
+			_nav_stack.append({"menu": child, "title": source.get_item_text(index).trim_suffix("›").strip_edges()})
+			_render_nav()
+			_fit_nav()
+		return
+	menu.hide()
+	_on_menu_id(id)
 
 func _submenu(parent: PopupMenu, title_value: String, node_name: String, entries: Array) -> PopupMenu:
 	var sub: PopupMenu = PopupMenu.new()
@@ -423,34 +515,8 @@ func _submenu(parent: PopupMenu, title_value: String, node_name: String, entries
 	parent.add_child(sub)
 	for pair in entries:
 		_add_menu_item(sub, str(pair[0]), str(pair[1]))
-	sub.id_pressed.connect(_on_menu_id)
-	sub.visibility_changed.connect(func(): if sub.visible: _keep_submenu_clear.call_deferred(sub))
 	parent.add_submenu_item(title_value, node_name)
 	return sub
-
-## Подменю не должно ложиться поверх меню уровнем выше: у края экрана второй
-## уровень открывается влево, а третий Godot ставит вправо — прямо на главное
-## меню; по пути к нему курсор задевает его пункты, и всё закрывается
-## (жалоба 28.09). Тогда третий уровень открываем с другой стороны.
-func _keep_submenu_clear(sub: PopupMenu) -> void:
-	var parent := sub.get_parent() as PopupMenu
-	var grand := parent.get_parent() as PopupMenu if parent != null else null
-	if not sub.visible or grand == null or not grand.visible:
-		return
-	sub.position = submenu_position(Rect2i(sub.position, sub.size), Rect2i(parent.position, parent.size), Rect2i(grand.position, grand.size),
-		DisplayServer.screen_get_usable_rect(DisplayServer.get_screen_from_rect(Rect2(parent.position, parent.size))))
-
-## Где поставить подменю (sub) рядом с parent, чтобы не закрыть grand: сбоку от
-## parent, а если места нет — вплотную к grand (частично поверх parent, это не
-## мешает: курсор сразу попадает в подменю). Никак — оставить как есть.
-static func submenu_position(sub: Rect2i, parent: Rect2i, grand: Rect2i, screen: Rect2i) -> Vector2i:
-	if not sub.intersects(grand):
-		return sub.position
-	for x in [parent.position.x - sub.size.x, parent.end.x, grand.position.x - sub.size.x, grand.end.x]:
-		var moved := Rect2i(Vector2i(x, sub.position.y), sub.size)
-		if not moved.intersects(grand) and x >= screen.position.x and moved.end.x <= screen.end.x:
-			return moved.position
-	return sub.position
 
 func _add_menu_item(parent: PopupMenu, title_value: String, action: String, checked: bool = false) -> void:
 	var id: int = Commands.menu_id(action)
@@ -1325,54 +1391,70 @@ func _on_shading_value_changed(_value: Variant) -> void:
 		"outline_strength": _outline_slider.value, "outline_color": _outline_color_button.color, "outline_width": _outline_width_slider.value})
 
 func _build_menu() -> void:
-	menu = PopupMenu.new()
-	menu.name = "CompanionMenu"
-	_style_popup(menu)
-	add_child(menu)
+	menu_tree = PopupMenu.new()
+	menu_tree.name = "CompanionMenuTree"
+	add_child(menu_tree)
+	var menu: PopupMenu = menu_tree # дерево пунктов (на экран не выводится)
 	menu.add_item("✦  ХОШИ · все действия", 999)
 	menu.set_item_disabled(0, true)
 	menu.add_separator()
-	_submenu(menu, "Разговор и приложения  ›", "TalkMenu", [["Поговорить через ChatGPT ↗", "talk_voice"], ["Открыть текстовый чат ↗", "talk_text"]])
-	var movement := _submenu(menu, "Места и движение  ›", "MovementMenu", [["Мой уютный уголок", "cozy_corner"], ["Выбрать окно под курсором · 4 с", "pick_window"], ["Полочка — попробовать", "shelf_demo"], ["Пройтись", "walk"], ["Остановиться", "stop"], ["Сесть отдохнуть", "sit"], ["Встать", "stand"], ["Вернуться на пол", "return_floor"]])
+	# Разделы по смыслу (разобрано 28.09): что делать сейчас — движение, места,
+	# общение; как она себя ведёт и выглядит; пульт и ПК; ChatGPT; инструменты.
+	var movement := _submenu(menu, "Движение  ›", "MovementMenu", [["Пройтись", "walk"], ["Остановиться", "stop"], ["Сесть отдохнуть", "sit"], ["Встать", "stand"], ["Вернуться на пол", "return_floor"]])
 	movement.add_separator()
-	_submenu(movement, "На поверхности окна  ›", "SurfaceMenu", [["Пройтись по краю", "surface_walk"], ["Подвинуться сидя", "surface_scoot"], ["Опора у левого края", "side_left"], ["Опора у правого края", "side_right"], ["Сесть обратно", "side_return"]])
-	var life := _submenu(menu, "Общение и занятия  ›", "LifeMenu", [["Помахать", "wave"], ["Погладить", "pet"], ["Подремать сидя", "doze"]])
+	_submenu(movement, "На краю окна  ›", "SurfaceMenu", [["Пройтись по краю", "surface_walk"], ["Подвинуться сидя", "surface_scoot"], ["Опора у левого края", "side_left"], ["Опора у правого края", "side_right"], ["Сесть обратно", "side_return"]])
+	var places := _submenu(menu, "Места  ›", "PlacesMenu", [["Мой уютный уголок", "cozy_corner"], ["Выбрать окно под курсором · 4 с", "pick_window"]])
+	_submenu(places, "Где отдыхать  ›", "PlaceMenu", [["Только вручную", "place_manual"], ["Свой уголок", "place_cozy"], ["Окна → уголок", "place_smart"], ["Моё окно → уголок", "place_focus"]])
+	places.add_separator()
+	_add_menu_item(places, "Экраны для прогулок…", "screens_editor")
+	var life := _submenu(menu, "Общение  ›", "LifeMenu", [["Помахать", "wave"], ["Погладить", "pet"], ["Подремать сидя", "doze"]])
 	life.add_separator()
 	_submenu(life, "Настроение  ›", "MoodMenu", [["Спокойная", "mood_neutral"], ["Радостная", "mood_happy"], ["Расслабленная", "mood_relaxed"], ["Удивлённая", "mood_surprised"], ["Грустная", "mood_sad"]])
 	_submenu(life, "Занятие на краю  ›", "EdgeMenu", [["Сама выбирает", "edge_mode_auto"], ["Спокойно", "edge_mode_calm"], ["Болтать ножками", "edge_mode_swing"], ["Откинуться назад", "edge_mode_lean"], ["Посмотреть вниз", "edge_mode_peek"], ["Мягко покачиваться", "edge_mode_sway"], ["Тихонько напевать", "edge_mode_hum"], ["Кивать в такт", "edge_mode_nod"]])
 	_submenu(life, "Особые сценки  ›", "SceneMenu", [["Рисовать в блокноте", "edge_sketch"], ["Сложить звёздочку", "edge_fold"], ["Полюбоваться звёздочкой", "edge_admire_star"]])
-	var autonomy := _submenu(menu, "Ритм и самостоятельность  ›", "AutonomyMenu", [])
+	var autonomy := _submenu(menu, "Поведение  ›", "AutonomyMenu", [])
 	_add_menu_item(autonomy, "Самостоятельность", "toggle_autonomy", true)
 	_add_menu_item(autonomy, "Самостоятельные прогулки", "toggle_auto_walk", true)
 	_add_menu_item(autonomy, "Самостоятельный отдых", "toggle_auto_rest", true)
-	_add_menu_item(autonomy, "Внимание к курсору", "toggle_look", true)
-	_add_menu_item(autonomy, "Короткие реплики", "toggle_bubbles", true)
-	_add_menu_item(autonomy, "Облачка помощников", "toggle_assistant_clouds", true)
-	autonomy.add_separator()
 	_submenu(autonomy, "Активность  ›", "ActivityMenu", [["Тихая · без прогулок", "activity_quiet"], ["Обычная", "activity_normal"], ["Игривая", "activity_playful"]])
-	_submenu(autonomy, "Где отдыхать  ›", "PlaceMenu", [["Только вручную", "place_manual"], ["Свой уголок", "place_cozy"], ["Окна → уголок", "place_smart"], ["Моё окно → уголок", "place_focus"]])
-	var remote_menu := _submenu(menu, "Пульт с телефона  ›", "RemoteMenu", [])
+	autonomy.add_separator()
+	_add_menu_item(autonomy, "Внимание к курсору", "toggle_look", true)
+	_add_menu_item(autonomy, "Мягкие движения", "toggle_motion", true)
+	var appearance := _submenu(menu, "Вид и подсказки  ›", "AppearanceMenu", [])
+	_add_menu_item(appearance, "Настроить свет, тени и обводку…", "light_editor")
+	_submenu(appearance, "Размер на рабочем столе  ›", "SizeMenu", [["Небольшая · 280 px", "size_small"], ["Обычная · 360 px", "size_normal"], ["Крупная · 440 px", "size_large"]])
+	_add_menu_item(appearance, "Движение волос", "toggle_hair", true)
+	appearance.add_separator()
+	_add_menu_item(appearance, "Короткие реплики", "toggle_bubbles", true)
+	_add_menu_item(appearance, "Облачка помощников", "toggle_assistant_clouds", true)
+	var remote_menu := _submenu(menu, "Пульт и компьютер  ›", "RemoteMenu", [])
 	_add_menu_item(remote_menu, "Пульт включён", "toggle_remote", true)
 	_add_menu_item(remote_menu, "Адрес и код для телефона…", "remote_info")
+	_add_menu_item(remote_menu, "Забыть все телефоны", "remote_forget")
+	remote_menu.add_separator()
 	_add_menu_item(remote_menu, "Мои действия для пульта…", "pc_actions_editor")
 	_add_menu_item(remote_menu, "Звук на пульте…", "sound_outputs_editor")
-	_add_menu_item(remote_menu, "Переставить окно…", "move_window_editor")
 	_add_menu_item(remote_menu, "Сценарии для пульта…", "scenes_editor")
-	_add_menu_item(remote_menu, "Забыть все телефоны", "remote_forget")
-	var appearance := _submenu(menu, "Внешний вид  ›", "AppearanceMenu", [])
-	_add_menu_item(appearance, "Настроить свет, тени и обводку…", "light_editor")
-	_add_menu_item(appearance, "Мягкие движения", "toggle_motion", true)
-	_add_menu_item(appearance, "Движение волос", "toggle_hair", true)
-	_submenu(appearance, "Размер на рабочем столе  ›", "SizeMenu", [["Небольшая · 280 px", "size_small"], ["Обычная · 360 px", "size_normal"], ["Крупная · 440 px", "size_large"]])
+	_add_menu_item(remote_menu, "Переставить окно…", "move_window_editor")
+	_submenu(menu, "ChatGPT  ›", "TalkMenu", [["Поговорить голосом ↗", "talk_voice"], ["Открыть текстовый чат ↗", "talk_text"]])
 	var tools := _submenu(menu, "Инструменты и окно  ›", "ToolsMenu", [["Открыть примерочную", "open_preview"], ["На рабочий стол", "to_desktop"], ["Вернуть к нижнему краю", "return_bottom"], ["Вернуть вид спереди", "reset_view"]])
 	tools.add_separator()
 	_add_menu_item(tools, "Клики только по Хоши", "toggle_clickthrough", true)
 	_submenu(tools, "Частота кадров  ›", "FPSMenu", [["30 FPS · экономно", "fps_30"], ["60 FPS · плавнее", "fps_60"]])
-	_submenu(tools, "Проверка краёв окна  ›", "DiagnosticsMenu", [["Видимые края · 1 кадр · 4 с", "scan_window_visual"], ["Структура · без снимка · 4 с", "scan_window_structure"]])
+	tools.add_separator()
+	_submenu(tools, "Редакторы  ›", "EditorsMenu", [["Позы и сценки в Godot…", "open_pose_editor"], ["Мастерская анимаций…", "open_animation_workshop"], ["Мастерская ходьбы…", "open_walk_workshop"], ["Весь проект в редакторе Godot…", "open_godot_editor"]])
+	var editors: PopupMenu = tools.get_node("EditorsMenu")
+	editors.add_separator()
+	# Окна настройки самой Хоши — те же пункты, что в своих разделах.
+	_add_menu_item(editors, "Свет, тени и обводка…", "light_editor")
+	_add_menu_item(editors, "Экраны для прогулок…", "screens_editor")
+	_add_menu_item(editors, "Сценарии для пульта…", "scenes_editor")
+	_add_menu_item(editors, "Мои действия для пульта…", "pc_actions_editor")
+	_submenu(tools, "Проверки  ›", "DiagnosticsMenu", [["Полочка — попробовать", "shelf_demo"], ["Края окна: видимые · 1 кадр · 4 с", "scan_window_visual"], ["Края окна: структура · без снимка · 4 с", "scan_window_structure"]])
 	menu.add_separator()
 	_add_menu_item(menu, "Перезапустить Хоши", "restart")
 	_add_menu_item(menu, "Закрыть Хоши", "quit")
-	menu.id_pressed.connect(_on_menu_id)
+	_build_nav_panel()
 
 func _style_popup(target: PopupMenu) -> void:
 	var popup_theme := Theme.new()
@@ -1720,3 +1802,97 @@ func _refresh_scenes() -> void:
 		_scenes_add.add_item(entry[1])
 		_scenes_add.set_item_metadata(_scenes_add.item_count - 1, entry[0])
 	_scenes_add.disabled = current.is_empty()
+
+# ---------------------------------------------------------------- экраны
+
+## Окно «Экраны для прогулок»: схема экранов, щелчок — разрешить или запретить
+## Хоше гулять там самой. Золотые линии — полы, по которым она ходит и между
+## которыми прыгает. host — desktop_host.gd; on_changed — сохранить настройки.
+func show_screens(host, on_changed: Callable, windows_monitors: Array = []) -> void:
+	_screens_host = host
+	_screens_changed = on_changed
+	_screens_windows = windows_monitors
+	if screens_window == null:
+		screens_window = Window.new()
+		screens_window.title = "Экраны для прогулок"
+		screens_window.size = Vector2i(520, 420)
+		screens_window.min_size = Vector2i(440, 360)
+		screens_window.always_on_top = true
+		screens_window.theme = theme
+		add_child(screens_window)
+		screens_window.close_requested.connect(screens_window.hide)
+		var panel_bg := PanelContainer.new()
+		panel_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color("fffdfb")
+		style.set_content_margin_all(16)
+		panel_bg.add_theme_stylebox_override("panel", style)
+		screens_window.add_child(panel_bg)
+		var column := VBoxContainer.new()
+		column.add_theme_constant_override("separation", 8)
+		panel_bg.add_child(column)
+		var intro := _label("Нажми на экран, чтобы разрешить или запретить Хоши гулять там самой. Золотые линии — пол: по нему она ходит, между ними перепрыгивает. Переносить её можно куда угодно.", 13, MUTED)
+		intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		column.add_child(intro)
+		_screens_map = MonitorMap.new()
+		_screens_map.custom_minimum_size = Vector2(0, 200)
+		_screens_map.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		_screens_map.selected = -1
+		_screens_map.picked.connect(_toggle_screen)
+		column.add_child(_screens_map)
+		_screens_text = _label("", 12, MUTED)
+		_screens_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		column.add_child(_screens_text)
+	_refresh_screens()
+	_open_on_top(screens_window)
+
+func _toggle_screen(index: int) -> void:
+	_screens_map.selected = -1
+	for screen in _screens_host.screen_map.screens:
+		if _screen_number(screen) != index:
+			continue
+		var blocked: PackedStringArray = _screens_host.blocked_screens
+		if screen["id"] in blocked:
+			blocked.remove_at(blocked.find(screen["id"]))
+		else:
+			blocked.append(screen["id"])
+		_screens_host.blocked_screens = blocked
+	if _screens_changed.is_valid():
+		_screens_changed.call()
+	_refresh_screens()
+
+## Номер экрана как в «Параметры → Дисплей»: экраны Godot и Windows расположены
+## одинаково — сопоставляем по порядку слева направо (и сверху вниз).
+func _screen_number(screen: Dictionary) -> int:
+	var ours: Array = _screens_host.screen_map.screens.duplicate()
+	if _screens_windows.size() != ours.size():
+		return int(screen["index"]) + 1
+	var by_place := func(a, b, ax: String, ay: String) -> bool:
+		return a[ax] < b[ax] or (a[ax] == b[ax] and a[ay] < b[ay])
+	var godot: Array = []
+	for item in ours:
+		godot.append({"x": item["full"].position.x, "y": item["full"].position.y, "id": item["id"]})
+	godot.sort_custom(func(a, b): return by_place.call(a, b, "x", "y"))
+	var windows: Array = _screens_windows.duplicate()
+	windows.sort_custom(func(a, b): return by_place.call(a, b, "x", "y"))
+	for position in range(godot.size()):
+		if godot[position]["id"] == screen["id"]:
+			return int(windows[position].get("index", position + 1))
+	return int(screen["index"]) + 1
+
+func _refresh_screens() -> void:
+	_screens_host.refresh_screen_map(true)
+	var monitors: Array = []
+	var blocked: Array = []
+	var lines: Array[String] = []
+	for screen in _screens_host.screen_map.screens:
+		var full: Rect2i = screen["full"]
+		var number: int = _screen_number(screen)
+		monitors.append({"index": number, "x": full.position.x, "y": full.position.y, "width": full.size.x, "height": full.size.y, "primary": screen["primary"]})
+		if not screen["allowed"]:
+			blocked.append(number)
+		lines.append("%d%s — %s" % [number, " ★" if screen["primary"] else "", "гуляет" if screen["allowed"] else "нельзя"])
+	_screens_map.monitors = monitors
+	_screens_map.blocked = blocked
+	_screens_map.floors = _screens_host.screen_map.lanes
+	_screens_text.text = "   ".join(lines) + ("" if not monitors.is_empty() else "Экраны не найдены")

@@ -147,7 +147,7 @@ func _check_menus() -> void:
 	var user_interface = UI.new()
 	root.add_child(user_interface)
 	await process_frame
-	var popups: Array[PopupMenu] = [user_interface.menu]
+	var popups: Array[PopupMenu] = [user_interface.menu_tree]
 	var menu_ok: bool = true
 	var seen: int = 0
 	while not popups.is_empty():
@@ -171,15 +171,31 @@ func _check_menus() -> void:
 	user_interface.action_requested.connect(func(command: String): emitted.append(command))
 	user_interface._on_menu_id(Commands.menu_id("wave"))
 	_check(emitted.size() == 1 and emitted[0] == "wave", "menu click is delivered as the command name")
-	# У правого края: главное меню 1500..1800, второй уровень открылся влево (1270..1500),
-	# третий Godot ставит вправо (1500..1720) — поверх главного. Уводим его влево.
-	var screen := Rect2i(0, 0, 1920, 1040)
-	var grand := Rect2i(1500, 300, 300, 330)
-	var parent := Rect2i(1270, 400, 230, 170)
-	_check(UI.submenu_position(Rect2i(1500, 480, 220, 230), parent, grand, screen) == Vector2i(1050, 480), "third menu level opens away from the main menu, not over it")
-	_check(UI.submenu_position(Rect2i(230, 480, 220, 230), Rect2i(0, 400, 230, 170), Rect2i(230, 300, 300, 330), screen) == Vector2i(10, 480)
-		and UI.submenu_position(Rect2i(700, 480, 220, 230), parent, grand, screen) == Vector2i(700, 480),
-		"no room on the side — right next to the main menu; not overlapping — left as it is")
+	# Меню — одна панель: раздел открывается в ней же, «‹ Назад» — вверх.
+	user_interface.open_menu(Vector2i(100, 100))
+	var top_count: int = user_interface.menu.item_count
+	var life_index: int = -1
+	for index in range(user_interface.menu.item_count):
+		if user_interface.menu.get_item_text(index).begins_with("Общение"):
+			life_index = index
+	user_interface._on_nav_id(user_interface.menu.get_item_id(life_index))
+	var edge_index: int = -1
+	for index in range(user_interface.menu.item_count):
+		if user_interface.menu.get_item_text(index).begins_with("Занятие на краю"):
+			edge_index = index
+	user_interface._on_nav_id(user_interface.menu.get_item_id(edge_index))
+	var third: Array[String] = []
+	for index in range(user_interface.menu.item_count):
+		third.append(user_interface.menu.get_item_text(index))
+	_check(third.has("Сама выбирает") and third[0].begins_with("‹") and user_interface.menu.visible, "third level opens in the same panel, with «Back»")
+	emitted.clear()
+	user_interface._on_nav_id(Commands.menu_id("edge_mode_auto"))
+	_check(emitted == ["edge_mode_auto"] and not user_interface.menu.visible, "choosing an item runs its command and closes the menu")
+	user_interface.open_menu(Vector2i(100, 100))
+	user_interface._on_nav_id(user_interface.menu.get_item_id(life_index))
+	user_interface._on_nav_id(user_interface.NAV_BACK)
+	_check(user_interface.menu.item_count == top_count, "«Back» returns to the upper level")
+	user_interface.menu.hide()
 	user_interface.queue_free()
 
 func _finish() -> void:

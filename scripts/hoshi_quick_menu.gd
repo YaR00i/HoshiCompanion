@@ -11,8 +11,8 @@ const INK: Color = Color("3b3449")
 const MUTED: Color = Color("82798f")
 const PLUM: Color = Color("665479")
 const GOLD: Color = Color("c4a36e")
-const WIDTH: int = 390
-const HEIGHT: int = 753
+const WIDTH: int = 410
+const HEIGHT: int = 758
 
 var status_label: Label
 var voice_button: Button
@@ -128,9 +128,14 @@ func _ready() -> void:
 	pc_grid.add_theme_constant_override("v_separation", 7)
 	column.add_child(pc_grid)
 	for item in [["🚀  Мои действия", "pc_actions_editor"], ["🔊  Звук на пульте", "sound_outputs_editor"],
-			["✨  Сценарии", "scenes_editor"], ["⧉  Переставить окно", "move_window_editor"], ["🔄  Перезапустить", "restart"]]:
+			["✨  Сценарии", "scenes_editor"], ["⧉  Двигать окно", "move_window_editor"], ["🔄  Перезапустить", "restart"]]:
 		var button := _button(str(item[0]), str(item[1]), Color("fffdfb"), 40)
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		# Колонки — ровно по ширине панели: длинная подпись не раздвигает меню.
+		button.clip_text = true
+		button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		button.custom_minimum_size.x = 60
+		button.tooltip_text = str(item[0]).strip_edges()
 		pc_grid.add_child(button)
 	var divider := HSeparator.new()
 	divider.modulate = GOLD.lightened(0.35)

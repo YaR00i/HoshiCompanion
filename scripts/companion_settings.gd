@@ -70,6 +70,7 @@ func read() -> void:
 	if config.load(SETTINGS_PATH) != OK:
 		return
 	app.host.body_pixels = clampi(int(config.get_value("window", "body_pixels", 360)), 240, 520)
+	app.host.blocked_screens = PackedStringArray(config.get_value("window", "blocked_screens", []))
 	var stored_position: Variant = config.get_value("window", "position", Vector2i(-99999, -99999))
 	if stored_position is Vector2i:
 		app.host.saved_position = stored_position
@@ -115,6 +116,7 @@ func save() -> void:
 	if app.host.headless or app._test_mode:
 		return
 	config.set_value("window", "body_pixels", app.host.body_pixels)
+	config.set_value("window", "blocked_screens", Array(app.host.blocked_screens))
 	var saved_window: Vector2i = app.host.saved_position if app.host.preview or app.air.active() else app.get_window().position
 	if app.playground.active():
 		saved_window = app.playground.saved_floor_position

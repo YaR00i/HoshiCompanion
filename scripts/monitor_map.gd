@@ -19,6 +19,17 @@ var selected: int = 0:
 		selected = value
 		queue_redraw()
 
+## Номера экранов, где Хоши нельзя гулять: серые с «✕» (окно «Экраны для Хоши»).
+var blocked: Array = []:
+	set(value):
+		blocked = value
+		queue_redraw()
+## Полы (screen_map.gd lanes): [{x0, x1, y}] — рисуются золотой линией.
+var floors: Array = []:
+	set(value):
+		floors = value
+		queue_redraw()
+
 var _rects: Dictionary = {}  # index -> Rect2 на схеме
 
 func _init() -> void:
@@ -40,12 +51,17 @@ func _draw() -> void:
 		var rect := Rect2(Vector2(m["x"], m["y"]) * scale + offset, Vector2(m["width"], m["height"]) * scale).grow(-2.0)
 		_rects[int(m["index"])] = rect
 		var on: bool = int(m["index"]) == selected
-		draw_rect(rect, ON if on else PAPER)
+		var off: bool = blocked.has(int(m["index"]))
+		draw_rect(rect, ON if on else (Color("ece7ef") if off else PAPER))
 		draw_rect(rect, ON if on else EDGE, false, 2.0)
-		var label: String = str(m["index"]) + (" ★" if bool(m.get("primary", false)) else "")
+		var label: String = str(m["index"]) + (" ★" if bool(m.get("primary", false)) else "") + ("  ✕" if off else "")
 		var font_size: int = int(clampf(rect.size.y * 0.32, 11.0, 26.0))
 		var width: float = font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
-		draw_string(font, rect.get_center() + Vector2(-width * 0.5, font_size * 0.35), label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color.WHITE if on else TEXT)
+		draw_string(font, rect.get_center() + Vector2(-width * 0.5, font_size * 0.35), label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color.WHITE if on else (EDGE if off else TEXT))
+	for lane in floors:
+		var from := Vector2(lane["x0"], lane["y"]) * scale + offset
+		var to := Vector2(lane["x1"], lane["y"]) * scale + offset
+		draw_line(from + Vector2(3, -3), to + Vector2(-3, -3), Color("d8a54a"), 3.0)
 
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:

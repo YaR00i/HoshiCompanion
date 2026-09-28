@@ -58,7 +58,7 @@ func mark_support_walk() -> void:
 	var app = _app()
 	if app == null:
 		return
-	app._walk_area = app.host.walking_area()
+	app._walk_zone = app.host.walking_zone()
 	app._rest_after_walk = false
 
 ## Не садиться автоматически после текущей прогулки.

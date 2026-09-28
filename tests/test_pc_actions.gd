@@ -149,5 +149,7 @@ func _run() -> void:
 	_check(bus.run("pc:" + folder, {}) == "" and pc.executed[-1] == ["open", "D:/projects"] and app.said[-1] == "Открываю: Мои проекты", "phone button reaches the PC through the bus")
 	_check(JSON.stringify(bus.remote_catalog()).contains("Мои проекты"), "phone catalog lists my actions")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(pc.path))
+	pc.executed.clear()
+	_check(pc.front_app("claude").is_empty() and pc.executed.back()[0] == "front_app" and pc.executed.back()[2] == "claude.exe" and pc.front_app("nobody") == "unknown_app", "a cloud click raises the assistant's window by program name only")
 	print("HOSHI_PC_ACTIONS_RESULT checks=%d failures=%d" % [checks, failures])
 	quit(1 if failures > 0 else 0)

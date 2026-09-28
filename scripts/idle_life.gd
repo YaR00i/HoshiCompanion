@@ -1,4 +1,5 @@
 extends RefCounted
+const LifeStyle = preload("res://scripts/life_style.gd")
 ## Rare standing micro-gestures. This is not locomotion and never owns foot placement.
 ## It only adds small upper-body rotations after the ordinary idle rig has been posed.
 var rig
@@ -154,13 +155,53 @@ func _apply_weight_shift() -> void:
 	if absf(amount) <= 0.001:
 		return
 	var w: float = absf(amount)
-	var side: float = signf(amount)
-	# Deliberately tiny: this should read as settling onto one leg, not as a pose.
-	_add("hips", Vector3(0.0, side * 0.20, side * 0.55) * w)
-	_add("spine", Vector3(0.25, -side * 0.35, -side * 0.75) * w)
-	_add("chest", Vector3(-0.10, side * 0.20, -side * 0.30) * w)
-	_add("neck", Vector3(0.0, -side * 0.45, side * 0.20) * w)
-	_add("head", Vector3(0.0, -side * 0.75, side * 0.30) * w)
+	var side: float = signf(amount) # +1 — стоит на левой ноге (лево = +X)
+	var life = LifeStyle.active()
+	var stand: String = "left" if side > 0.0 else "right"
+	var free: String = "right" if side > 0.0 else "left"
+	if not (rig.bones.has(stand + "Foot") and rig.bones.has(free + "Foot") and rig.bones.has(stand + "UpperLeg") and rig.bones.has(free + "UpperLeg")):
+		return
+	var feet_before: Dictionary = {stand: _bone_origin(stand + "Foot"), free: _bone_origin(free + "Foot")}
+	var leg_length: float = maxf(0.3, _bone_origin("hips").y - float(feet_before[stand].y))
+	# Контрапост: таз уходит на опорную ногу, её бедро чуть выше; свободное колено
+	# сгибается; плечи наклоняются в другую сторону, голова остаётся ровной.
+	_move_hips(Vector3(side * float(life.weight_hip_shift) * leg_length * w, 0.0, 0.0))
+	_add("hips", Vector3(0.0, side * 0.6, side * float(life.weight_hip_roll)) * w)
+	var knee: float = float(life.weight_knee) * w
+	_add(free + "UpperLeg", Vector3(-knee * 0.55, 0.0, 0.0))
+	_add(free + "LowerLeg", Vector3(knee, 0.0, 0.0))
+	_add(free + "Foot", Vector3(-knee * 0.45, 0.0, 0.0))
+	# Ступни — на месте: повернуть каждое бедро так, чтобы стопа вернулась вбок
+	# туда, где стояла (замер, а не догадка про знаки осей рига).
+	for leg in [stand, free]:
+		_plant_sideways(leg, feet_before[leg], leg_length)
+	var drop: float = float(feet_before[stand].y) - _bone_origin(stand + "Foot").y
+	_move_hips(Vector3(0.0, drop, 0.0))
+	var shoulders: float = float(life.weight_shoulders)
+	_add("spine", Vector3(0.25, -side * 0.35, -side * (float(life.weight_hip_roll) * 0.55 + shoulders * 0.3)) * w)
+	_add("chest", Vector3(-0.10, side * 0.20, -side * shoulders * 0.6) * w)
+	_add("neck", Vector3(0.0, -side * 0.45, side * shoulders * 0.35) * w)
+	_add("head", Vector3(0.0, -side * 0.75, side * shoulders * 0.45) * w)
+
+## Вернуть стопу по горизонтали на прежнее место поворотом бедра вокруг оси вперёд.
+func _plant_sideways(leg: String, foot_before: Vector3, leg_length: float) -> void:
+	var dx: float = _bone_origin(leg + "Foot").x - foot_before.x
+	if absf(dx) < 0.0005:
+		return
+	var angle: float = rad_to_deg(asin(clampf(dx / leg_length, -0.5, 0.5)))
+	_add(leg + "UpperLeg", Vector3(0.0, 0.0, angle))
+	var after: float = absf(_bone_origin(leg + "Foot").x - foot_before.x)
+	if after > absf(dx):
+		_add(leg + "UpperLeg", Vector3(0.0, 0.0, -2.0 * angle)) # ось в другую сторону
+
+func _bone_origin(semantic: String) -> Vector3:
+	return skeleton.get_bone_global_pose(int(rig.bones[semantic])).origin
+
+func _move_hips(offset: Vector3) -> void:
+	var hips: int = int(rig.bones["hips"])
+	var parent: int = skeleton.get_bone_parent(hips)
+	var parent_basis: Basis = skeleton.get_bone_global_pose(parent).basis if parent >= 0 else Basis.IDENTITY
+	skeleton.set_bone_pose_position(hips, skeleton.get_bone_pose_position(hips) + parent_basis.inverse() * offset)
 
 func _apply_curiosity_peek() -> void:
 	var amount: float = float(weights["peek_left"]) - float(weights["peek_right"])

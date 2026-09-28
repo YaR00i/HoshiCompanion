@@ -207,6 +207,13 @@
   10 min); the waiter re-knocks every 5 min (HEARTBEAT) and logs to %LOCALAPPDATA%/HoshiCompanion/
   claude_hook.log (time, event, 8-char session, outcome; never text). StopFailure is reported too.
   Phone packets may be up to 8 KB for this. Never change Claude's permission mode from the phone.
+- Codex uses the same assistant_watch receiver with a separate `codex` card/cloud and
+  `tools/codex_hook.py` in user-level `~/.codex/hooks.json` (user-approved 2026-09-28).
+  The paired phone may see status, project folder name, last final answer, answer-named media,
+  and text-only session history (`tools/codex_history.py`), and may send a reply during the
+  one-minute synchronous Stop hook. Never send paths, tool calls/results or reasoning to the
+  phone. Keep the existing Codex `notify` setting untouched. PermissionRequest may use the
+  same 30-second phone decision; do not change Codex approval policy from the phone.
 - android/ (Kotlin app «Хоши», see docs/ANDROID_APP_RU.md): WebView of the live remote page, a
   foreground service (same phone protocol: hello/ping/state, never sends commands) for Claude
   notifications while the page is hidden, self-update from GET /app/version.json + /app/hoshi.apk
@@ -221,4 +228,3 @@
   detached "relaunch" helper (waits for this PID, max 120 s, then starts the same Godot executable
   with --path/--log-file and this run's arguments) and closes through the normal portal outro.
   A new version with script errors never closes Hoshi. Tests use dry_run.
-

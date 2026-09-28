@@ -388,9 +388,9 @@ function connect() {
     else if (m.op === "ran" && !m.ok) toast({not_allowed: "С телефона так нельзя", missing: "Не нашла этот файл на компьютере",
       nothing_to_cancel: "Нечего отменять", need_confirm: "Нужно подтвердить",
       not_available: "Это устройство сейчас не на связи",
-      not_waiting: "Claude сейчас не ждёт ответа — напиши, когда он закончит", unknown_session: "Эта сессия Claude уже закрыта",
+      not_waiting: "Помощник сейчас не ждёт ответа — напиши, когда он закончит", unknown_session: "Эта сессия уже закрыта",
       unknown_window: "Этого окна уже нет — обнови список", bad_screen: "Выбери экран",
-      no_question: "Вопрос уже закрыт — Claude спросит на ПК", not_all_answered: "Ответь на все вопросы",
+      no_question: "Вопрос уже закрыт — помощник спросит на ПК", not_all_answered: "Ответь на все вопросы",
       unknown_scene: "Этого сценария уже нет", bad_minutes: "Столько минут нельзя", empty_scene: "В сценарии нет шагов — добавь их на ПК"}[m.reason] || "Сейчас не получилось");
     else if (m.op === "error") {
       if (m.reason === "need_pairing") {
@@ -724,7 +724,7 @@ function barItems() {
   items.push({id: "windows", title: "Окна"});
   for (const app of state.apps || []) {
     const s = app.state || {}; let mark = "", kind = "";
-    if (app.id === "claude") {
+    if (app.id === "claude" || app.id === "codex") {
       if (s.ask) { mark = "?"; kind = "waiting"; }
       else if (s.subtitle === "работает…") mark = "…";
       else if (String(s.subtitle || "").startsWith("⚠")) { mark = "!"; kind = "waiting"; }
@@ -786,7 +786,7 @@ const MINI_KEEP_MS = 10 * 60 * 1000;
 const miniSeen = {};      // id -> {since: когда заиграло, last: когда последний раз играло}
 let miniChoice = null;    // выбранный кнопкой ⇄
 function miniCandidates() {
-  const apps = (state.apps || []).filter((a) => a.id !== "claude" && (a.commands || []).some((c) => c.command.endsWith(":toggle")) && (a.state || {}).title);
+  const apps = (state.apps || []).filter((a) => !["claude", "codex"].includes(a.id) && (a.commands || []).some((c) => c.command.endsWith(":toggle")) && (a.state || {}).title);
   const youtube = apps.find((a) => a.id === "youtube" && a.state.playing);
   const now = Date.now();
   const list = [];
@@ -963,13 +963,13 @@ function buildApp(app, signature) {
     now.append(text); card.append(now);
   } else card.append(el("div", "empty", s.hint || "Ничего не играет"));
   const byName = {}; for (const c of app.commands) byName[c.command.split(":")[2]] = c;
-  if (app.id === "claude") { // история бесед (решение 27.09): текущая беседа и все сессии
+  if (app.id === "claude" || app.id === "codex") { // общая карточка помощника
     const hist = el("div", "chips"); hist.style.margin = "2px 0 8px";
-    const talk = el("button", "chip", "💬 Беседа"); talk.onclick = () => openHistory("read", s.session || "");
-    const all = el("button", "chip", "🗂 Все сессии"); all.onclick = () => openHistory("sessions", "");
+    const talk = el("button", "chip", "💬 Беседа"); talk.onclick = () => openHistory("read", s.session || "", app.id);
+    const all = el("button", "chip", "🗂 Все сессии"); all.onclick = () => openHistory("sessions", "", app.id);
     hist.append(talk, all); card.insertBefore(hist, card.children[1] || null);
   }
-  if (s.ask && byName.permit) { card.insertBefore(buildAsk(s.ask, byName, view), card.children[1] || null); }
+  if (s.ask && byName.permit) { card.insertBefore(buildAsk(s.ask, byName, view, app.title), card.children[1] || null); }
   if (s.text) { const answer = el("div", "answer"); linkify(answer, s.text); card.append(answer); }
   // Картинки, гифки и видео из ответа: Хоши отдаёт их по случайному адресу /media/<id>.
   if ((s.media || []).length) {
@@ -990,25 +990,25 @@ function buildApp(app, signature) {
       const chip = el("button", "chip", label); chip.disabled = true; chip.style.opacity = ".45"; quick.append(chip);
     }
     card.append(quick);
-    if (!s.hint && !s.ask) card.append(el("div", "empty", s.subtitle === "работает…" ? "Claude работает — кнопки оживут, когда закончит"
-      : "Claude не ждёт ответа — напиши ему в сессии на ПК, потом кнопки оживут"));
+    if (!s.hint && !s.ask) card.append(el("div", "empty", s.subtitle === "работает…" ? app.title + " работает — кнопки оживут, когда закончит"
+      : app.title + " не ждёт ответа — напиши ему в сессии на ПК, потом кнопки оживут"));
   }
   // Ответ Claude с телефона: поле есть, только пока Claude ждёт (его хук на связи).
   if (s.can_reply && byName.reply) {
     const box = el("div", "reply"); const input = el("textarea"); const send = el("button", "", "Отправить");
-    input.placeholder = "Ответить Claude…"; input.maxLength = 2000; input.value = drafts[app.id] || "";
+    input.placeholder = "Ответить " + app.title + "…"; input.maxLength = 2000; input.value = drafts[app.id] || "";
     input.addEventListener("input", () => { drafts[app.id] = input.value; });
     send.onclick = () => {
       const text = input.value.trim(); if (!text) return;
       run(byName.reply.command, {text, session: s.session});
-      drafts[app.id] = ""; input.value = ""; toast("Отправила Claude");
+      drafts[app.id] = ""; input.value = ""; toast("Отправила " + app.title);
     };
     // Быстрые ответы: «!» — пинг (Claude отвечает одной строкой, ничего не начиная; см. CLAUDE.md).
     const quick = el("div", "chips quick-replies");
     // «💾 Коммить» — единственная кнопка, которая разрешает локальный коммит (правило в CLAUDE.md).
     for (const [label, text] of [["👋 Ты тут?", "!"], ["▶ Продолжай", "Продолжай"], ["✓ Ок", "Ок"], ["💾 Коммить", "💾 Коммить (кнопка пульта)"]]) {
       const chip = el("button", "chip", label);
-      chip.onclick = () => { run(byName.reply.command, {text, session: s.session}); toast("Отправила Claude"); };
+      chip.onclick = () => { run(byName.reply.command, {text, session: s.session}); toast("Отправила " + app.title); };
       quick.append(chip);
     }
     card.append(quick);
@@ -1085,10 +1085,10 @@ function buildApp(app, signature) {
 }
 
 // «Claude спрашивает»: разрешение (Разрешить / Запретить, с кодом) или вопрос с вариантами.
-function buildAsk(ask, byName, view) {
+function buildAsk(ask, byName, view, assistantTitle) {
   const box = el("div", "ask"); const head = el("div", "ask-head");
   view.askTimer = el("span", "", "");
-  head.append(el("span", "", ask.kind === "permission" ? "Claude просит разрешение · " + ask.id : "Claude спрашивает"), view.askTimer);
+  head.append(el("span", "", ask.kind === "permission" ? assistantTitle + " просит разрешение · " + ask.id : assistantTitle + " спрашивает"), view.askTimer);
   box.append(head);
   if (ask.kind === "permission") {
     box.append(el("div", "", ask.tool || "Действие"));
@@ -1127,29 +1127,29 @@ function buildAsk(ask, byName, view) {
     };
     box.append(other);
   }
-  send.onclick = () => { if (send.disabled) return; run(byName.answer.command, {id: ask.id, answers}); toast("Ответила Claude"); };
+  send.onclick = () => { if (send.disabled) return; run(byName.answer.command, {id: ask.id, answers}); toast("Ответила " + assistantTitle); };
   const row = el("div", "row"); row.append(send); box.append(row); refresh();
   return box;
 }
 
 // Экран истории: беседа (пузыри) или список сессий. Данные приходят {op: "history"}.
 let historyView = null;
-function openHistory(kind, session) {
+function openHistory(kind, session, app = historyView?.app || "claude") {
   if (!historyView) {
     historyView = el("div", "history"); const head = el("header"); const bar = el("div", "hbar");
     const back = el("button", "", "←"); historyView.titleEl = el("div", "htitle", "");
     const close = el("button", "", "✕"); bar.append(back, historyView.titleEl, close); head.append(bar);
     historyView.body = el("div", "hbody"); historyView.append(head, historyView.body);
-    back.onclick = () => historyView.kind === "read" ? openHistory("sessions", "") : (historyView.remove());
+    back.onclick = () => historyView.kind === "read" ? openHistory("sessions", "", historyView.app) : (historyView.remove());
     close.onclick = () => historyView.remove();
   }
-  historyView.kind = kind; historyView.titleEl.textContent = kind === "read" ? "Беседа" : "Все сессии Claude";
+  historyView.kind = kind; historyView.app = app; historyView.titleEl.textContent = kind === "read" ? "Беседа" : "Все сессии " + (APP_TITLES[app] || app);
   historyView.body.textContent = ""; historyView.body.append(el("div", "empty", "Загружаю…"));
   document.body.append(historyView);
-  send({op: "history", kind, session});
+  send({op: "history", app, kind, session});
 }
 function showHistory(m) {
-  if (!historyView || !historyView.isConnected || m.kind !== historyView.kind) return;
+  if (!historyView || !historyView.isConnected || m.kind !== historyView.kind || (m.app || "claude") !== historyView.app) return;
   const body = historyView.body; body.textContent = "";
   if (!m.ok) { body.append(el("div", "empty", m.kind === "read" ? "Беседа не найдена — открой «Все сессии»" : "Не получилось прочитать сессии")); return; }
   if (m.kind === "sessions") {
@@ -1157,7 +1157,7 @@ function showHistory(m) {
     for (const x of m.sessions) {
       const b = el("button", "sess" + (x.current ? " current" : ""));
       b.append(el("b", "", x.title), el("span", "", x.folder + " · " + new Date(x.updated * 1000).toLocaleString("ru-RU", {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"})));
-      b.onclick = () => openHistory("read", x.id);
+      b.onclick = () => openHistory("read", x.id, historyView.app);
       body.append(b);
     }
     return;

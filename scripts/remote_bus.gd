@@ -512,7 +512,7 @@ func _handle(key: int, message: Dictionary) -> void:
 			if float(peer["runs"]) > MAX_RUNS_PER_SECOND:
 				_send(key, {"op": "error", "reason": "too_fast"})
 				return
-			assistants.request_history(key, str(message.get("kind", "")), str(message.get("session", "")).left(64))
+			assistants.request_history(key, str(message.get("kind", "")), str(message.get("session", "")).left(64), str(message.get("app", "claude")))
 		_:
 			_send(key, {"op": "error", "reason": "unknown_op"})
 
@@ -551,15 +551,15 @@ func run(command: String, args: Variant = {}) -> String:
 			return "unknown_app_command"
 		if int(target["peer"]) == MpcAdapter.PEER:
 			return mpc.run(target["name"], _clean_args(args))
-		if int(target["peer"]) == AssistantWatch.PEER:
+		if int(target["peer"]) in [AssistantWatch.PEER, AssistantWatch.CODEX_PEER]:
 			# Ответ Claude с телефона (решение 2026-09-27): длиннее обычных аргументов.
 			var reply: Dictionary = args if args is Dictionary else {}
 			match str(target["name"]):
 				"permit":
-					return assistants.answer_permission(str(reply.get("id", "")), str(reply.get("behavior", "")))
+					return assistants.answer_permission(str(reply.get("id", "")), str(reply.get("behavior", "")), str(target["id"]))
 				"answer":
-					return assistants.answer_question(str(reply.get("id", "")), reply.get("answers", {}))
-			return assistants.reply(str(reply.get("text", "")), str(reply.get("session", "")))
+					return assistants.answer_question(str(reply.get("id", "")), reply.get("answers", {}), str(target["id"]))
+			return assistants.reply(str(reply.get("text", "")), str(reply.get("session", "")), str(target["id"]))
 		_send(int(target["peer"]), {"op": "run", "command": target["name"], "args": _clean_args(args)})
 		return ""
 	if not Commands.allows(command, "remote"):
@@ -582,12 +582,14 @@ func _sync_mpc() -> void:
 ## Карточка Claude на пульте всегда (просьба 27.09): нет сессий — подсказка,
 ## как его «разбудить» (написать на ПК), и серые кнопки.
 func _sync_assistants() -> void:
-	if not assistants.listening and not assistants.active():
-		adapters.drop_peer(AssistantWatch.PEER) # приёмник записок не запущен (тесты, другой режим)
-	elif not adapters.adapters.has(AssistantWatch.ID):
-		adapters.announce(AssistantWatch.PEER, assistants.announcement())
-	else:
-		adapters.update_state(AssistantWatch.PEER, assistants.card_state())
+	for app in AssistantWatch.APPS:
+		var peer: int = AssistantWatch.CODEX_PEER if app == "codex" else AssistantWatch.PEER
+		if not assistants.listening and not assistants.active(app):
+			adapters.drop_peer(peer)
+		elif not adapters.adapters.has(app):
+			adapters.announce(peer, assistants.announcement(app))
+		else:
+			adapters.update_state(peer, assistants.card_state(app))
 
 ## Шаг сценария: как нажатие на пульте, только Хоши не комментирует каждый шаг.
 func _scene_step(command: String) -> String:
@@ -644,7 +646,7 @@ func pause_players() -> void:
 	last_paused.clear()
 	for id in adapters.adapters.keys():
 		var item: Dictionary = adapters.adapters[id]
-		if id == AssistantWatch.ID or not bool(item["state"].get("playing", false)):
+		if id in AssistantWatch.APPS or not bool(item["state"].get("playing", false)):
 			continue
 		if id == "tabs" and youtube_playing and str(item["state"].get("subtitle", "")).begins_with("youtube.com"):
 			continue

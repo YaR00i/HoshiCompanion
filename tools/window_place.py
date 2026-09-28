@@ -261,6 +261,16 @@ def front(owner_pid: int, hwnd: int) -> dict:
     return {'ok': True, 'app': windows.app(hwnd)}
 
 
+def front_app(owner_pid: int, exes: list[str]) -> dict:
+    """The top-most window of one of these programs (by file name only) -> front."""
+    windows = Windows(owner_pid)
+    for hwnd in windows.top_level():  # top first (Z-order)
+        if windows.app(hwnd).lower() in exes:
+            windows.front(hwnd)
+            return {'ok': True, 'app': windows.app(hwnd)}
+    return {'ok': False, 'error': 'not_found'}
+
+
 def place(owner_pid: int, monitor: int, mode: str, exe: str, reuse: bool = False) -> dict:
     screens = monitors()
     screen = next((m for m in screens if m['index'] == monitor), None)
@@ -323,12 +333,16 @@ def main(argv: list[str]) -> int:
     if len(argv) == 4 and argv[1] == 'front' and argv[2].isdigit() and argv[3].isdigit():
         print(json.dumps(front(int(argv[2]), int(argv[3]))), flush=True)
         return 0
+    if len(argv) == 4 and argv[1] == 'front_app' and argv[2].isdigit():
+        print(json.dumps(front_app(int(argv[2]), [e for e in argv[3].lower().split(',') if e.endswith('.exe')])), flush=True)
+        return 0
     if len(argv) in (6, 7) and argv[1] == 'place' and argv[2].isdigit() and argv[3].isdigit():
         exe = '' if argv[5] == '-' else argv[5].lower()
         print(json.dumps(place(int(argv[2]), int(argv[3]), argv[4], exe, argv[6:] == ['reuse'])), flush=True)
         return 0
     print('usage: window_place.py monitors | list <owner_pid> | move <owner_pid> <hwnd> <monitor> <mode> [front]'
-          ' | front <owner_pid> <hwnd> | place <owner_pid> <monitor> <mode> <exe|->', file=sys.stderr)
+          ' | front <owner_pid> <hwnd> | front_app <owner_pid> <a.exe[,b.exe]>'
+          ' | place <owner_pid> <monitor> <mode> <exe|->', file=sys.stderr)
     return 2
 
 

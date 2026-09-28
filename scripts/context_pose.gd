@@ -1,4 +1,5 @@
 extends RefCounted
+const LifeStyle = preload("res://scripts/life_style.gd")
 ## Context-only overlay poses: carry, cursor grip, jump, fall, landing and portal steps.
 ## Adds rotations on top of the normal rig; never edits REST transforms or skin binds.
 var rig
@@ -311,8 +312,12 @@ func _apply_mode(mode: String, u: float, w: float, time: float, sx: float, sy: f
 			_add("rightUpperLeg", Vector3(maxf(0.0, -step) * 0.5, 0.0, 0.0) * w)
 		"side_left":
 			var breathe_left: float = sin(time * 1.4) * 0.8
+			var lean_left: float = float(LifeStyle.active().lean_body)
 			_add("hips", Vector3(0.0, 0.0, 3.0) * w)
-			_add("spine", Vector3(-2.0, 2.0, 6.0 + breathe_left) * w)
+			# Ноги не наклоняются вместе с тазом — ступни остаются на опоре.
+			_add("leftUpperLeg", Vector3(0.0, 0.0, -3.0) * w)
+			_add("rightUpperLeg", Vector3(0.0, 0.0, -3.0) * w)
+			_add("spine", Vector3(-2.0, 2.0, lean_left + breathe_left) * w)
 			_add("chest", Vector3(-1.0, 3.0, 5.0) * w)
 			_add("neck", Vector3(1.0, -4.0, -3.0) * w)
 			_add("head", Vector3(2.0, -6.0, -4.0) * w)
@@ -321,8 +326,11 @@ func _apply_mode(mode: String, u: float, w: float, time: float, sx: float, sy: f
 			_add("leftHand", Vector3(0.0, 0.0, -12.0) * w)
 		"side_right":
 			var breathe_right: float = sin(time * 1.4) * 0.8
+			var lean_right: float = float(LifeStyle.active().lean_body)
 			_add("hips", Vector3(0.0, 0.0, -3.0) * w)
-			_add("spine", Vector3(-2.0, -2.0, -6.0 - breathe_right) * w)
+			_add("leftUpperLeg", Vector3(0.0, 0.0, 3.0) * w)
+			_add("rightUpperLeg", Vector3(0.0, 0.0, 3.0) * w)
+			_add("spine", Vector3(-2.0, -2.0, -lean_right - breathe_right) * w)
 			_add("chest", Vector3(-1.0, -3.0, -5.0) * w)
 			_add("neck", Vector3(1.0, 4.0, 3.0) * w)
 			_add("head", Vector3(2.0, 6.0, 4.0) * w)

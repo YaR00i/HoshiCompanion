@@ -157,7 +157,7 @@ func _run() -> void:
 		state.tick(1.0 / 30.0)
 		stage.animate(1.0 / 30.0, state, Vector2.ZERO)
 	var head_right: Quaternion = stage.rig.skeleton.get_bone_pose_rotation(int(stage.rig.bones["head"]))
-	_check(head_left.angle_to(head_right) > deg_to_rad(3.0) and head_left.angle_to(head_right) < deg_to_rad(12.0), "the head follows the cursor gently across the stroke")
+	_check(head_left.angle_to(head_right) > deg_to_rad(3.0) and head_left.angle_to(head_right) < deg_to_rad(20.0), "the head follows the cursor gently across the stroke (stronger since 28.09, still no snap)")
 	state.end_pet_contact()
 	state.begin_cursor_hang()
 	for frame in range(18):
@@ -203,6 +203,8 @@ func _run() -> void:
 	_check_walk_runtime(stage)
 	_check_behavior()
 	_check_intent_planner()
+	_check_personality()
+	_check_screen_map()
 	_check_interaction_session()
 	stage.rig.reset()
 	var finite_rest: bool = true
@@ -213,7 +215,7 @@ func _run() -> void:
 	root.add_child(user_interface)
 	await process_frame
 	await process_frame
-	_check(user_interface.action_menu("quit") == user_interface.menu, "close command stays easy to find")
+	_check(user_interface.action_menu("quit") == user_interface.menu_tree, "close command stays easy to find (top level of the menu)")
 	_check(user_interface.action_menu("light_editor") != null, "light editor is available from the desktop menu")
 	_check(user_interface.action_menu("scan_window_structure") != null and user_interface.action_menu("scan_window_visual") != null, "window diagnostics remain available in tools")
 	var light_changes: Array[Vector3] = []
@@ -484,6 +486,108 @@ func _check_behavior() -> void:
 	for index in range(3600):
 		no_action = no_action and blocked.tick(1.0 / 30.0, {"can_walk": true}).is_empty()
 	_check(no_action, "disabled autonomy never emits actions")
+
+## Касания по месту: куда ткнули — та реакция; частые тычки не перезапускают.
+func _check_touch_reactions(stage) -> void:
+	var cam: Camera3D = stage.camera
+	var chest_bone: String = "upperChest" if stage.rig.bones.has("upperChest") else "chest"
+	var zones: Dictionary = {
+		"head": stage.body_zone(stage.head_pixel()),
+		"arm": stage.body_zone(stage.hand_pixel("left")),
+		"leg": stage.body_zone(cam.unproject_position(stage.rig.world_point("rightLowerLeg"))),
+		"chest": stage.body_zone(cam.unproject_position(stage.rig.world_point(chest_bone))),
+		"belly": stage.body_zone(cam.unproject_position(stage.rig.world_point("spine"))),
+	}
+	var zones_ok: bool = true
+	for key in zones:
+		zones_ok = zones_ok and zones[key]["zone"] == key
+	_check(zones_ok and zones["leg"]["side"] == "right" and zones["arm"]["side"] == "left", "a tap is sorted by place: head, hand, leg (with side), chest, belly — %s" % str(zones))
+	var touch = stage.touch
+	touch.cancel()
+	touch._cooldown = 0.0
+	_check(touch.start("belly") and not touch.start("belly") and not touch.start("leg"), "one reaction at a time; quick repeated taps do not restart it")
+	for i in range(30):
+		touch.tick(1.0 / 30.0)
+	_check(touch.active() and float(touch.face().get("happy", 0.0)) > 0.3, "the belly tap giggles (happy face) while it plays")
+	for i in range(60):
+		touch.tick(1.0 / 30.0)
+	_check(not touch.active() and touch.face().is_empty(), "the reaction ends by itself")
+	_check(not touch.start("head") and not touch.start("nose"), "head and unknown places keep their own reactions")
+
+## Единая карта экранов: как у пользователя — главный в центре, боковые с полом
+## на 89 px выше, четвёртый над правым (без своего пола).
+func _check_screen_map() -> void:
+	var ScreenMap = load("res://scripts/screen_map.gd")
+	var layout: Array = [
+		{"index": 0, "full": Rect2i(2400, 1350, 2560, 1440), "usable": Rect2i(2400, 1350, 2560, 1402), "primary": true},
+		{"index": 1, "full": Rect2i(5600, 1350, 2400, 1350), "usable": Rect2i(5600, 1350, 2400, 1313)},
+		{"index": 2, "full": Rect2i(0, 1350, 2400, 1350), "usable": Rect2i(0, 1350, 2400, 1313)},
+		{"index": 3, "full": Rect2i(5600, 0, 2400, 1350), "usable": Rect2i(5600, 0, 2400, 1313)},
+	]
+	var map = ScreenMap.new()
+	map.build(layout)
+	var main_lane: Dictionary = map.lane_at(Vector2(3600, 2752))
+	_check(map.lanes.size() == 4 and main_lane.get("y", 0) == 2752 and main_lane["x0"] == 2400 and main_lane["x1"] == 4960, "four floors: left, main, right and the top screen's taskbar")
+	var right: Dictionary = map.neighbor(main_lane, 1, 360.0)
+	var left: Dictionary = map.neighbor(main_lane, -1, 360.0)
+	_check(right.get("y", 0) == 2663 and right["x0"] == 5600 and left.get("x1", 0) == 2400, "from the main screen she can hop to both side screens (a 89 px step, across the DPI gap)")
+	_check(map.lane_at(Vector2(6000, 1313)).get("y", 0) == 1313 and map.lane_at(Vector2(6000, 1500)).get("y", 0) == 2663, "standing on the top screen's taskbar; below it the right screen's floor")
+	var bare = ScreenMap.new()
+	bare.build([{"full": Rect2i(0, 1080, 1920, 1080), "usable": Rect2i(0, 1080, 1920, 1040)}, {"full": Rect2i(0, 0, 1920, 1080), "usable": Rect2i(0, 0, 1920, 1080)}])
+	_check(bare.lanes.size() == 1 and bare.lanes[0]["y"] == 2120, "a screen without a taskbar right above another has no floor — she falls through")
+	_check(map.neighbor(main_lane, 1, 60.0).is_empty(), "a step too high for her size is a wall")
+	var blocked = ScreenMap.new()
+	blocked.build(layout, PackedStringArray([ScreenMap.screen_id(Rect2i(5600, 1350, 2400, 1350))]))
+	_check(blocked.neighbor(blocked.lane_at(Vector2(3600, 2752)), 1, 360.0).is_empty() and not blocked.allowed_at(Vector2(6000, 2000)) and blocked.allowed_at(Vector2(3000, 2000)), "a forbidden screen gives no floor: she does not go there herself")
+	var level = ScreenMap.new()
+	level.build([{"full": Rect2i(0, 0, 1920, 1080), "usable": Rect2i(0, 0, 1920, 1040)}, {"full": Rect2i(1920, 0, 1920, 1080), "usable": Rect2i(1920, 0, 1920, 1040)}])
+	_check(level.lanes.size() == 1 and level.lanes[0]["x1"] == 3840, "screens with floors at one height make one lane — she walks across the seam")
+
+## 0.9.1 «Характер»: медленные параметры мягко меняют веса занятий.
+func _check_personality() -> void:
+	var Personality = load("res://scripts/personality.gd")
+	var p = Personality.new()
+	var start: Dictionary = p.snapshot()
+	for name in ["explore_floor", "rest", "observe", "visit_side"]:
+		if absf(p.intent_factor(name) - 1.0) > 0.2:
+			_check(false, "ordinary character keeps weights near 1 (%s=%.2f)" % [name, p.intent_factor(name)])
+	_check(p.describe() == "спокойная", "a fresh Hoshi is calm")
+	for i in range(1800): # 3 минуты прогулки
+		p.tick(0.1, {"walking": true})
+	var tired_rest: float = p.intent_factor("rest")
+	var tired_walk: float = p.intent_factor("explore_floor")
+	_check(p.energy < 0.3 and tired_rest > 1.2 and tired_walk < 0.9 and p.describe().contains("сонная"), "a long walk makes her sleepy: rest is likelier, walking rarer")
+	for i in range(3000): # 5 минут посидела
+		p.tick(0.1, {"resting": true})
+	_check(p.energy > 0.5 and p.intent_factor("explore_floor") > tired_walk, "rest restores energy")
+	var before: float = p.social
+	for kind in ["pet", "pet", "attention"]:
+		p.on_event(kind)
+	_check(p.social > before + 0.15 and p.intent_factor("social_react") > 1.0, "contact makes her more sociable")
+	var comfort_before: float = p.comfort
+	var rest_before: float = p.intent_factor("rest")
+	p.on_event("release_rough")
+	_check(p.comfort >= comfort_before + 0.09 and p.intent_factor("rest") > rest_before, "a rough drop makes her want to sit")
+	var drift = Personality.new()
+	drift.social = 1.0
+	for i in range(6000): # 10 минут
+		drift.tick(0.1, {"resting": true})
+	_check(drift.social < 0.75 and drift.social > 0.4, "traits drift slowly back to ordinary")
+	for name in Personality.TRAITS:
+		_check(float(p.get(name)) >= 0.0 and float(p.get(name)) <= 1.0, "trait %s stays within 0..1" % name)
+	var planner = IntentPlanner.new()
+	planner.personality = p
+	p.energy = 0.1
+	var sleepy: Dictionary = planner.candidate_report({"blocked": false, "location": "floor", "can_observe": true, "can_walk": true, "can_rest": true}, "normal")
+	var plain: Dictionary = IntentPlanner.new().candidate_report({"blocked": false, "location": "floor", "can_observe": true, "can_walk": true, "can_rest": true}, "normal")
+	_check(float(sleepy["rest"]["weight"]) > float(plain["rest"]["weight"]) and float(sleepy["explore_floor"]["weight"]) < float(plain["explore_floor"]["weight"]), "the planner feels the character (sleepy: more rest, less walking)")
+	var curious_before: float = p.curiosity
+	planner.activate(planner.build_plan("explore_floor", {"blocked": false, "location": "floor", "can_walk": true}))
+	_check(p.curiosity < curious_before, "starting a walk satisfies curiosity")
+	var disabled_ok: bool = true
+	for name in IntentPlanner.INTENTS:
+		disabled_ok = disabled_ok and (float(sleepy[name]["weight"]) == 0.0) == (float(plain[name]["weight"]) == 0.0)
+	_check(disabled_ok and start["mood"] == "спокойная", "character never enables what is forbidden or disables what is allowed")
 
 func _check_intent_planner() -> void:
 	var context: Dictionary = {"blocked": false, "location": "floor", "can_observe": true, "can_walk": true, "can_rest": true, "can_social": true}

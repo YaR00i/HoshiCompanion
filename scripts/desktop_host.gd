@@ -17,6 +17,7 @@ var _native_passthrough_available: bool = false
 var _cinematic_input: bool = false
 var _release_candidate_frames: int = 0
 const RELEASE_STABLE_FRAMES: int = 2
+const ScreenMap = preload("res://scripts/screen_map.gd")
 
 func setup(root_window: Window) -> void:
 	window = root_window
@@ -55,6 +56,68 @@ func switch_mode(wants_preview: bool) -> void:
 		_start_input_helper()
 		apply_mask()
 
+## Единая карта экранов (screen_map.gd): полы всех разрешённых экранов, стыки
+## без упора, ступеньки между экранами. Обновляется раз в 2 с (экраны меняют редко).
+var screen_map = ScreenMap.new()
+## Экраны, где Хоши сама не гуляет (id "x,y,w,h"; выбор на ПК, в настройках).
+var blocked_screens: PackedStringArray = PackedStringArray()
+var _map_at: int = -100000
+
+func refresh_screen_map(force: bool = false) -> void:
+	if headless or preview:
+		return
+	var now: int = Time.get_ticks_msec()
+	if force or now - _map_at > 2000:
+		_map_at = now
+		screen_map.build(ScreenMap.display_screens(), blocked_screens)
+
+## Окно Хоши шире её самой: на краю дорожки окну можно заходить за край экрана
+## (оно прозрачное), чтобы сама она доходила почти до края, а не упиралась в
+## невидимую стену в полокна от него. Сколько оставить от края до её середины:
+func edge_room() -> int:
+	return int(body_pixels * 0.16)
+
+## Где может стоять окно (его левый край) на дорожке: середина Хоши — от края
+## дорожки не ближе edge_room().
+func lane_window_range(lane: Dictionary) -> Vector2i:
+	var half: int = window.size.x / 2
+	var low: int = int(lane["x0"]) - half + edge_room()
+	return Vector2i(low, maxi(low, int(lane["x1"]) - half - edge_room()))
+
+func _feet() -> Vector2:
+	return Vector2(window.position.x + window.size.x * 0.5, window.position.y + window.size.y)
+
+## Дорожка пола под Хоши: {x0, x1, y}. Нет пола в карте (запрещённый экран) —
+## как раньше, рабочая область её экрана.
+func walking_zone() -> Dictionary:
+	if headless or preview:
+		var fallback: Rect2i = usable_area(0)
+		return {"x0": fallback.position.x, "x1": fallback.end.x, "y": fallback.end.y}
+	refresh_screen_map()
+	var lane: Dictionary = screen_map.lane_at(_feet())
+	if lane.is_empty():
+		var area: Rect2i = walking_area()
+		return {"x0": area.position.x, "x1": area.end.x, "y": area.end.y}
+	return lane
+
+## Прыжок через край на пол соседнего экрана (side −1 — влево, +1 — вправо):
+## {"position": куда встать окну} или {} — там стена (нет пола, запрещён, высоко).
+func screen_hop(side: int) -> Dictionary:
+	if headless or preview:
+		return {}
+	refresh_screen_map()
+	var lane: Dictionary = screen_map.lane_at(_feet())
+	var other: Dictionary = screen_map.neighbor(lane, side, float(body_pixels))
+	if other.is_empty():
+		return {}
+	var room: Vector2i = lane_window_range(other)
+	var x: int = room.x if side > 0 else room.y
+	# «Пустота» между экранами (разный масштаб): прыжок её не пролетает, а
+	# переносится через неё на стыке — edge (x края) и gap (ширина пустоты).
+	var edge: int = int(lane["x1"]) if side > 0 else int(lane["x0"])
+	var gap: int = maxi(0, int(other["x0"]) - edge) if side > 0 else maxi(0, edge - int(other["x1"]))
+	return {"position": Vector2i(x, int(other["y"]) - window.size.y), "lane": other, "side": side, "edge": edge, "gap": gap}
+
 func desktop_size() -> Vector2i:
 	return Vector2i(int(round(body_pixels * 0.90 + 28.0)), body_pixels + 66)
 
@@ -79,10 +142,31 @@ func _screen_for(point: Vector2i) -> int:
 func clamp_position(desired: Vector2i) -> Vector2i:
 	var screen: int = _screen_for(desired + window.size / 2)
 	var area: Rect2i = usable_area(screen)
+	# На стыке экранов окно может заходить на соседний: не выталкивать его вбок
+	# (полочка/уголок у края второго экрана). По x ограничиваем всеми экранами.
+	var span: Vector2i = _screens_span(area)
 	return Vector2i(
-		clampi(desired.x, area.position.x, maxi(area.position.x, area.end.x - window.size.x)),
+		clampi(desired.x, span.x, maxi(span.x, span.y - window.size.x)),
 		clampi(desired.y, area.position.y, maxi(area.position.y, area.end.y - window.size.y))
 	)
+
+## Непрерывная полоса экранов по x, в которую входит area (соседи вплотную).
+func _screens_span(area: Rect2i) -> Vector2i:
+	var x0: int = area.position.x
+	var x1: int = area.end.x
+	var grown: bool = true
+	while grown and not headless:
+		grown = false
+		for index in range(DisplayServer.get_screen_count()):
+			var other: Rect2i = usable_area(index)
+			var overlaps_y: bool = other.position.y < area.end.y and other.end.y > area.position.y
+			if overlaps_y and absi(other.end.x - x0) <= 3 and other.position.x < x0:
+				x0 = other.position.x
+				grown = true
+			elif overlaps_y and absi(other.position.x - x1) <= 3 and other.end.x > x1:
+				x1 = other.end.x
+				grown = true
+	return Vector2i(x0, x1)
 
 func home() -> void:
 	if headless:
@@ -317,8 +401,8 @@ func mask_contains(point: Vector2) -> bool:
 	return Geometry2D.is_point_in_polygon(point, _mask)
 
 func walking_lane() -> Vector2:
-	var area: Rect2i = walking_area()
-	return Vector2(float(area.position.x + 6), float(maxi(area.position.x + 6, area.end.x - window.size.x - 6)))
+	var room: Vector2i = lane_window_range(walking_zone())
+	return Vector2(float(room.x), float(room.y))
 
 func walking_area() -> Rect2i:
 	return usable_area(_screen_for(window.position + window.size / 2))
@@ -326,24 +410,23 @@ func walking_area() -> Rect2i:
 func is_grounded() -> bool:
 	if preview or headless:
 		return false
-	var area: Rect2i = walking_area()
-	return absi(window.position.y + window.size.y - area.end.y) <= 8
+	return absi(window.position.y + window.size.y - int(walking_zone()["y"])) <= 8
 
 func walk_to(x_value: float) -> float:
 	if preview or headless:
 		return 0.0
 	var lane: Vector2 = walking_lane()
 	var safe_x: float = clampf(x_value, lane.x, lane.y)
-	var area: Rect2i = walking_area()
-	var wanted: Vector2i = Vector2i(int(round(safe_x)), area.end.y - window.size.y)
+	var wanted: Vector2i = Vector2i(int(round(safe_x)), int(walking_zone()["y"]) - window.size.y)
 	if window.position != wanted:
 		window.position = wanted
 	saved_position = window.position
 	return safe_x - float(window.position.x)
 
 func floor_position() -> Vector2i:
-	var area: Rect2i = walking_area()
-	return Vector2i(clampi(window.position.x, area.position.x, maxi(area.position.x, area.end.x - window.size.x)), area.end.y - window.size.y)
+	var zone: Dictionary = walking_zone()
+	var room: Vector2i = lane_window_range(zone)
+	return Vector2i(clampi(window.position.x, room.x, room.y), int(zone["y"]) - window.size.y)
 
 func remember_floor_position() -> Vector2i:
 	saved_position = floor_position()

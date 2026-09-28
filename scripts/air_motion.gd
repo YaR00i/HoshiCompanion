@@ -45,6 +45,13 @@ func impact_strength() -> float:
 func screen_velocity() -> Vector2:
 	return _screen_velocity
 
+## Сдвинуть весь маршрут в полёте (прыжок через «пустоту» между экранами с
+## разным масштабом: прыжок считается без неё, а на стыке окно переносится).
+func shift(offset: Vector2) -> void:
+	_start += offset
+	position += offset
+	target += offset
+
 func cancel(at: Vector2 = position) -> void:
 	mode = "idle"
 	position = at

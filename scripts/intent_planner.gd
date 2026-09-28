@@ -20,6 +20,8 @@ const COOLDOWN_SECONDS: Dictionary = {
 }
 
 var enabled: bool = true
+## 0.9.1 «Характер» (personality.gd): мягко меняет веса; null — как раньше.
+var personality = null
 var active_intent: Dictionary = {}
 var history: Array[String] = []
 var variant_history: Array[String] = []
@@ -113,12 +115,14 @@ func candidate_report(context: Dictionary, activity: String = "normal") -> Dicti
 		if reason.is_empty() and cooldown > 0.0:
 			reason = "cooldown"
 		var novelty: float = _novelty_multiplier(name)
-		var weight: float = _weight(name, activity) * novelty if available else 0.0
+		var character: float = personality.intent_factor(name) if personality != null else 1.0
+		var weight: float = _weight(name, activity) * novelty * character if available else 0.0
 		report[name] = {
 			"available": available,
 			"reason": reason,
 			"cooldown": cooldown,
 			"novelty": novelty,
+			"character": character,
 			"weight": weight,
 		}
 	return report
@@ -209,6 +213,8 @@ func activate(plan: Dictionary, source: String = "planner") -> bool:
 	active_intent = plan.duplicate(true)
 	active_intent["source"] = source
 	active_intent["generation"] = generation
+	if personality != null:
+		personality.on_intent(name)
 	_record(name)
 	_record_variant(str(active_intent.get("variant", name)))
 	_arm_cooldown(name)

@@ -1,5 +1,6 @@
 @tool
 extends RefCounted
+const LifeStyle = preload("res://scripts/life_style.gd")
 const HairSprings = preload("res://scripts/hair_spring_driver.gd")
 const WalkStyle = preload("res://scripts/walk_style.gd")
 ## Procedural, low-amplitude body rig. Rotations are applied relative to each
@@ -107,14 +108,18 @@ func tick(delta: float, time: float, gaze: Vector2, wave: float, pet: float, sle
 	var sway: float = sin(time * 0.62) * motion
 	# Petting is a single soft nuzzle. The small, smoothed cursor offset follows
 	# the hand instead of choosing a new head pose after release.
-	var pet_chest: Vector3 = Vector3(1.2, 0.0, pet_follow.x * 0.6)
-	var pet_neck: Vector3 = Vector3(1.5 + pet_follow.y * 1.0, pet_follow.x * 2.0, pet_follow.x * 1.8)
-	var pet_head: Vector3 = Vector3(3.0 + pet_follow.y * 2.0, pet_follow.x * 3.0, pet_follow.x * 3.5)
+	# Сила — в animations/life_style.tres (голова, наклон корпуса, покачивание).
+	var life = LifeStyle.active()
+	var nuzzle: float = sin(time * float(life.pet_sway_speed)) * float(life.pet_sway)
+	var pet_spine: Vector3 = Vector3(float(life.pet_body) * 0.35, pet_follow.x * float(life.pet_body) * 0.25, pet_follow.x * float(life.pet_body) * 0.55 + nuzzle * 0.6)
+	var pet_chest: Vector3 = Vector3(1.2 + float(life.pet_body) * 0.25, pet_follow.x * float(life.pet_body) * 0.2, pet_follow.x * (0.6 + float(life.pet_body) * 0.3) + nuzzle * 0.5)
+	var pet_neck: Vector3 = Vector3(1.5 + pet_follow.y * 1.0, pet_follow.x * 2.0, pet_follow.x * 1.8 - nuzzle * 0.3) * float(life.pet_head)
+	var pet_head: Vector3 = Vector3(3.0 + pet_follow.y * 2.0, pet_follow.x * 3.0, pet_follow.x * 3.5 + nuzzle * 0.4) * float(life.pet_head)
 	var pet_shoulder: float = 1.5
 	var pet_arm: float = 1.5
 	# Feet/hips stay anchored. Most life is in shoulders, head and soft hands.
 	pose("hips", Vector3.ZERO)
-	pose("spine", Vector3(breathe * 0.35, 0.0, sway * 0.35))
+	pose("spine", Vector3(breathe * 0.35, 0.0, sway * 0.35) + pet_spine * pet)
 	pose("chest", Vector3(breathe * 0.45 + sleepy * 1.0, 0.0, sway * -0.22) + pet_chest * pet + Vector3(-0.8, 0.0, 1.4) * welcome)
 	pose("upperChest", Vector3(breathe * 0.2, 0.0, 0.0))
 	pose("neck", Vector3(gaze.y * 3.0 + sleepy * 3.0, gaze.x * 4.0, 0.0) + pet_neck * pet + Vector3(-1.4, 0.0, 1.0) * notice + Vector3(1.0, 0.0, -1.2) * welcome)

@@ -25,6 +25,9 @@ func apply(amount: float, time: float, wave: float, motion: bool, life: Dictiona
 	if not available or amount <= 0.0:
 		return
 	var p: float = clampf(amount, 0.0, 1.0)
+	# Переход «сесть на край / встать»: посередине — наклон вперёд и упор руками
+	# в полочку по бокам (как человек садится на выступ), к концу — обычная поза.
+	var settle: float = sin(PI * p) * (1.0 - smoothstep(0.85, 1.0, p)) if p < 1.0 else 0.0
 	var lean: float = clampf(float(life.get("lean", 0.0)), 0.0, 1.0) * p
 	var swing: float = clampf(float(life.get("swing", 0.0)), 0.0, 1.0) * p
 	var peek: float = clampf(float(life.get("peek", 0.0)), 0.0, 1.0) * p
@@ -93,13 +96,13 @@ func apply(amount: float, time: float, wave: float, motion: bool, life: Dictiona
 	hip.y += h * 0.018 * scoot
 	driver._set_position_global(driver.gait.hips_id, hip)
 	driver._add_rotation("spine", Vector3(
-		3.0 * p - lean * 19.0 + hum_bob * 0.45 + scoot * 3.0 + fold * (3.5 - fold_show * 4.5),
+		3.0 * p + settle * 16.0 - lean * 19.0 + hum_bob * 0.45 + scoot * 3.0 + fold * (3.5 - fold_show * 4.5),
 		balance_wave * 1.5 + sway_spine * 0.30 + hum_side * 0.25,
-		balance_wave * 3.8 + sway_spine * 3.6 + hum_side * 0.45 + scoot_direction * scoot * 18.0))
+		balance_wave * 3.8 + sway_spine * 3.6 + hum_side * 0.45 + scoot_direction * scoot * 10.0))
 	driver._add_rotation("chest", Vector3(
-		-lean * 10.0 + hum_bob * 0.80 - nod_cycle * 0.45 + sketch * float(sketch_channels.get("chest_pitch", 0.0)) + chest_correction,
+		settle * 7.0 - lean * 10.0 + hum_bob * 0.80 - nod_cycle * 0.45 + sketch * float(sketch_channels.get("chest_pitch", 0.0)) + chest_correction,
 		-balance_wave * 1.0 - sway_chest * 0.18 - hum_side * 0.20,
-		-balance_wave * 2.7 - sway_chest * 1.35 - hum_side * 0.18 + scoot_direction * scoot * 9.0))
+		-balance_wave * 2.7 - sway_chest * 1.35 - hum_side * 0.18 + scoot_direction * scoot * 5.0))
 	driver._add_rotation("neck", Vector3(
 		-hum_bob * 0.45 + nod_cycle * 1.70,
 		hum_side * 0.25 + nod_side * 0.20,
@@ -125,7 +128,11 @@ func apply(amount: float, time: float, wave: float, motion: bool, life: Dictiona
 		kick += sin(time * SWAY_W + float(side) * PI) * 0.125 * sway
 		kick += sin(time * HUM_W + float(side) * 0.65) * 0.006 * hum
 		var endpoint: Vector3 = start + Vector3(0.0, -a * 0.045 - b * cos(kick), a * 0.999 + b * sin(kick))
-		var target: Vector3 = (leg["rest_ankle"] as Vector3).lerp(endpoint, p)
+		# Ступни сначала уходят вперёд за край, потом вниз — не сквозь полочку.
+		var rest_ankle: Vector3 = leg["rest_ankle"]
+		var target: Vector3 = Vector3(lerpf(rest_ankle.x, endpoint.x, p),
+			lerpf(rest_ankle.y, endpoint.y, smoothstep(0.3, 1.0, p)),
+			lerpf(rest_ankle.z, endpoint.z, smoothstep(0.0, 0.55, p)))
 		ankle_targets.append(target)
 		var chain: Dictionary = {"upper": leg["upper"], "lower": leg["lower"], "end": leg["foot"], "a": a, "b": b}
 		driver._solve(chain, target, Vector3(0.0, 0.05, 1.0), leg["foot_q"])
@@ -134,12 +141,21 @@ func apply(amount: float, time: float, wave: float, motion: bool, life: Dictiona
 		var sign_x: float = 1.0 if side == 0 else -1.0
 		var knee: Vector3 = skel.get_bone_global_pose(int(driver.gait.legs[side]["lower"])).origin
 		var thigh: Vector3 = skel.get_bone_global_pose(int(driver.gait.legs[side]["upper"])).origin
-		var wrist: Vector3 = thigh.lerp(knee, 0.70) + Vector3(sign_x * h * 0.018, h * 0.038, 0.0)
+		# Кисти лежат на середине бедра, чуть снаружи: локти мягко согнуты (раньше
+		# кисть тянулась почти к колену и рука выпрямлялась — жалоба 28.09).
+		var wrist: Vector3 = thigh.lerp(knee, 0.46) + Vector3(sign_x * h * 0.034, h * 0.046, -h * 0.004)
 		var support_hand: Vector3 = hip + Vector3(sign_x * h * 0.12, -h * 0.040, -h * 0.07)
 		wrist = wrist.lerp(support_hand, lean)
+		if settle > 0.001:
+			# Ладонь — на саму полочку (высота будущего сиденья), близко к бедру.
+			var seat_y: float = driver.ground_y + h * (0.42 - seat_offset_ratio)
+			var ledge_hand: Vector3 = Vector3(hip.x + sign_x * h * 0.115, seat_y + h * 0.02, hip.z - h * 0.03)
+			wrist = wrist.lerp(ledge_hand, settle * 0.9)
 		var bracing: bool = scoot > 0.001 and side == (1 if scoot_direction > 0.0 else 0)
 		if bracing:
-			var brace_hand: Vector3 = seat_point + Vector3(sign_x * h * 0.17, h * 0.012, -h * 0.05)
+			# Ладонь-опора рядом с бедром, чуть сзади; корпус наклонён к ней — локоть
+			# мягко согнут, а не прямая рука далеко в стороне (жалоба 28.09).
+			var brace_hand: Vector3 = seat_point + Vector3(sign_x * h * 0.13, -h * 0.01, -h * 0.045)
 			wrist = wrist.lerp(brace_hand, scoot)
 		if sketch > 0.001:
 			var default_hand: Vector3 = Vector3(sign_x * 0.09, -0.065 + sketch_show * 0.18, 0.27 - sketch_show * 0.07)
@@ -157,10 +173,16 @@ func apply(amount: float, time: float, wave: float, motion: bool, life: Dictiona
 			wrist = wrist.lerp(admire_hand, admire_star)
 		if baked_weights.is_empty():
 			wrist += hand_corrections[side]
+		# В переходе (0 < p < 1) ведём саму цель кисти от того, где рука висит сейчас,
+		# к цели позы — рука тянется к ней по прямой. Раньше смешивались повороты
+		# костей, и на полпути рука уходила в сторону (жалоба 28.09).
+		var hand_now: Transform3D = skel.get_bone_global_pose(int(arm["end"]))
+		wrist = hand_now.origin.lerp(wrist, p)
 		var saved: Array[Quaternion] = []
 		for key in ["upper", "lower", "end"]:
 			saved.append(skel.get_bone_pose_rotation(int(arm[key])))
 		var hand_q: Quaternion = Quaternion(Vector3.UP, -sign_x * PI * 0.5) * arm["end_q"]
+		hand_q = hand_now.basis.orthonormalized().get_rotation_quaternion().slerp(hand_q, p).normalized()
 		if sketch > 0.001:
 			var rotation_key: String = "left_hand_rotation" if side == 0 else "right_hand_rotation"
 			var hand_rotation: Vector3 = sketch_channels.get(rotation_key, Vector3.ZERO)
@@ -180,7 +202,8 @@ func apply(amount: float, time: float, wave: float, motion: bool, life: Dictiona
 			var curl_sign: float = -1.0 if side == 0 else 1.0
 			for finger in ["Index", "Middle", "Ring", "Little"]:
 				driver._add_rotation(side_name + finger + "Proximal", Vector3(0.0, curl_sign * 20.0 * scoot, 0.0))
-		var weight: float = p * (1.0 - clampf(wave, 0.0, 1.0) if side == 1 else 1.0)
+		# Совсем в начале перехода IK подмешивается мягко — без щелчка локтя.
+		var weight: float = smoothstep(0.0, 0.15, p) * (1.0 - clampf(wave, 0.0, 1.0) if side == 1 else 1.0)
 		var keys: Array = ["upper", "lower", "end"]
 		for index in range(3):
 			var bone: int = int(arm[keys[index]])

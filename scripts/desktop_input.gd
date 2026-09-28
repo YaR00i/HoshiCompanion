@@ -17,6 +17,8 @@ var press_yaw: float = 0.0
 var last_drag_cursor: Vector2i = Vector2i.ZERO
 var drag_velocity: Vector2 = Vector2.ZERO
 var hand_side: String = ""
+## Куда нажали (avatar_stage.body_zone): ножка, ручка, животик, грудь, голова.
+var press_zone: Dictionary = {}
 var hand_hold_age: float = 0.0
 var cursor_hanging: bool = false
 
@@ -57,6 +59,13 @@ func handle(event: InputEvent) -> void:
 			open_menu()
 			app.get_viewport().set_input_as_handled()
 			return
+		# Нажали на облачко помощника — поднять его окно (Claude, Codex).
+		if button.button_index == MOUSE_BUTTON_LEFT and button.pressed and not press_active:
+			var cloud: Dictionary = app.ui.clouds.cloud_at(button.position)
+			if not cloud.is_empty():
+				app.open_assistant(str(cloud.get("app", "")))
+				app.get_viewport().set_input_as_handled()
+				return
 		if not app.stage.get_rect().has_point(button.position):
 			return
 		if button.button_index == MOUSE_BUTTON_WHEEL_UP and button.pressed:
@@ -82,6 +91,7 @@ func handle(event: InputEvent) -> void:
 				drag_velocity = Vector2.ZERO
 				app.state.cancel_release_reaction()
 				var on_head: bool = app.stage.head_contact_hit(local_point)
+				press_zone = app.stage.body_zone(local_point)
 				if not on_head and not button.double_click and not app.host.preview and app.host.is_grounded() and not app.playground.active() and not app.air.active() and app.state.posture.mode == "standing" and not app.state.posture.transitioning() and app.state.wave_weight < 0.1:
 					hand_side = app.stage.hand_contact_side(local_point)
 				if hand_side.is_empty():
@@ -180,9 +190,11 @@ func finish_press() -> void:
 			end_cursor_hang()
 		else:
 			press_active = false
+			var tapped_hand: String = hand_side
 			hand_side = ""
 			hand_hold_age = 0.0
-			if app.interaction.accept_palm_attention():
+			# Коротко ткнули в ладошку — трясёт ручкой (touch_reactions.gd).
+			if not app.stage.touch.start("arm", tapped_hand) and app.interaction.accept_palm_attention():
 				app.state.notice()
 		app.director.user_interaction()
 		return
@@ -220,6 +232,8 @@ func finish_press() -> void:
 				app.ui.say("М-м…")
 		elif gesture in ["wake", "return"]:
 			app.state.recognize()
+		elif gesture in ["attention", "quiet"] and app.stage.touch.start(str(press_zone.get("zone", "")), str(press_zone.get("side", "left"))):
+			pass # ножка, ручка, животик, грудь — своя реакция (touch_reactions.gd)
 		elif gesture == "attention":
 			app.state.notice()
 	app.director.user_interaction()

@@ -8,6 +8,7 @@ const Locomotion = preload("res://scripts/locomotion.gd")
 const AirMotion = preload("res://scripts/air_motion.gd")
 const Director = preload("res://scripts/behavior_director.gd")
 const IntentPlanner = preload("res://scripts/intent_planner.gd")
+const Personality = preload("res://scripts/personality.gd")
 const PlaceDirector = preload("res://scripts/place_director.gd")
 const Playground = preload("res://scripts/shelf_playground.gd")
 const SurfaceProbe = preload("res://scripts/window_surface_probe.gd")
@@ -31,6 +32,9 @@ var walker = Locomotion.new()
 var air = AirMotion.new()
 var director = Director.new()
 var intent_planner = IntentPlanner.new()
+## 0.9.1 «Характер»: бодрость, любопытство, уют, общительность (только этот запуск).
+var personality = Personality.new()
+var _personality_seen: int = 0
 var places = PlaceDirector.new()
 var playground = Playground.new()
 var interaction = InteractionSession.new()
@@ -57,7 +61,12 @@ var _preview_zoom: float = 1.0
 var _ui_clock: float = 0.0
 var _screen_clock: float = 0.0
 var _input_alpha_clock: float = 0.0
-var _walk_area: Rect2i = Rect2i()
+var _walk_zone: Dictionary = {}
+## Дошла до края дорожки — перепрыгнуть на пол соседнего экрана: {"position"} или {}.
+var _hop_after_walk: Dictionary = {}
+## Прыжок через «пустоту» между экранами: {side, edge, gap, position} — на стыке
+## перенести окно через пустоту; {} — нет.
+var _hop_in_flight: Dictionary = {}
 var _walk_direction: int = 1
 var _pending_action: String = ""
 var _pending_auto: bool = false
@@ -83,6 +92,7 @@ func _ready() -> void:
 	state.seed_random(seed_value)
 	director.seed_random(seed_value + 7)
 	intent_planner.seed_random(seed_value + 17)
+	intent_planner.personality = personality
 	_test_mode = OS.get_cmdline_user_args().has("--test-mode")
 	settings.read()
 	director.set_activity(state.activity)
@@ -205,13 +215,15 @@ func _process(delta: float) -> void:
 	playground.before_tick(dt)
 	var air_was_active: bool = air.active()
 	var air_position: Vector2 = air.tick(dt)
+	if not _hop_in_flight.is_empty():
+		air_position = _carry_hop(air_position)
 	if air_was_active or air.active():
 		host.place_at(air_position)
 	_screen_clock += dt
 	if walker.active() and not host.preview and _screen_clock >= 0.5:
 		_screen_clock = 0.0
 		# Floor routes are screen-bound; surface routes are relative to their support.
-		if not playground.surface_walking() and host.walking_area() != _walk_area:
+		if not playground.surface_walking() and host.walking_zone() != _walk_zone:
 			_hard_stop()
 			host.finish_drag()
 	var was_walking: bool = walker.active()
@@ -225,6 +237,10 @@ func _process(delta: float) -> void:
 		elif not desk_input.dragged or not desk_input.press_active:
 			stage.travel_offset_px = host.walk_to(walker.x_px)
 		if not walker.active():
+			if not _hop_after_walk.is_empty():
+				# Дошла до стыка экранов — прыжок на пол соседнего экрана.
+				_face_and_hop(0)
+				_rest_after_walk = false
 			if _rest_after_walk and state.rest_enabled and state.autonomy_enabled:
 				_request_sit(true)
 			_rest_after_walk = false
@@ -232,6 +248,7 @@ func _process(delta: float) -> void:
 	_resolve_posture_intent()
 	state.tick(dt, not desk_input.press_active and not ui.menu_open() and not walker.active())
 	_resolve_posture_intent()
+	_tick_personality(dt)
 	var cursor: Vector2 = host.cursor_local() - stage.position
 	var head: Vector2 = stage.head_pixel()
 	var distance: float = cursor.distance_to(head)
@@ -324,7 +341,7 @@ func _process(delta: float) -> void:
 		if not stage.cinematic_active() and _input_alpha_clock >= 0.18:
 			_input_alpha_clock = 0.0
 			stage.refresh_interaction_alpha()
-		var avatar_hit: bool = not stage.cinematic_active() and stage.visible_avatar_hit(cursor)
+		var avatar_hit: bool = not stage.cinematic_active() and (stage.visible_avatar_hit(cursor) or not ui.clouds.cloud_at(host.cursor_local()).is_empty())
 		host.update_pointer_interaction(avatar_hit, desk_input.press_active or ui.menu_open())
 	playground.after_tick()
 	if lifecycle.tick():
@@ -482,13 +499,35 @@ func _start_walk(automatic: bool, planner_owned: bool = false) -> void:
 	var left_room: float = start_x - lane.x
 	var span: float = 210.0 if host.preview else stage.body_pixels * (0.85 if state.activity == "playful" else 0.65)
 	var chosen: int = _walk_direction
-	if (chosen > 0 and right_room < stage.body_pixels * 0.15) or (chosen < 0 and left_room < stage.body_pixels * 0.15):
+	# Край дорожки, а за ним пол соседнего экрана (разрешённого) — можно перейти.
+	var hops: Dictionary = {}
+	if not host.preview:
+		for side in [-1, 1]:
+			var hop: Dictionary = host.screen_hop(side)
+			if not hop.is_empty():
+				hops[side] = hop
+	if (chosen > 0 and right_room < stage.body_pixels * 0.15 and not hops.has(1)) or (chosen < 0 and left_room < stage.body_pixels * 0.15 and not hops.has(-1)):
 		chosen = -chosen
 	if automatic:
 		chosen = 1 if right_room > left_room else -1
-	var target: float = start_x + float(chosen) * span
+		# Иногда сама идёт к соседнему экрану — тем ближе край, тем охотнее.
+		for side in hops:
+			var room: float = right_room if side > 0 else left_room
+			if room < span * 1.6 and randf() < 0.5:
+				chosen = side
+	_hop_after_walk = {}
+	var room_ahead: float = right_room if chosen > 0 else left_room
+	if hops.has(chosen) and room_ahead < span:
+		_hop_after_walk = hops[chosen] # дойти до края и перепрыгнуть
+		if room_ahead < stage.body_pixels * 0.15:
+			_face_and_hop(chosen)
+			return
+	var target: float = start_x + float(chosen) * (maxf(room_ahead, 0.0) if not _hop_after_walk.is_empty() else span)
 	var ok: bool = walker.request(start_x, target, lane, stage.meters_per_pixel(), stage.model_height, stage.yaw, state.activity == "playful")
 	if not ok:
+		if not _hop_after_walk.is_empty():
+			_face_and_hop(chosen) # до края уже меньше двух шагов — сразу прыжок
+			return
 		if not automatic:
 			ui.say("Здесь тесно для двух шагов")
 		return
@@ -497,14 +536,44 @@ func _start_walk(automatic: bool, planner_owned: bool = false) -> void:
 	state.dozing = false
 	if not planner_owned:
 		director.user_interaction()
-	_walk_area = host.walking_area()
+	_walk_zone = host.walking_zone()
 	print("HOSHI_WALK start_px=", start_x, " target_px=", clampf(target, lane.x, lane.y), " steps=", walker.step_count, " mpp=", walker.meters_per_pixel, " preview=", host.preview)
 
 func _stop_walk(keep_facing: bool = false) -> void:
 	walker.stop(keep_facing)
 	director.user_interaction()
 
+## У края дорожки: прыжок на пол соседнего экрана (лицом к нам, как прыжки на полочку).
+func _face_and_hop(side: int) -> void:
+	var hop: Dictionary = _hop_after_walk if not _hop_after_walk.is_empty() else host.screen_hop(side)
+	_hop_after_walk = {}
+	if hop.is_empty():
+		return
+	var gap: float = float(hop.get("gap", 0)) * float(hop.get("side", 0))
+	# Прыжок считаем так, будто пустоты между экранами нет; на стыке — перенос.
+	air.begin_jump(Vector2(host.window.position), Vector2(hop["position"]) - Vector2(gap, 0.0), float(host.body_pixels))
+	_hop_in_flight = hop if gap != 0.0 else {}
+	director.user_interaction()
+
+## В полёте: середина Хоши пересекла край экрана — перенести через пустоту.
+func _carry_hop(at: Vector2) -> Vector2:
+	var side: int = int(_hop_in_flight["side"])
+	var middle: float = at.x + float(host.window.size.x) * 0.5
+	var crossed: bool = middle >= float(_hop_in_flight["edge"]) if side > 0 else middle <= float(_hop_in_flight["edge"])
+	if not air.active():
+		_hop_in_flight = {} # прыжок прервали (схватили) — переносить нечего
+		return at
+	if not crossed:
+		return at
+	var offset := Vector2(float(_hop_in_flight["gap"]) * float(side), 0.0)
+	_hop_in_flight = {}
+	air.shift(offset)
+	return at + offset
+
 func _hard_stop() -> void:
+	_hop_after_walk = {}
+	if not _hop_in_flight.is_empty() and not air.active():
+		_hop_in_flight = {}
 	if stage == null:
 		return
 	_abort_autonomous_intent("hard_stop")
@@ -533,6 +602,38 @@ func run_command(command: Variant) -> void:
 	_on_action(command)
 
 ## Что показать на пульте телефона: как дела у Хоши и какие варианты выбраны.
+## «Характер» меняется медленно: от прогулок, отдыха и твоих касаний.
+func _tick_personality(dt: float) -> void:
+	personality.activity = state.activity
+	personality.tick(dt, {"walking": walker.active() or air.active(), "resting": state.posture.amount > 0.5, "dozing": state.dozing})
+	var fresh: int = mini(interaction.recorded - _personality_seen, interaction.history.size())
+	for index in range(interaction.history.size() - fresh, interaction.history.size()):
+		personality.on_event(str(interaction.history[index].get("kind", "")))
+	_personality_seen = interaction.recorded
+	ui.character_text = personality.describe()
+
+## Редакторы из меню «Инструменты и окно → Редакторы»: отдельная копия Godot с
+## этим проектом (как `python tools/dev.py workshop_editor` и т. п.).
+const EDITORS: Dictionary = {
+	"open_pose_editor": ["--editor", "res://scenes/animation_authoring_3d.tscn"],
+	"open_animation_workshop": ["res://scenes/animation_workshop.tscn"],
+	"open_walk_workshop": ["res://scenes/walk_workshop.tscn"],
+	"open_godot_editor": ["--editor"],
+}
+
+func _open_editor(action: String) -> void:
+	var root: String = ProjectSettings.globalize_path("res://").trim_suffix("/")
+	var args: PackedStringArray = PackedStringArray(["--path", root, "--log-file", root + "/logs/" + action.trim_prefix("open_") + ".log"])
+	args.append_array(PackedStringArray(EDITORS[action]))
+	var pid: int = OS.create_process(OS.get_executable_path(), args)
+	ui.say("Открываю: " + Commands.title(action).trim_suffix("…") if pid > 0 else "Не получилось открыть редактор")
+
+## Нажали на облачко помощника: поднять его окно, ✓ «видела».
+func open_assistant(app_id: String) -> void:
+	remote.assistants.mark_seen()
+	var names: Dictionary = {"claude": "Claude", "codex": "Codex"}
+	ui.say(("Открываю " + str(names.get(app_id, app_id))) if remote.pc.front_app(app_id).is_empty() else "Не нашла это окно")
+
 func remote_snapshot() -> Dictionary:
 	var selected: Array = ["activity_" + state.activity, "edge_mode_" + state.edge_activity]
 	selected.append(Commands.PLACE_CHOICES[maxi(0, Commands.PLACE_MODES.find(state.place_mode))])
@@ -544,7 +645,7 @@ func remote_snapshot() -> Dictionary:
 		where = "cozy" if playground.cozy_mode else ("window" if playground.external_mode else "shelf")
 	var status_text: String = _remote_note if not _remote_note.is_empty() else (ui.status.text if ui != null and ui.status != null else "")
 	return {"name": "Хоши", "status": status_text,
-		"where": where, "dozing": state.dozing, "mood": state.mood, "selected": selected}
+		"where": where, "dozing": state.dozing, "mood": state.mood, "character": personality.describe(), "selected": selected}
 
 ## «Перезапустить Хоши»: сначала проверить новую версию, потом закрыться — помощник
 ## откроет её снова. С ошибкой в новой версии Хоши остаётся (см. hoshi_restart.gd).
@@ -631,6 +732,9 @@ func _on_action(command: Variant) -> void:
 	if action == "light_editor":
 		ui.show_light_editor(settings.light_position, settings.shading)
 		return
+	if EDITORS.has(action):
+		_open_editor(action)
+		return
 	if action == "talk_voice":
 		chat_voice_bridge.start()
 		OS.shell_open("https://chatgpt.com/")
@@ -672,6 +776,12 @@ func _on_action(command: Variant) -> void:
 		return
 	if action == "scenes_editor":
 		ui.show_scenes(remote, remote.refresh_catalog)
+		return
+	if action == "screens_editor":
+		ui.show_screens(host, func():
+			host.refresh_screen_map(true)
+			_save_settings(), remote.pc.monitors)
+		remote.pc.refresh_monitors() # номера экранов как в Windows (придут чуть позже)
 		return
 	if action == "remote_forget":
 		remote.forget_phones()

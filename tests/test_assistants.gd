@@ -58,11 +58,18 @@ func _run() -> void:
 	card = watch.card_state()
 	_check(card["title"] == "Game" and card["lists"][0]["items"].size() == 2, "the newest session is on top; others are listed")
 	_check(not JSON.stringify(watch.sessions).contains("D:/projects"), "only the folder name is kept, never the path")
-	_note(watch, "Stop", "s3", {"app": "codex"})
+	_note(watch, "Stop", "s3", {"app": "other"})
 	watch.handle_event({"app": "claude", "event": "Stop"})
 	_check(watch.sessions.size() == 2, "unknown apps and notes without a session are ignored")
 	_note(watch, "SessionEnd", "s2")
 	_check(watch.latest() == "s1" and watch.sessions.size() == 1, "a closed session leaves the card")
+	# Codex shares the receiver but keeps its sessions, card and history separate.
+	_note(watch, "UserPromptSubmit", "0123abcd-4567-89ef-0123-456789abcdef", {"app": "codex", "folder": "D:/projects/CodexGame"})
+	_note(watch, "Stop", "0123abcd-4567-89ef-0123-456789abcdef", {"app": "codex", "text": "Готово в Codex"})
+	_check(watch.card_state("codex")["text"] == "Готово в Codex" and watch.card_state()["session"] == "s1" and watch.sessions.has("codex:0123abcd-4567-89ef-0123-456789abcdef"), "Codex answer stays on its own card")
+	_check(watch.clouds().size() == 2 and watch.clouds()[0]["app"] == "claude" and watch.clouds()[1]["app"] == "codex", "each assistant has its own cloud")
+	watch.handle_event({"app": "codex", "event": "SessionEnd", "session": "0123abcd-4567-89ef-0123-456789abcdef"})
+	_check(not watch.active("codex") and watch.active("claude"), "closing Codex does not close Claude")
 	# Облачко над Хоши: одно на помощника; «ждёт» важнее «работает»; ✓ тает.
 	var clouds = AssistantWatch.new()
 	_check(clouds.clouds().is_empty(), "no sessions — no cloud")
@@ -80,6 +87,41 @@ func _run() -> void:
 	clouds.tick(AssistantWatch.DONE_CLOUD_SECONDS) # tick clamps delta: move the clock directly
 	clouds._clock += AssistantWatch.DONE_CLOUD_SECONDS
 	_check(clouds.clouds().is_empty() and clouds.sessions.has("a"), "the check mark melts by itself after 10 minutes; the card stays")
+	# Живые облачка (28.09): «работает» — пока файл беседы меняется (смотрим только время).
+	var live_clouds = AssistantWatch.new()
+	var root_dir: String = ProjectSettings.globalize_path("user://test_transcripts")
+	var sid: String = "0a1b2c3d-4e5f-6789-abcd-ef0123456789"
+	DirAccess.make_dir_recursive_absolute(root_dir.path_join("D--projects-demo"))
+	var file := FileAccess.open(root_dir.path_join("D--projects-demo").path_join(sid + ".jsonl"), FileAccess.WRITE)
+	file.store_string("{}
+")
+	file.close()
+	live_clouds.transcripts_root = root_dir
+	_note(live_clouds, "UserPromptSubmit", sid)
+	live_clouds.poll_live()
+	_check(live_clouds.clouds()[0]["status"] == "working" and live_clouds.transcript_path(sid).ends_with(sid + ".jsonl"), "working cloud while the conversation is alive")
+	live_clouds._clock += AssistantWatch.WORKING_QUIET_SECONDS + 1.0
+	_check(live_clouds.clouds().is_empty(), "the conversation went quiet (Esc, closed) — the working cloud leaves by itself")
+	live_clouds.sessions[sid]["file_time"] = 1.0 # файл изменился
+	live_clouds.poll_live()
+	_check(live_clouds.clouds()[0]["status"] == "working", "the conversation moves again — the cloud is back")
+	_note(live_clouds, "Notification", sid, {"kind": "permission_prompt"})
+	_check(live_clouds.clouds()[0]["status"] == "waiting", "permission request — a question cloud")
+	live_clouds._clock += 5.0
+	live_clouds.sessions[sid]["file_time"] = 1.0
+	live_clouds.poll_live()
+	_check(live_clouds.sessions[sid]["status"] == "working" and live_clouds.clouds()[0]["status"] == "working", "answered on the PC (the conversation moved on) — the question cloud leaves")
+	_note(live_clouds, "Stop", sid, {"text": "ok"})
+	live_clouds._clock += 500.0
+	_note(live_clouds, "Notification", sid, {"kind": "idle_prompt"})
+	live_clouds._clock += 200.0
+	_check(live_clouds.clouds().is_empty(), "«waiting for input» after a minute does not keep the check mark alive")
+	_note(live_clouds, "Notification", sid, {"kind": "permission_prompt"})
+	live_clouds._clock += AssistantWatch.WAITING_CLOUD_SECONDS + 1.0
+	_check(live_clouds.clouds().is_empty(), "an unanswered question cloud does not hang forever")
+	DirAccess.remove_absolute(root_dir.path_join("D--projects-demo").path_join(sid + ".jsonl"))
+	DirAccess.remove_absolute(root_dir.path_join("D--projects-demo"))
+	DirAccess.remove_absolute(root_dir)
 
 	for index in range(12):
 		_note(watch, "UserPromptSubmit", "many%d" % index)
@@ -109,6 +151,18 @@ func _run() -> void:
 	var got: String = await _read_all(live, waiter)
 	var reply_json: Variant = JSON.parse_string(got.get_slice("\r\n\r\n", 1))
 	_check(got.begins_with("HTTP/1.1 200") and reply_json is Dictionary and str(reply_json["text"]).begins_with("Сделай, пожалуйста") and str(reply_json["text"]).length() == AssistantWatch.MAX_REPLY, "the hook receives the text (UTF-8, at most %d characters)" % AssistantWatch.MAX_REPLY)
+	# Codex: only a paired phone opens the one-minute reply window.
+	var codex_id: String = "1234abcd-5678-90ef-1234-567890abcdef"
+	var no_phone: StreamPeerTCP = await _open_waiter(live, codex_id, "Без телефона", "codex")
+	_check((await _read_all(live, no_phone)).begins_with("HTTP/1.1 204") and not live.can_reply(codex_id, "codex"), "Codex does not wait when no phone is paired")
+	live.phones = 1
+	var codex_waiter: StreamPeerTCP = await _open_waiter(live, codex_id, "Ответ Codex", "codex")
+	bus_live._sync_assistants()
+	_check(live.card_state("codex")["text"] == "Ответ Codex" and live.card_state("codex")["can_reply"] and bus_live.adapters.resolve("app:codex:reply")["peer"] == AssistantWatch.CODEX_PEER, "Codex card and command appear for the paired phone")
+	_check(bus_live.run("app:codex:reply", {"text": "С телефона", "session": codex_id}) == "" and live.sessions["codex:" + codex_id]["status"] == "working", "Codex reply is routed to its own session")
+	var codex_response: String = await _read_all(live, codex_waiter)
+	_check(codex_response.begins_with("HTTP/1.1 200") and str(JSON.parse_string(codex_response.get_slice("\r\n\r\n", 1)).get("text", "")) == "С телефона", "Codex hook receives the phone text")
+	live.phones = 0
 	# После перезапуска Хоши пуста; ждун стучится снова и приносит последний ответ.
 	live.sessions.clear()
 	waiter = await _open_waiter(live, "live", "Ответ до перезапуска")
@@ -130,6 +184,13 @@ func _run() -> void:
 	_check(bus_live.run("app:claude:permit", {"id": shown_ask["id"], "behavior": "allow"}) == "" and live.ask.is_empty(), "the phone allows it")
 	got = await _read_all(live, perm)
 	_check(got.begins_with("HTTP/1.1 200") and got.contains("\"behavior\":\"allow\""), "the hook gets «allow»")
+	var codex_permission: StreamPeerTCP = await _open_ask(live, {"app": "codex", "event": "Permission", "session": codex_id, "tool": "Bash", "detail": "test command"})
+	bus_live._sync_assistants()
+	var codex_ask: Dictionary = live.card_state("codex").get("ask", {})
+	_check(not codex_ask.is_empty() and live.card_state().get("ask", {}).is_empty() and bus_live.run("app:claude:permit", {"id": codex_ask["id"], "behavior": "allow"}) == "no_question", "Codex permission stays on its own card and Claude cannot answer it")
+	_check(bus_live.run("app:codex:permit", {"id": codex_ask["id"], "behavior": "allow"}) == "", "paired phone may answer Codex permission")
+	got = await _read_all(live, codex_permission)
+	_check(got.begins_with("HTTP/1.1 200") and got.contains("\"behavior\":\"allow\""), "Codex hook receives the permission decision")
 	var question_note: Dictionary = {"app": "claude", "event": "Question", "session": "live", "questions": [
 		{"question": "Какой цвет облачка?", "header": "Облачко", "multiSelect": false, "options": [{"label": "Оранжевый", "description": ""}, {"label": "Мятный", "description": ""}]},
 		{"question": "Какие приложения?", "header": "", "multiSelect": true, "options": [{"label": "Claude"}, {"label": "Codex"}]}]}
@@ -208,6 +269,12 @@ func _run() -> void:
 	_check(sent_history["peer"] == 9 and sent_history["message"]["op"] == "history" and sent_history["message"]["messages"].size() == 2 and sent_history["message"]["messages"][1]["text"].length() == 3000, "only chat messages go to the phone that asked; long answers are cut")
 	history.apply_history(9, "sessions", {"ok": true, "sessions": [{"id": "0123abcd-4567-89ef-0123-456789abcdef", "title": "Пульт", "folder": "HoshiCompanion", "updated": 5}]})
 	_check(history.take_history()[0]["message"]["sessions"][0]["current"], "the session list marks the current one")
+	history.handle_event({"app": "codex", "event": "Stop", "session": "1234abcd-5678-90ef-1234-567890abcdef", "folder": "Second", "text": "Codex ready"})
+	history.request_history(11, "sessions", "", "codex")
+	history.request_history(11, "read", "", "codex")
+	_check(history.history_asked[-2] == [11, "codex", "sessions", "30"] and history.history_asked[-1] == [11, "codex", "read", "1234abcd-5678-90ef-1234-567890abcdef", str(AssistantWatch.HISTORY_MESSAGES)], "Codex history selects its own reader and session")
+	history.apply_history(11, "read", {"ok": true, "id": "1234abcd-5678-90ef-1234-567890abcdef", "title": "Codex", "messages": [{"role": "assistant", "text": "ok"}]}, "codex")
+	_check(history.take_history()[0]["message"]["app"] == "codex", "history response identifies the assistant for the requesting phone")
 
 	# Через шину: карточка «Claude» у телефона, исчезает без сессий.
 	var bus = RemoteBus.new()
@@ -226,16 +293,23 @@ func _run() -> void:
 	watch.listening = true
 	bus._sync_assistants()
 	var always: Array = bus._state_message()["apps"]
-	_check(always.size() == 1 and always[0]["id"] == "claude" and str(always[0]["state"].get("hint", "")).contains("напиши"), "with the note box on, the Claude card is always there, with a hint")
+	_check(always.size() == 2 and always[0]["id"] == "claude" and always[1]["id"] == "codex" and str(always[0]["state"].get("hint", "")).contains("напиши"), "with the note box on, both assistant cards are always there")
 	watch.listening = false
+	# Облачко можно нажать: по точке окна — какое это облачко.
+	var drawn = load("res://scripts/assistant_clouds.gd").new()
+	drawn.items = [{"app": "claude", "status": "working"}, {"app": "codex", "status": "done"}]
+	drawn.place(0.1, Vector2(200, 300), Vector2(400, 600))
+	var first: Vector2 = drawn._anchor
+	_check(drawn.cloud_at(first).get("app", "") == "claude" and drawn.cloud_at(first - Vector2(0, drawn.GAP)).get("app", "") == "codex" and drawn.cloud_at(Vector2(5, 590)).is_empty(), "a click finds the cloud under it (Claude, Codex) and nothing elsewhere")
+	drawn.free()
 	print("HOSHI_ASSISTANTS_RESULT checks=%d failures=%d" % [checks, failures])
 	quit(1 if failures > 0 else 0)
 
 ## Подключить «ждуна» (как claude_hook.py --wait) и дождаться, пока Хоши его примет.
-func _open_waiter(watch, session: String, last_answer: String = "") -> StreamPeerTCP:
+func _open_waiter(watch, session: String, last_answer: String = "", app: String = "claude") -> StreamPeerTCP:
 	var peer := StreamPeerTCP.new()
 	peer.connect_to_host("127.0.0.1", watch.port)
-	var body: PackedByteArray = JSON.stringify({"app": "claude", "event": "Wait", "session": session, "folder": "Проект", "text": last_answer}).to_utf8_buffer()
+	var body: PackedByteArray = JSON.stringify({"app": app, "event": "Wait", "session": session, "folder": "Проект", "text": last_answer}).to_utf8_buffer()
 	var sent: bool = false
 	for frame in range(120):
 		peer.poll()
@@ -245,7 +319,7 @@ func _open_waiter(watch, session: String, last_answer: String = "") -> StreamPee
 			data.append_array(body)
 			peer.put_data(data)
 			sent = true
-		if sent and watch.can_reply(session):
+		if sent and watch.can_reply(session, app):
 			break
 		await process_frame
 	return peer

@@ -22,6 +22,9 @@ var age: float = 0.0
 var path_length: float = 0.0
 var displacement: float = 0.0
 var history: Array[Dictionary] = []
+## Сколько событий записано за запуск (history хранит только последние) — чтобы
+## «характер» забирал новые события, ничего не пропуская.
+var recorded: int = 0
 var _idle_seconds: float = 0.0
 var _idle_before_press: float = 0.0
 var _known_user: bool = false
@@ -175,5 +178,6 @@ func _record(kind: String) -> void:
 	if kind == "none":
 		return
 	history.append({"kind": kind})
+	recorded += 1
 	while history.size() > MAX_HISTORY:
 		history.pop_front()

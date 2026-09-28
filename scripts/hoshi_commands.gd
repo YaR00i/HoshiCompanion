@@ -109,6 +109,11 @@ const LIST := {
 	"fps_30": {"title": "30 FPS · экономно", "group": "tools", "menu_id": 131, "sources": ["user"]},
 	"light_editor": {"title": "Настроить свет, тени и обводку…", "group": "tools", "menu_id": 150, "sources": ["user"]},
 	"light_reset": {"title": "Сбросить настройки света", "group": "tools", "menu_id": 151, "sources": ["user"]},
+	# Редакторы — отдельной копией Godot (как `python tools/dev.py <режим>`).
+	"open_pose_editor": {"title": "Позы и сценки в Godot…", "group": "tools", "menu_id": 152, "sources": ["user"]},
+	"open_animation_workshop": {"title": "Мастерская анимаций…", "group": "tools", "menu_id": 153, "sources": ["user"]},
+	"open_walk_workshop": {"title": "Мастерская ходьбы…", "group": "tools", "menu_id": 154, "sources": ["user"]},
+	"open_godot_editor": {"title": "Весь проект в редакторе Godot…", "group": "tools", "menu_id": 155, "sources": ["user"]},
 	"quit": {"title": "Закрыть Хоши", "group": "app", "menu_id": 199, "sources": ["user"]},
 	"restart": {"title": "Перезапустить Хоши", "group": "app", "menu_id": 198, "flags": ["confirm"], "sources": ["user", "remote"]},
 	# Пульт с телефона (домашняя сеть)
@@ -119,6 +124,7 @@ const LIST := {
 	"sound_outputs_editor": {"title": "Звук на пульте…", "group": "remote", "menu_id": 184, "sources": ["user"]},
 	"move_window_editor": {"title": "Переставить окно…", "group": "remote", "menu_id": 185, "sources": ["user"]},
 	"scenes_editor": {"title": "Сценарии для пульта…", "group": "remote", "menu_id": 186, "sources": ["user"]},
+	"screens_editor": {"title": "Экраны для прогулок…", "group": "place", "menu_id": 187, "sources": ["user"]},
 	# Переключатели
 	"toggle_look": {"title": "Внимание к курсору", "group": "look", "menu_id": 120, "sources": ["user"]},
 	"toggle_motion": {"title": "Мягкие движения", "group": "look", "menu_id": 121, "sources": ["user"]},

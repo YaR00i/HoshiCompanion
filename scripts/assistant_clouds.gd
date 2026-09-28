@@ -44,6 +44,16 @@ func _draw() -> void:
 			_draw_tail(center)
 		_draw_cloud(center, items[index])
 
+## Облачко под точкой окна (для нажатия): {"app", "status"} или {}.
+func cloud_at(point: Vector2) -> Dictionary:
+	if not visible:
+		return {}
+	for index in range(items.size()):
+		var center: Vector2 = _anchor - Vector2(0.0, GAP * float(index))
+		if Rect2(center - Vector2(RADIUS * 1.7, RADIUS * 1.3), Vector2(RADIUS * 3.4, RADIUS * 2.6)).has_point(point):
+			return items[index]
+	return {}
+
 ## Два кружка-хвостика от головы к нижнему облачку — «это мысль».
 func _draw_tail(center: Vector2) -> void:
 	var from: Vector2 = _head + Vector2(18.0, -30.0)
