@@ -4,12 +4,13 @@ signal action_requested(command: String)
 signal advanced_requested(position: Vector2i)
 
 const Commands = preload("res://scripts/hoshi_commands.gd")
+const UiIcons = preload("res://scripts/hoshi_ui_icons.gd")
 const HEADER = preload("res://assets/ui/hoshi_menu_header.svg")
 const SWITCH_ON = preload("res://assets/ui/switch_on.svg")
 const SWITCH_OFF = preload("res://assets/ui/switch_off.svg")
-const INK: Color = Color("3b3449")
-const MUTED: Color = Color("82798f")
-const PLUM: Color = Color("665479")
+const INK: Color = Color("403850")
+const MUTED: Color = Color("766e81")
+const PLUM: Color = Color("62547f")
 const GOLD: Color = Color("c4a36e")
 const WIDTH: int = 410
 const HEIGHT: int = 758
@@ -31,7 +32,7 @@ func _ready() -> void:
 	var popup_theme := Theme.new()
 	var frame := StyleBoxFlat.new()
 	frame.bg_color = Color("fffaf5")
-	frame.border_color = Color("d9c5cb")
+	frame.border_color = Color("d9c7bd")
 	frame.set_border_width_all(1)
 	frame.set_corner_radius_all(20)
 	frame.shadow_color = Color(0.16, 0.11, 0.24, 0.20)
@@ -52,11 +53,11 @@ func _ready() -> void:
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	header.add_child(art)
-	var title := _label("✦  Хоши", 24, Color("fffaf5"))
+	var title := _label("Хоши", 25, Color("fffaf5"))
 	title.position = Vector2(21, 18)
 	header.add_child(title)
 	var tagline := _label("Рядом, пока ты работаешь", 12, Color("f3e8f3"))
-	tagline.position = Vector2(23, 53)
+	tagline.position = Vector2(23, 47)
 	header.add_child(tagline)
 
 	var margin := MarginContainer.new()
@@ -72,11 +73,11 @@ func _ready() -> void:
 	var chat_row := HBoxContainer.new()
 	chat_row.add_theme_constant_override("separation", 7)
 	column.add_child(chat_row)
-	voice_button = _button("♪  ChatGPT голосом  ↗", "talk_voice", Color("f5e5ec"), 44)
+	voice_button = _button("ChatGPT голосом", "talk_voice", Color("f5e5ec"), 44, "voice")
 	voice_button.tooltip_text = "Открыть ChatGPT в браузере. В ChatGPT нажми Voice, затем включи расширение Хоши на этой вкладке."
 	voice_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	chat_row.add_child(voice_button)
-	var text_chat := _button("Текстовый чат  ↗", "talk_text", Color("fffdfb"), 44)
+	var text_chat := _button("Текстовый чат", "talk_text", Color("fffdfb"), 44, "chat")
 	text_chat.tooltip_text = "Открыть ChatGPT в браузере без запуска голосовой связи Хоши."
 	text_chat.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	chat_row.add_child(text_chat)
@@ -91,8 +92,8 @@ func _ready() -> void:
 	grid.add_theme_constant_override("h_separation", 7)
 	grid.add_theme_constant_override("v_separation", 7)
 	column.add_child(grid)
-	for item in [["☁  Мой уголок", "cozy_corner"], ["▣  Выбрать окно", "pick_window"], ["✦  Пройтись", "walk"], ["○  Остановиться", "stop"]]:
-		var button := _button(str(item[0]), str(item[1]), Color("fffdfb"), 48)
+	for item in [["Мой уголок", "cozy_corner", "home"], ["Выбрать окно", "pick_window", "window"], ["Пройтись", "walk", "walk"], ["Остановиться", "stop", "stop"]]:
+		var button := _button(str(item[0]), str(item[1]), Color("fffdfb"), 48, str(item[2]))
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		grid.add_child(button)
 		if str(item[1]) == "walk":
@@ -127,9 +128,9 @@ func _ready() -> void:
 	pc_grid.add_theme_constant_override("h_separation", 7)
 	pc_grid.add_theme_constant_override("v_separation", 7)
 	column.add_child(pc_grid)
-	for item in [["🚀  Мои действия", "pc_actions_editor"], ["🔊  Звук на пульте", "sound_outputs_editor"],
-			["✨  Сценарии", "scenes_editor"], ["⧉  Двигать окно", "move_window_editor"], ["🔄  Перезапустить", "restart"]]:
-		var button := _button(str(item[0]), str(item[1]), Color("fffdfb"), 40)
+	for item in [["Мои действия", "pc_actions_editor", "folder"], ["Звук на пульте", "sound_outputs_editor", "sound"],
+			["Сценарии", "scenes_editor", "sparkle"], ["Двигать окно", "move_window_editor", "move"], ["Перезапустить", "restart", "restart"]]:
+		var button := _button(str(item[0]), str(item[1]), Color("fffdfb"), 40, str(item[2]))
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		# Колонки — ровно по ширине панели: длинная подпись не раздвигает меню.
 		button.clip_text = true
@@ -156,17 +157,20 @@ func _label(value: String, font_size: int, color: Color) -> Label:
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return label
 
-func _button(value: String, action: String, fill: Color, height: int) -> Button:
+func _button(value: String, action: String, fill: Color, height: int, icon_name: String = "") -> Button:
 	var button := Button.new()
 	button.text = value
+	if not icon_name.is_empty():
+		button.icon = UiIcons.texture(icon_name)
+		button.add_theme_constant_override("icon_spacing", 8)
 	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	button.custom_minimum_size.y = height
 	for kind in ["normal", "hover", "pressed", "disabled", "focus"]:
 		var style := StyleBoxFlat.new()
 		style.bg_color = fill if kind == "normal" else (fill.darkened(0.045) if kind in ["hover", "pressed"] else fill)
-		style.border_color = Color("dfd0d5")
+		style.border_color = Color("e2d1d3")
 		style.set_border_width_all(1 if kind != "focus" else 0)
-		style.set_corner_radius_all(13)
+		style.set_corner_radius_all(15)
 		style.content_margin_left = 13
 		style.content_margin_right = 12
 		style.content_margin_top = 5
@@ -196,7 +200,7 @@ func _toggle(value: String, action: String) -> CheckButton:
 
 func set_snapshot(state, label_text: String, can_walk: bool, can_stop: bool, remote_on: bool = false) -> void:
 	remote_check.set_pressed_no_signal(remote_on)
-	status_label.text = "✦  " + (label_text if not label_text.is_empty() else state.state_label())
+	status_label.text = label_text if not label_text.is_empty() else state.state_label()
 	walk_button.disabled = not can_walk
 	stop_button.disabled = not can_stop
 	activity_pick.select(["quiet", "normal", "playful"].find(state.activity))

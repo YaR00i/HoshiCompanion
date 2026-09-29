@@ -2,7 +2,7 @@ extends "res://tests/test_shelf.gd"
 ## Запечь реакции на касание (кодовые, touch_reactions.gd) в клипы
 ## animations/touch_<место>.tres — стартовая точка для правки в «Позах и сценках
 ## в Godot». Уже существующий клип не перезаписывается без -- --force.
-##   godot --path . --script res://tools/bake_touch_clips.gd -- --preview --test-mode [--force]
+##   godot --path . --script res://tools/bake_touch_clips.gd -- --preview --test-mode [--force] [--only=chest]
 
 const TouchMotion = preload("res://scripts/touch_motion.gd")
 const SketchMotion = preload("res://scripts/sketch_motion.gd")
@@ -12,6 +12,10 @@ const MIN_DEGREES: float = 0.5    # кость, повернувшаяся ме�
 
 func _run() -> void:
 	var force: bool = OS.get_cmdline_user_args().has("--force")
+	var only: String = ""
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--only="):
+			only = arg.trim_prefix("--only=")
 	app = load("res://scenes/main.tscn").instantiate()
 	root.add_child(app)
 	for i in range(20):
@@ -30,6 +34,8 @@ func _run() -> void:
 	var height: float = touch.driver.height_m
 	var written: int = 0
 	for zone in TouchMotion.ZONES:
+		if not only.is_empty() and zone != only:
+			continue
 		var path: String = TouchMotion.path_for(TouchMotion.clip_name(zone))
 		if ResourceLoader.exists(path) and not force:
 			print("BAKE skip ", zone, " (есть клип; -- --force перезапишет)")
@@ -101,9 +107,7 @@ func _build(zone: String, length: float, frames: Array, height: float) -> Animat
 					value = float(data.get("yaw", 0.0))
 				"hips_offset":
 					value = (data["posed"]["hips"] - data["base"]["hips"]) / height
-				"face_happy":
-					value = float(data.get("face", {}).get("happy", 0.0))
-				"face_angry":
-					value = float(data.get("face", {}).get("angry", 0.0))
+				_:
+					value = float(data.get("face", {}).get(str(channel).trim_prefix("face_"), 0.0))
 			clip.track_insert_key(track, f["time"], value)
 	return clip

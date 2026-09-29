@@ -252,6 +252,11 @@ func _legacy_intent(action: String, context: Dictionary) -> String:
 	return ""
 
 func _variants(intent_name: String, context: Dictionary, activity: String) -> Array:
+	var variants: Array = _all_variants(intent_name, context, activity)
+	# Рисунок и звёздочка — редкие: пока не прошла пауза (edge_life.big_ready), не предлагаем.
+	return variants.filter(func(v): return not ((v["id"] == "cozy_sketch" and not bool(context.get("sketch_ready", true))) or (v["id"] == "cozy_fold" and not bool(context.get("fold_ready", true)))))
+
+func _all_variants(intent_name: String, context: Dictionary, activity: String) -> Array:
 	var location: String = str(context.get("location", "floor"))
 	match intent_name:
 		"observe":

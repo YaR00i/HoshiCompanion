@@ -1,0 +1,132 @@
+[gd_resource type="Animation" format=3]
+
+[resource]
+resource_name = "touch_doze"
+length = 5.0
+step = 0.06666667
+tracks/0/type = "rotation_3d"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Bones/chest/Грудь")
+tracks/0/interp = 2
+tracks/0/loop_wrap = true
+tracks/0/keys = PackedFloat32Array(0.033333335, 1, 0, 0, 0, 1, 3.2333333, 1, 0.034899503, 0, 0, 0.9993909, 3.3, 1, 0.034899503, 0, 0, 0.9993909, 3.3666666, 1, 0.00037419796, 0, 0, 0.99999994, 3.4333334, 1, -0.025774509, 0, 0, 0.9996678, 3.5666666, 1, -0.026176944, 0, 0, 0.9996574, 3.8333333, 1, -0.009074346, 0, 0, 0.99995893, 5, 1, 0, 0, 0, 1)
+tracks/1/type = "rotation_3d"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("Bones/head/Голова")
+tracks/1/interp = 2
+tracks/1/loop_wrap = true
+tracks/1/keys = PackedFloat32Array(0.033333335, 1, 0, 0, 0, 1, 0.9, 1, 0.009701021, 4.0279415e-06, 0.003637957, 0.9999464, 2.2333333, 1, 0.11470456, -0.0044890824, 0.04290189, 0.9924627, 3.2333333, 1, 0.13898237, -0.0067231795, 0.051902395, 0.988911, 3.3, 1, 0.13898237, -0.0067231795, 0.051902395, 0.988911, 3.3666666, 1, 0.042833026, -0.0010123838, 0.031567905, 0.99858296, 3.4333334, 1, -0.05072781, 3.715118e-05, 0.0006026897, 0.99871236, 3.5, 1, -0.05233596, 2.504751e-09, -2.2947201e-08, 0.99862957, 3.6333334, 1, -0.05206989, -0.0011417373, -4.718628e-05, 0.9986428, 3.7, 1, -0.046922583, 2.2456936e-09, -2.0573651e-08, 0.99889857, 3.8333333, 1, -0.018112943, 0.062071975, 0.00045563295, 0.9979073, 4.1666665, 1, 6.7915646e-09, 0.11659184, -0.0012602385, 0.99317914, 4.3, 1, 9.618294e-09, 0.08242495, -0.00089092966, 0.99659693, 4.633333, 1, -8.308515e-10, -0.03159225, 0.00034148016, 0.9995009, 4.7, 1, -5.001334e-10, -0.019017046, 0.00020555465, 0.9998191, 5, 1, 0, 0, 0, 1)
+tracks/2/type = "rotation_3d"
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/path = NodePath("Bones/neck/Шея")
+tracks/2/interp = 2
+tracks/2/loop_wrap = true
+tracks/2/keys = PackedFloat32Array(0.033333335, 1, 0, 0, 0, 1, 1.1, 1, 0.012627168, 0.0004042198, 0.0037666424, 0.9999131, 2.7666667, 1, 0.085909724, 0.0008642208, 0.025796013, 0.9959686, 3.1666667, 1, 0.08712587, 0.00084452145, 0.026163323, 0.99585336, 3.2333333, 1, 0.08712587, 0.00084452145, 0.026163323, 0.99585336, 3.3, 1, 0.08712587, 0.00084452145, 0.026163323, 0.99585336, 3.4333334, 1, -0.025170874, 4.353895e-05, 0.00029877215, 0.9996831, 3.5, 1, -0.026176944, 0, 0, 0.9996574, 3.8333333, 1, -0.00907433, 0, 0, 0.9999589, 3.9, 1, -0.0027100442, 0, 0, 0.9999963, 4.366667, 1, 0, 0, 0, 1, 5, 1, 0, 0, 0, 1)
+tracks/3/type = "rotation_3d"
+tracks/3/imported = false
+tracks/3/enabled = true
+tracks/3/path = NodePath("Bones/spine/Спина")
+tracks/3/interp = 2
+tracks/3/loop_wrap = true
+tracks/3/keys = PackedFloat32Array(0.033333335, 1, -9.3132246e-10, 0, 0, 1, 1.5, 1, 0.016051205, 0, 0, 0.9998712, 3.1, 1, 0.04361939, 0, 0, 0.9990483, 3.2333333, 1, 0.04361939, 0, 0, 0.9990483, 3.3, 1, 0.04361939, 0, 0, 0.9990483, 3.4333334, 1, -0.016949268, 0, 0, 0.9998564, 3.5666666, 1, -0.017452406, 0, 0, 0.9998477, 4.1, 1, -9.3132246e-10, 0, 0, 1, 5, 1, -9.3132246e-10, 0, 0, 1)
+tracks/4/type = "rotation_3d"
+tracks/4/imported = false
+tracks/4/enabled = true
+tracks/4/path = NodePath("Bones/leftShoulder/Левая ключица")
+tracks/4/interp = 2
+tracks/4/loop_wrap = true
+tracks/4/keys = PackedFloat32Array(0.033333335, 1, 1.4959367e-08, 0, 2.3283062e-10, 1, 3.2333333, 1, 1.4959367e-08, 0, 2.3283062e-10, 1, 3.3, 1, 1.4959367e-08, 0, 2.3283062e-10, 1, 3.3666666, 1, -1.4872056e-08, -4.6566123e-10, 0.041358966, 0.99914443, 3.5, 1, -7.275957e-11, 1.6298143e-09, 0.052335963, 0.9986295, 3.7666667, 1, 2.910383e-11, 4.656613e-10, 0.03420426, 0.9994149, 3.9666667, 1, -5.8207654e-11, 9.3132246e-10, 0.00026639292, 1, 4.1666665, 1, 1.4959367e-08, 0, 2.3283062e-10, 1, 5, 1, 1.4959367e-08, 0, 2.3283062e-10, 1)
+tracks/5/type = "rotation_3d"
+tracks/5/imported = false
+tracks/5/enabled = true
+tracks/5/path = NodePath("Bones/rightShoulder/Правая ключица")
+tracks/5/interp = 2
+tracks/5/loop_wrap = true
+tracks/5/keys = PackedFloat32Array(0.033333335, 1, 1.4959367e-08, 0, -2.3283062e-10, 1, 3.2333333, 1, 1.4959367e-08, 0, -2.3283062e-10, 1, 3.3, 1, 1.4959367e-08, 0, -2.3283062e-10, 1, 3.3666666, 1, -1.4872056e-08, 4.6566123e-10, -0.041358966, 0.99914443, 3.5, 1, -7.275957e-11, -1.6298143e-09, -0.052335963, 0.9986295, 3.7666667, 1, 2.910383e-11, -4.656613e-10, -0.03420426, 0.9994149, 3.9666667, 1, -5.8207654e-11, -9.3132246e-10, -0.00026639292, 1, 4.1666665, 1, 1.4959367e-08, 0, -2.3283062e-10, 1, 5, 1, 1.4959367e-08, 0, -2.3283062e-10, 1)
+tracks/6/type = "value"
+tracks/6/imported = false
+tracks/6/enabled = true
+tracks/6/path = NodePath("Channels:touch_yaw")
+tracks/6/interp = 2
+tracks/6/loop_wrap = true
+tracks/6/keys = {
+"times": PackedFloat32Array(0.033333335, 5),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [0.0, 0.0]
+}
+tracks/7/type = "value"
+tracks/7/imported = false
+tracks/7/enabled = true
+tracks/7/path = NodePath("Channels:hips_offset")
+tracks/7/interp = 2
+tracks/7/loop_wrap = true
+tracks/7/keys = {
+"times": PackedFloat32Array(0.033333335, 5),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [Vector3(0, 0, 0), Vector3(0, 0, 0)]
+}
+tracks/8/type = "value"
+tracks/8/imported = false
+tracks/8/enabled = true
+tracks/8/path = NodePath("Channels:face_happy")
+tracks/8/interp = 2
+tracks/8/loop_wrap = true
+tracks/8/keys = {
+"times": PackedFloat32Array(0.033333335, 5),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [0.0, 0.0]
+}
+tracks/9/type = "value"
+tracks/9/imported = false
+tracks/9/enabled = true
+tracks/9/path = NodePath("Channels:face_angry")
+tracks/9/interp = 2
+tracks/9/loop_wrap = true
+tracks/9/keys = {
+"times": PackedFloat32Array(0.033333335, 5),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [0.0, 0.0]
+}
+tracks/10/type = "value"
+tracks/10/imported = false
+tracks/10/enabled = true
+tracks/10/path = NodePath("Channels:face_aa")
+tracks/10/interp = 2
+tracks/10/loop_wrap = true
+tracks/10/keys = {
+"times": PackedFloat32Array(0.033333335, 5),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [0.0, 0.0]
+}
+tracks/11/type = "value"
+tracks/11/imported = false
+tracks/11/enabled = true
+tracks/11/path = NodePath("Channels:face_blink")
+tracks/11/interp = 2
+tracks/11/loop_wrap = true
+tracks/11/keys = {
+"times": PackedFloat32Array(0.033333335, 0.36666667, 0.43333334, 0.56666666, 0.7, 0.9, 0.96666664, 1.1666666, 1.2333333, 1.3666667, 1.5, 1.5666667, 1.7, 3.2333333, 3.3, 3.3666666, 3.4333334, 3.5, 5),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1),
+"update": 0,
+"values": [0.0, 0.0, 0.00020550332139409, 0.02152029590890615, 0.10351562499999994, 0.34661940586419737, 0.4480237347901741, 0.7473308383186003, 0.8294926737222482, 0.946257854970026, 0.9949122299382722, 0.999794496678606, 1.0, 1.0, 1.0, 0.3966874968247017, 0.0, 0.0, 0.0]
+}
+tracks/12/type = "value"
+tracks/12/imported = false
+tracks/12/enabled = true
+tracks/12/path = NodePath("Channels:face_surprised")
+tracks/12/interp = 2
+tracks/12/loop_wrap = true
+tracks/12/keys = {
+"times": PackedFloat32Array(0.033333335, 3.2333333, 3.3, 3.3666666, 3.4333334, 3.5, 3.9666667, 4.0333333, 4.1, 4.1666665, 4.233333, 4.3, 4.366667, 4.4333334, 4.5, 4.5666666, 4.633333, 5),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1),
+"update": 0,
+"values": [0.0, 0.0, 0.0, 0.4223187522227088, 0.7, 0.7, 0.7, 0.6988975257836716, 0.6751543209876575, 0.6055339633186069, 0.49110336330844906, 0.35000000000001197, 0.2088966366915726, 0.0944660366814087, 0.02484567901235006, 0.00104890213589149, 0.0, 0.0]
+}

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import functools
 import http.server
+import json
 from pathlib import Path
 import threading
 
@@ -14,6 +15,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[2]
 PAGE = (Path(__file__).with_name('fake_youtube.html')).read_bytes()
+HOME = (Path(__file__).with_name('fake_youtube_home.html')).read_bytes()
 SCRIPT = (ROOT / 'browser_extension' / 'hoshi_apps' / 'youtube.js').read_text(encoding='utf-8')
 
 STUB = """
@@ -32,11 +34,11 @@ window.chrome = { runtime: { connect() {
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):  # every path is the fake watch page
+    def do_GET(self):
         self.send_response(200)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
         self.end_headers()
-        self.wfile.write(PAGE)
+        self.wfile.write(HOME if self.path == '/' else PAGE)
 
     def log_message(self, *args):
         pass
@@ -67,7 +69,8 @@ def main() -> None:
         check(state['thumbnail'].endswith('/abcDEF12345/mqdefault.jpg') and state['icons']['toggle'] == '▶', 'thumbnail and play icon')
         lists = {item['id']: item for item in state.get('lists', [])}
         nxt = lists.get('next', {}).get('items', [])
-        check([i['id'] for i in nxt] == ['nextAAA1111', 'nextBBB2222'], 'up-next videos are collected once each, without the current one')
+        check([i['id'] for i in nxt[:2]] == ['nextAAA1111', 'nextBBB2222'] and len(nxt) == 20,
+              'all loaded recommendations below the video are collected once each')
         check(nxt and nxt[1]['title'] == 'Как рисовать аниме-глаза' and nxt[1]['thumbnail'].endswith('/nextBBB2222/mqdefault.jpg'), 'up-next items have titles and covers (new YouTube layout too)')
         pl = lists.get('playlist', {})
         check(pl.get('title') == 'Плейлист · Музыка для работы' and pl.get('position') == '2 / 3', 'playlist title and position')
@@ -98,6 +101,36 @@ def main() -> None:
         run('play_item', {'id': 'nextBBB2222'})
         check(page.evaluate('window.__clicked.pop()') == '/watch?v=nextBBB2222&pp=x', 'up-next item is opened by clicking its link')
         check(page.evaluate('window.__hoshiYouTube.run("play_item", {id: "../../evil"})') is False, 'bad video ids are refused')
+        page.goto('http://127.0.0.1:18799/')
+        page.add_script_tag(content=SCRIPT)
+        state = page.evaluate('window.__sent.filter(m => m.op === "state").pop().state')
+        home = next((item for item in state.get('lists', []) if item['id'] == 'home'), {})
+        check(state.get('page') == 'home' and state.get('badge') == 'рекомендации', 'YouTube home has a recommendations card without a player')
+        check([i['id'] for i in home.get('items', [])] == ['homeAAA1111', 'homeBBB2222'], 'home feed lists loaded video cards')
+        page.evaluate('window.dispatchEvent(new Event("scroll"))')
+        state = page.evaluate('window.__sent.filter(m => m.op === "state").pop().state')
+        home = next((item for item in state.get('lists', []) if item['id'] == 'home'), {})
+        check([i['id'] for i in home.get('items', [])] == ['homeAAA1111', 'homeBBB2222', 'homeCCC3333'],
+              'scrolling the open YouTube tab adds newly loaded recommendations')
+        run('play_item', {'id': 'homeCCC3333'})
+        check(page.evaluate('window.__clicked.pop()') == '/watch?v=homeCCC3333', 'phone can open a chosen home video in the current tab')
+        page.evaluate('''() => {
+          const feed = document.querySelector('#feed');
+          for (let i = 0; i < 250; i++) {
+            const card = document.createElement('ytd-rich-grid-media');
+            card.innerHTML = `<a href="/watch?v=later${String(i).padStart(7, '0')}"></a><h3 id="video-title">Позднее предложение ${i} — длинное название видео</h3>`;
+            feed.append(card);
+          }
+        }''')
+        page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+        page.wait_for_timeout(100)
+        page.evaluate('window.dispatchEvent(new Event("scroll"))')
+        state = page.evaluate('window.__sent.filter(m => m.op === "state").pop().state')
+        home = next((item for item in state.get('lists', []) if item['id'] == 'home'), {})
+        check(home.get('total') == 253 and home['items'][-1]['id'] == 'later0000249',
+              'a long feed follows the current PC scroll position')
+        check(len(json.dumps(state, ensure_ascii=False, separators=(',', ':')).encode('utf-8')) <= 32000,
+              'recommendations stay within the phone packet budget')
         page.goto('http://127.0.0.1:18799/feed/subscriptions')
         page.add_script_tag(content=SCRIPT)
         page.wait_for_timeout(200)

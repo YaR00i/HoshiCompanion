@@ -21,23 +21,19 @@ import java.net.URL
 class Updater(private val activity: AppCompatActivity, private val prefs: Prefs) {
 
     fun checkLater() {
-        Thread { runCatching { check(showNothingNew = false) } }.start()
+        check(showNothingNew = false)
     }
 
     fun check(showNothingNew: Boolean) {
         Thread {
-            val info = runCatching {
-                val text = get("${prefs.pageUrl}app/version.json").toString(Charsets.UTF_8)
-                JSONObject(text)
-            }.getOrNull()
+            val info = available(prefs)
             activity.runOnUiThread {
                 if (info == null) {
-                    if (showNothingNew) toast("Хоши пока не раздаёт обновлений")
+                    if (showNothingNew) toast("Не удалось проверить обновление — проверь связь с ПК")
                     return@runOnUiThread
                 }
-                val code = info.optInt("versionCode", 0)
-                if (code > BuildConfig.VERSION_CODE) offer(info.optString("versionName", code.toString()))
-                else if (showNothingNew) toast("У тебя последняя версия")
+                if (info.code > BuildConfig.VERSION_CODE) offer(info.name)
+                else if (showNothingNew) toast("Установлена ${BuildConfig.VERSION_NAME}; на ПК доступна ${info.name}")
             }
         }.start()
     }
@@ -76,15 +72,32 @@ class Updater(private val activity: AppCompatActivity, private val prefs: Prefs)
         }.start()
     }
 
-    private fun get(url: String): ByteArray {
-        val connection = URL(url).openConnection() as HttpURLConnection
-        connection.connectTimeout = 4000
-        connection.readTimeout = 30000
-        try {
-            if (connection.responseCode != 200) error("HTTP ${connection.responseCode}")
-            return connection.inputStream.use { it.readBytes() }
-        } finally {
-            connection.disconnect()
+    data class Version(val code: Int, val name: String)
+
+    companion object {
+        fun available(prefs: Prefs): Version? = runCatching {
+            val host = Prefs.pickReachable(prefs) ?: return null
+            if (host != prefs.host) prefs.host = host
+            availableAt(host)
+        }.getOrNull()
+
+        fun availableAt(host: String): Version? = runCatching {
+            val info = JSONObject(get("http://$host:${Prefs.HTTP_PORT}/app/version.json").toString(Charsets.UTF_8))
+            val code = info.getInt("versionCode")
+            if (code < 1) return null
+            Version(code, info.optString("versionName", code.toString()))
+        }.getOrNull()
+
+        private fun get(url: String): ByteArray {
+            val connection = URL(url).openConnection() as HttpURLConnection
+            connection.connectTimeout = 4000
+            connection.readTimeout = 30000
+            try {
+                if (connection.responseCode != 200) error("HTTP ${connection.responseCode}")
+                return connection.inputStream.use { it.readBytes() }
+            } finally {
+                connection.disconnect()
+            }
         }
     }
 

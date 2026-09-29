@@ -139,10 +139,15 @@
 - Add-ons connect only from 127.0.0.1 at /hoshi-adapter-v1 and declare commands/state (app_adapters.gd).
   Add-on commands run only on an explicit human press; autonomy must never trigger them.
 - test_remote.gd covers pairing, refusals, routing to a stub add-on and cleanup.
-- browser_extension/hoshi_apps: MV3 add-on for www.youtube.com only. youtube.js reads now-playing and
-  presses player controls; worker.js keeps the single 127.0.0.1 adapter connection while a YouTube tab
-  exists. Never add other sites, history, comments or account data without a new user decision.
-  tests/extension/test_youtube_content.py checks youtube.js on a fake page (optional, needs Playwright).
+- browser_extension/hoshi_apps: MV3 add-on with separate local adapters for YouTube and Chrome tabs.
+  youtube.js reads now-playing and presses YouTube controls; worker.js connects while a YouTube tab exists.
+  User-approved 2026-09-29: on the selected YouTube tab, the phone may see titles/channels/covers of
+  loaded recommendations below a video or on the YouTube home page; scrolling the PC page refreshes them.
+  tabs.js lists open tabs only after a phone press for three minutes, sends title and site name only,
+  activates the chosen tab on the PC, and controls accessible HTML5 <video> on other sites.
+  The phone shows both adapters in one Browser section. Never send full URLs, history, comments,
+  account data or other page text without a new user decision. tests/extension/test_youtube_content.py
+  checks youtube.js on a fake page (optional, needs Playwright); test_browser_tabs.js covers selection.
 - scripts/pc_actions.gd ("Мои действия", phone tab «Компьютер»): the list is edited only on the PC
   (menu → Пульт с телефона → Мои действия) and stored in user://pc_actions.json. Phones send only
   "pc:<id>" of saved actions and can never supply a path, program or arguments. Shutdown/restart need

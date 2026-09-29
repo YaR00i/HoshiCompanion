@@ -15,3 +15,9 @@ extends Node
 @export_range(0.0, 1.0, 0.01) var face_happy: float = 0.0
 ## Надутые губки, «ай-яй-яй» (0…1).
 @export_range(0.0, 1.0, 0.01) var face_angry: float = 0.0
+## Открытый рот — зевок (0…1).
+@export_range(0.0, 1.0, 0.01) var face_aa: float = 0.0
+## Закрытые глазки (0…1).
+@export_range(0.0, 1.0, 0.01) var face_blink: float = 0.0
+## Удивление — «ой!» (0…1).
+@export_range(0.0, 1.0, 0.01) var face_surprised: float = 0.0

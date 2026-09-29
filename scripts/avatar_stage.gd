@@ -12,6 +12,7 @@ const ContextPose = preload("res://scripts/context_pose.gd")
 const MagicDoor = preload("res://scripts/magic_door.gd")
 const Expressions = preload("res://scripts/expression_driver.gd")
 const PetEffect = preload("res://scripts/pet_effect.gd")
+const StarBurst = preload("res://scripts/star_burst.gd")
 const SketchbookProp = preload("res://scripts/sketchbook_prop.gd")
 const SketchMotion = preload("res://scripts/sketch_motion.gd")
 const SeatedMotion = preload("res://scripts/seated_motion.gd")
@@ -60,6 +61,7 @@ var _voice_mouth: float = 0.0
 var _mesh_count: int = 0
 var _interaction_image: Image
 var pet_effect
+var star_burst
 var sketchbook
 var paper_star
 var _soft_toon_culled: Shader
@@ -128,6 +130,9 @@ func _ready() -> void:
 	pet_effect = PetEffect.new()
 	pet_effect.name = "PetEffect"
 	view.add_child(pet_effect)
+	star_burst = StarBurst.new()
+	star_burst.name = "StarBurst"
+	view.add_child(star_burst)
 	sketchbook = SketchbookProp.new()
 	sketchbook.name = "Sketchbook"
 	pivot.add_child(sketchbook)
@@ -149,6 +154,7 @@ func load_model(path: String) -> Dictionary:
 	posture_driver = PostureDriver.new()
 	edge_pose = EdgePose.new()
 	edge_life = EdgeLife.new()
+	edge_life.micro_requested.connect(_on_edge_micro)
 	idle_life = IdleLife.new()
 	context_pose = ContextPose.new()
 	if is_instance_valid(sketchbook):
@@ -391,10 +397,29 @@ func animate(delta: float, state, gaze: Vector2, walk_frame: Dictionary = {}) ->
 	if cozy_corner_active and not edge_suspended:
 		var paper_show: float = smoothstep(0.70, 0.83, edge_life.fold_progress) * (1.0 - smoothstep(0.93, 1.0, edge_life.fold_progress))
 		face_weights["happy"] = maxf(float(face_weights.get("happy", 0.0)), float(life_frame.get("fold", 0.0)) * paper_show * 0.42 + float(life_frame.get("admire_star", 0.0)) * 0.38)
+	# Сценка ждёт клика — чуть улыбается в ожидании; ответили — сияет.
+	var waiting_face: float = 0.3 if not edge_life.waiting.is_empty() else 0.0
+	face_weights["happy"] = maxf(float(face_weights.get("happy", 0.0)), maxf(waiting_face, smoothstep(0.0, 0.5, edge_life.wait_joy) * 0.9))
 	for key in touch.face():
 		face_weights[key] = maxf(float(face_weights.get(key, 0.0)), float(touch.face()[key]))
 	expressions.apply(face_weights)
 	pet_effect.tick(delta, head_pixel() + state.pet_follow * body_pixels * 0.09 + Vector2(0.0, -body_pixels * 0.055), state.pet_contact_active)
+	star_burst.tick(delta, body_pixels)
+
+## Мелочь сидя (потянуться, поправить волосы, клюнуть носом) — сторона случайная.
+func _on_edge_micro(kind: String) -> void:
+	touch.start(kind, "left" if randf() < 0.5 else "right")
+
+## Ответили на сценку «Ждёт»: звёздочки из того, что она показывает.
+func celebrate(gesture: String) -> void:
+	if not is_loaded:
+		return
+	var source: Vector3 = rig.world_point("chest")
+	if gesture == "sketch" and is_instance_valid(sketchbook) and sketchbook.book != null:
+		source = sketchbook.book.global_position
+	elif gesture == "admire_star" and is_instance_valid(paper_star) and paper_star.star != null:
+		source = paper_star.star.global_position
+	star_burst.burst(camera.unproject_position(source), body_pixels)
 
 func set_context_action(value: String, velocity: Vector2 = Vector2.ZERO, normalized_progress: float = -1.0, impact_strength: float = 0.5) -> void:
 	context_action = value

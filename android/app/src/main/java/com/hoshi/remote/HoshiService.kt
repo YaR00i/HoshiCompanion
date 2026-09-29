@@ -31,8 +31,8 @@ import java.util.concurrent.TimeUnit
  * Служба запускается, пока приложение ещё на экране (из фона Android её запускать
  * не даёт), и живёт всё время; пока пульт на виду (pageVisible), она молчит —
  * связь держит страница (у Хоши один телефон = одно соединение).
- * Тот же протокол, что у страницы (remote_bus.gd): hello с ключом, ping раз в 10 с,
- * сообщения state. Следит за карточками Claude и Codex и присылает уведомления:
+ * Тот же протокол, что у страницы (remote_bus.gd): hello с ключом и фоновым режимом,
+ * ping раз в 30 с, краткие сообщения state. Следит за карточками Claude и Codex и присылает уведомления:
  * «закончил ✓», «ждёт ответа ?», «прервался ⚠». Постоянное тихое уведомление
  * «Хоши на связи» — требование Android для такой службы.
  *
@@ -132,7 +132,8 @@ class HoshiService : Service() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 retry = 2000L
                 failures = 0
-                webSocket.send(JSONObject().put("op", "hello").put("token", prefs.token).toString())
+                webSocket.send(JSONObject().put("op", "hello").put("token", prefs.token)
+                    .put("background", true).toString())
                 // Кнопка, нажатая, пока связи не было, — сразу после приветствия.
                 pending?.let { webSocket.send(it) }
                 pending = null
@@ -192,13 +193,15 @@ class HoshiService : Service() {
             val first = !lastAssistant.containsKey(id)
             lastAssistant[id] = signature
             if (first) continue // сразу после подключения — не звенеть о старом
+            val session = state.optString("session")
             val folder = state.optString("title", name)
+            val target = if (session.isNotEmpty()) "$folder · ${session.take(6)}" else folder
             when {
                 ask != null && ask.optString("kind") == "permission" ->
-                    alert(id, "$name просит разрешение", "$folder: ${ask.optString("tool")} · код ${ask.optString("id")}")
-                ask != null -> alert(id, "$name спрашивает", folder + ": " + firstQuestion(ask))
-                status.startsWith("✓") -> alert(id, "$name закончил ✓", folder + ": " + state.optString("text").take(140))
-                status.startsWith("⚠") -> alert(id, "$name прервался ⚠", folder + ": " + state.optString("text").take(140))
+                    alert(id, session, "$name просит разрешение", "$target: ${ask.optString("tool")} · код ${ask.optString("id")}")
+                ask != null -> alert(id, session, "$name спрашивает", target + ": " + firstQuestion(ask))
+                status.startsWith("✓") -> alert(id, session, "$name закончил ✓", target + ": " + state.optString("text").take(140))
+                status.startsWith("⚠") -> alert(id, session, "$name прервался ⚠", target + ": " + state.optString("text").take(140))
             }
         }
     }
@@ -354,21 +357,29 @@ class HoshiService : Service() {
     private fun firstQuestion(ask: JSONObject): String =
         ask.optJSONArray("questions")?.optJSONObject(0)?.optString("question")?.take(140) ?: ""
 
-    private fun openApp(): PendingIntent = PendingIntent.getActivity(
-        this, 0, Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
-        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    private fun openApp(app: String = "", session: String = ""): PendingIntent {
+        val intent = Intent(this, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        if (app.isNotEmpty() && session.isNotEmpty()) {
+            intent.action = "com.hoshi.remote.ASSISTANT:$app:$session"
+            intent.putExtra("assistant_app", app)
+            intent.putExtra("assistant_session", session)
+        }
+        return PendingIntent.getActivity(this, 0, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    }
 
-    private fun alert(app: String, title: String, text: String) {
+    private fun alert(app: String, session: String, title: String, text: String) {
         val notification = NotificationCompat.Builder(this, ALERTS)
             .setSmallIcon(R.drawable.ic_stat_hoshi)
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-            .setContentIntent(openApp())
+            .setContentIntent(openApp(app, session))
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
-        manager().notify(if (app == "codex") CODEX_ALERT_ID else CLAUDE_ALERT_ID, notification)
+        manager().notify("$app:$session", if (app == "codex") CODEX_ALERT_ID else CLAUDE_ALERT_ID, notification)
     }
 
     private var ongoingText = "Хоши на связи"
@@ -399,7 +410,7 @@ class HoshiService : Service() {
                     return@forEachIndexed
                 }
                 views.setViewVisibility(id, android.view.View.VISIBLE)
-                views.setTextViewText(id, (item.optString("icon") + " " + item.optString("title")).trim())
+                views.setTextViewText(id, item.optString("title"))
                 views.setInt(id, "setBackgroundResource", if (QuickActions.isActive(item)) R.drawable.quick_chip_on else R.drawable.quick_chip)
                 views.setOnClickPendingIntent(id, PendingIntent.getService(
                     this, 100 + index, Intent(this, HoshiService::class.java).putExtra(EXTRA_QUICK, index),
@@ -441,7 +452,7 @@ class HoshiService : Service() {
         private val ASSISTANTS = mapOf("claude" to "Claude", "codex" to "Codex")
         private const val CLAUDE_ALERT_ID = 2
         private const val CODEX_ALERT_ID = 4
-        private const val PING_EVERY = 10_000L
+        private const val PING_EVERY = 30_000L
 
         /** Пульт на экране (ставит MainActivity; общий на всё приложение). */
         @Volatile var pageVisible = false

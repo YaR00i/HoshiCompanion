@@ -132,6 +132,10 @@ def main() -> int:
         event = {}
     if not isinstance(event, dict):
         event = {}
+    name = str(event.get('hook_event_name', ''))
+    session = str(event.get('session_id', ''))[:64]
+    if name in EVENTS | {'PermissionRequest'} and session:
+        log(name, session, 'started')
     if event.get('hook_event_name') == 'PermissionRequest':
         permission(event)
         return 0

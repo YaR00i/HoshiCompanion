@@ -221,6 +221,9 @@ func finish_press() -> void:
 				app.air.begin_fall(Vector2(app.host.window.position), Vector2(floor_goal), float(app.host.body_pixels), release_style)
 		drag_velocity = Vector2.ZERO
 		app._save_settings()
+	elif gesture in ["attention", "quiet"] and (app.stage.edge_life.answer_wait() or app.stage.edge_life.prop_scene_active()):
+		pass # сценка ждала клика (метка «Ждёт») — продолжает и радуется; идёт сценка
+		# с блокнотом/звёздочкой — клик не сбивает её касаниями и «заметила»
 	elif gesture in ["attention", "pet", "wake", "return", "quiet"]:
 		app.places.manual_pause()
 		app._clear_intent()
@@ -232,7 +235,7 @@ func finish_press() -> void:
 				app.ui.say("М-м…")
 		elif gesture in ["wake", "return"]:
 			app.state.recognize()
-		elif gesture in ["attention", "quiet"] and app.stage.touch.start(str(press_zone.get("zone", "")), str(press_zone.get("side", "left"))):
+		elif gesture in ["attention", "quiet"] and app.state.posture.kind != "edge" and app.stage.touch.start(str(press_zone.get("zone", "")), str(press_zone.get("side", "left"))):
 			pass # ножка, ручка, животик, грудь — своя реакция (touch_reactions.gd)
 		elif gesture == "attention":
 			app.state.notice()

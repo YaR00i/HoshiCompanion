@@ -519,7 +519,17 @@ func _check_touch_reactions(stage) -> void:
 	for zone in TouchMotion.ZONES:
 		clips_ok = clips_ok and TouchMotion.clip_for(zone) != null
 	var chest_frame: Dictionary = TouchMotion.sample(TouchMotion.clip_for("chest"), 1.6)
-	_check(clips_ok and absf(float(chest_frame["yaw"])) > 100.0 and chest_frame["bones"].has("rightMiddleProximal"), "standing touch reactions play editable clips (animations/touch_*.tres)")
+	_check(clips_ok and absf(float(chest_frame["yaw"])) > 20.0 and absf(float(chest_frame["yaw"])) < 45.0 and chest_frame["bones"].has("rightMiddleProximal"), "standing touch reactions play editable clips (animations/touch_*.tres)")
+	# «Хей!» — оклик, не касание: запускается по имени, рука вверх, лицо радостное.
+	touch.cancel()
+	touch._cooldown = 0.0
+	_check(touch.start("hey", "left"), "the «Хей!» call starts like a reaction")
+	for i in range(30):
+		touch.tick(1.0 / 30.0)
+		touch.apply(0.0, false)
+	_check(stage.rig.world_point("leftHand").y > stage.rig.world_point("head").y and float(touch.face().get("happy", 0.0)) > 0.5, "«Хей!» raises the hand above the head with a happy face")
+	touch.cancel()
+	stage.rig.tick(0.0, 0.0, Vector2.ZERO, 0.0, 0.0, 0.0, false)
 
 ## Единая карта экранов: как у пользователя — главный в центре, боковые с полом
 ## на 89 px выше, четвёртый над правым (без своего пола).

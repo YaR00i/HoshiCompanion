@@ -25,6 +25,7 @@ const TABS_ADAPTER = {
     { name: "play_item", title: "Переключиться на вкладку", icon: "", row: "hidden", args: { id: "" } },
     { name: "close", title: "Закрыть вкладку", icon: "", row: "hidden", args: { id: "" } },
     { name: "list", title: "Показать вкладки", icon: "", row: "hidden" },
+    { name: "open_youtube", title: "Новая вкладка YouTube", icon: "", row: "hidden" },
   ],
 };
 
@@ -37,6 +38,7 @@ let tabsPushTimer = null;
 let listUntil = 0;
 let lastSent = "";
 let media = { tabId: -1, frameId: 0 }; // где видео, которым управляют ⏪ ⏯ ⏩
+let selectedTabId = -1; // вкладка, которую человек явно выбрал на телефоне
 
 const hostOf = (url) => {
   try {
@@ -87,6 +89,9 @@ async function allTabs() {
 
 // Чем управляют кнопки: вкладка со звуком (последняя открытая), иначе активная.
 function pickMedia(info) {
+  const selected = info.tabs.find((t) => t.id === selectedTabId);
+  if (selected) return selected;
+  selectedTabId = -1;
   const sounding = info.tabs.filter((t) => t.audible).sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
   if (sounding.length) return sounding[0];
   const window = info.focused || info.windows[0];
@@ -99,6 +104,7 @@ async function tabsState() {
   const state = {};
   if (tab) {
     media.tabId = tab.id;
+    state.tab_id = tab.id; // точное совпадение с карточкой YouTube, даже на паузе
     const muted = !!(tab.mutedInfo && tab.mutedInfo.muted);
     state.title = (tab.title || hostOf(tab.url) || "Вкладка").slice(0, 200);
     state.subtitle = (hostOf(tab.url) || "страница Chrome") + (tab.audible ? " · 🔊" : "");
@@ -167,6 +173,16 @@ async function tabsRun(command, args) {
   const tabId = Number.isInteger(id) && id > 0 ? id : media.tabId;
   if (command === "list") {
     listUntil = Date.now() + TABS_LIST_MS;
+  } else if (command === "open_youtube") {
+    const info = await allTabs();
+    const windowId = (info.focused || info.windows[0] || {}).id;
+    const options = { url: "https://www.youtube.com/", active: true };
+    if (Number.isInteger(windowId)) options.windowId = windowId;
+    try {
+      const created = await chrome.tabs.create(options);
+      selectedTabId = created.id;
+      if (Number.isInteger(created.windowId)) await chrome.windows.update(created.windowId, { focused: true });
+    } catch (e) { /* окно Chrome могло закрыться между выбором и открытием */ }
   } else if (["toggle", "back", "forward", "seek_to"].includes(command)) {
     if (media.tabId >= 0) {
       try {
@@ -180,6 +196,7 @@ async function tabsRun(command, args) {
       if (command === "mute") await chrome.tabs.update(tabId, { muted: !(tab.mutedInfo && tab.mutedInfo.muted) });
       else if (command === "close") await chrome.tabs.remove(tabId);
       else if (command === "play_item" || command === "show_tab") {
+        selectedTabId = tabId;
         await chrome.tabs.update(tabId, { active: true });
         await chrome.windows.update(tab.windowId, { focused: true });
       }
@@ -233,6 +250,9 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
 for (const event of [chrome.tabs.onCreated, chrome.tabs.onRemoved, chrome.tabs.onActivated, chrome.windows.onFocusChanged]) {
   event.addListener(() => { tabsConnect(); tabsSoon(); });
 }
+chrome.tabs.onActivated.addListener(({tabId}) => {
+  if (tabId !== selectedTabId) selectedTabId = -1; // ручной выбор на ПК возвращает обычный поиск плеера
+});
 // Воркер Chrome засыпает, если Хоши выключена: будильник раз в минуту пробует снова.
 chrome.alarms.create("hoshi-tabs", { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener((alarm) => { if (alarm.name === "hoshi-tabs") tabsConnect(); });

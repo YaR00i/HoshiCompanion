@@ -24,7 +24,7 @@ abstract class QuickTile(private val slot: Int) : TileService() {
             if (Build.VERSION.SDK_INT >= 29) tile.subtitle = "не задано"
             tile.state = Tile.STATE_UNAVAILABLE
         } else {
-            tile.label = (item.optString("icon") + " " + item.optString("title")).trim()
+            tile.label = item.optString("title")
             if (Build.VERSION.SDK_INT >= 29) tile.subtitle = "Хоши"
             tile.state = if (QuickActions.isActive(item)) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
         }

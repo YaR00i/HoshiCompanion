@@ -4,6 +4,18 @@ extends RefCounted
 const SeatedMotion = preload("res://scripts/seated_motion.gd")
 const SketchMotion = preload("res://scripts/sketch_motion.gd")
 signal paper_star_completed
+## Сценка дошла до метки «Ждёт» на шкале клипа и ждёт клика (answer_wait).
+signal wait_started(gesture: String)
+## Ожидание кончилось: answered — кликнули; иначе — не дождалась (WAIT_LIMIT).
+signal wait_finished(gesture: String, answered: bool)
+const WAIT_MARKER: StringName = &"Ждёт"
+## Мелочь сидя (поверх спокойной позы): touch_reactions играет её как «вызов».
+signal micro_requested(kind: String)
+const MICRO := {"stretch": 4.2, "hair": 2.6, "doze": 5.0}
+## Большие сценки с предметами — редкое событие, не чаще раза в BIG_COOLDOWN с.
+const BIG: Array[String] = ["sketch", "fold"]
+const BIG_COOLDOWN: float = 720.0
+const WAIT_LIMIT: float = 25.0
 var kind: String = "calm"
 var autonomous_enabled: bool = true
 var weights: Dictionary = {
@@ -37,6 +49,18 @@ var _forced_kind: String = ""
 var _forced_left: float = 0.0
 var _forced_release: float = 0.0
 var _previous_goal: String = "calm"
+## Какая сценка сейчас ждёт клика ("" — никакая) и сколько уже ждёт.
+var waiting: String = ""
+var wait_age: float = 0.0
+## 1 сразу после ответа, гаснет за ~2 с — радость на лице.
+var wait_joy: float = 0.0
+var _wait_done: Dictionary = {}
+## Что вокруг (ставит companion): играет ли музыка, поздно ли — сонная.
+var music: bool = false
+var sleepy: bool = false
+var _clock: float = 0.0
+## Первая большая сценка — не раньше чем через ~6 минут после запуска.
+var _big_at: Dictionary = {"sketch": -BIG_COOLDOWN * 0.5, "fold": -BIG_COOLDOWN * 0.5}
 ## Rhythmic gestures fade out slower when they simply end (no one interrupted),
 ## so she settles instead of stopping.
 const FADE_RATE: float = 2.6
@@ -48,6 +72,7 @@ func seed_random(value: int) -> void:
 
 func tick(delta: float, state, suspended: bool = false, cozy: bool = false) -> Dictionary:
 	var dt: float = clampf(delta, 0.0, 0.1)
+	_clock += dt
 	var allowed: bool = state.posture.kind == "edge" and state.posture.mode == "seated" and state.motion_enabled and not state.dozing and not suspended
 	var goal: String = "calm"
 	var interrupted: bool = not allowed or state.notice_weight > 0.1 or state.welcome_weight > 0.1 or state.pet_weight > 0.1 or state.wave_weight > 0.1
@@ -55,8 +80,9 @@ func tick(delta: float, state, suspended: bool = false, cozy: bool = false) -> D
 		cancel_forced()
 	if allowed and not cozy and _forced_kind in ["sketch", "fold", "admire_star"]:
 		cancel_forced()
+	var held: bool = not waiting.is_empty() # пока ждёт — время сценки стоит
 	if allowed and not _forced_kind.is_empty():
-		_forced_left = maxf(0.0, _forced_left - dt)
+		_forced_left = maxf(0.0, _forced_left - (0.0 if held and waiting == _forced_kind else dt))
 		if _forced_left > 0.0:
 			goal = _forced_kind
 		else:
@@ -70,16 +96,22 @@ func tick(delta: float, state, suspended: bool = false, cozy: bool = false) -> D
 		var choices: Array[String] = _choices(state.activity, cozy)
 		if not choices.has(kind):
 			_left = 0.0
-		_left = maxf(0.0, _left - dt)
-		_wait -= dt
+		if not (held and waiting == kind):
+			_left = maxf(0.0, _left - dt)
+			_wait -= dt
 		if _left <= 0.0 and _wait <= 0.0:
 			while choices.has(_last) and choices.size() > 1:
 				choices.erase(_last)
 			kind = choices[_rng.randi_range(0, choices.size() - 1)]
 			_last = kind
-			_left = _run_length(kind, state.activity, cozy)
+			if MICRO.has(kind):
+				# Мелочь: поза остаётся спокойной, движение — поверх (avatar_stage).
+				_left = float(MICRO[kind])
+				micro_requested.emit(kind)
+			else:
+				_left = _run_length(kind, state.activity, cozy)
 			_wait = _left + _pause(state.activity, kind)
-		if _left > 0.0:
+		if _left > 0.0 and not MICRO.has(kind):
 			goal = kind
 	else:
 		if not allowed:
@@ -92,14 +124,19 @@ func tick(delta: float, state, suspended: bool = false, cozy: bool = false) -> D
 		# A loop that is still visible keeps its phase, so coming back to it never pops.
 		if weights.has(goal) and goal != "sketch" and not (SeatedMotion.loops(goal) and float(weights[goal]) > 0.05):
 			_gesture_age[goal] = 0.0
+		_wait_done.erase(goal)
+		if goal in BIG:
+			_big_at[goal] = _clock
 		_previous_goal = goal
+	var goal_dt: float = _wait_step(goal, dt)
+	wait_joy = maxf(0.0, wait_joy - dt * 0.5)
 	if goal == "sketch":
-		_sketch_age = minf(_sketch_age + dt, SketchMotion.clip.length)
+		_sketch_age = minf(_sketch_age + goal_dt, SketchMotion.clip.length)
 		sketch_progress = _sketch_age / SketchMotion.clip.length
 	else:
 		_sketch_age = 0.0
 	if goal == "fold":
-		_fold_age = minf(_fold_age + dt, float(SeatedMotion.DURATIONS["fold"]))
+		_fold_age = minf(_fold_age + goal_dt, float(SeatedMotion.DURATIONS["fold"]))
 		fold_progress = _fold_age / float(SeatedMotion.DURATIONS["fold"])
 		if fold_progress >= 0.95 and not _fold_result_emitted:
 			_fold_result_emitted = true
@@ -109,7 +146,7 @@ func tick(delta: float, state, suspended: bool = false, cozy: bool = false) -> D
 		fold_progress = 0.0
 		_fold_result_emitted = false
 	if goal == "admire_star":
-		_admire_age = minf(_admire_age + dt, float(SeatedMotion.DURATIONS["admire_star"]))
+		_admire_age = minf(_admire_age + goal_dt, float(SeatedMotion.DURATIONS["admire_star"]))
 		admire_progress = _admire_age / float(SeatedMotion.DURATIONS["admire_star"])
 	else:
 		_admire_age = 0.0
@@ -122,7 +159,7 @@ func tick(delta: float, state, suspended: bool = false, cozy: bool = false) -> D
 			# Loops keep running while they play AND while they fade out.
 			_gesture_age[gesture] = fposmod(float(_gesture_age.get(gesture, 0.0)) + dt, _duration(gesture))
 		elif gesture == goal:
-			_gesture_age[gesture] = minf(float(_gesture_age.get(gesture, 0.0)) + dt, _duration(gesture))
+			_gesture_age[gesture] = minf(float(_gesture_age.get(gesture, 0.0)) + goal_dt, _duration(gesture))
 		elif float(weights[gesture]) < 0.01:
 			_gesture_age[gesture] = 0.0
 		gesture_progress[gesture] = clampf(float(_gesture_age.get(gesture, 0.0)) / _duration(gesture), 0.0, 1.0)
@@ -139,6 +176,9 @@ func request_gesture(value: String) -> bool:
 	if not weights.has(value):
 		return false
 	_forced_kind = value
+	_wait_done.erase(value)
+	if waiting == value:
+		waiting = ""
 	if not (SeatedMotion.loops(value) and float(weights[value]) > 0.05):
 		_gesture_age[value] = 0.0
 	_forced_left = _forced_duration(value)
@@ -166,7 +206,61 @@ func cancel_forced() -> void:
 	_forced_left = 0.0
 	_forced_release = 0.0
 
+## Идёт сценка с предметом (блокнот, бумажная звезда) — клики её не прерывают.
+func prop_scene_active() -> bool:
+	for gesture in ["sketch", "fold", "admire_star"]:
+		if float(weights.get(gesture, 0.0)) > 0.05:
+			return true
+	return not waiting.is_empty()
+
+## Клик во время ожидания: сценка идёт дальше, Хоши радуется.
+func answer_wait() -> bool:
+	if waiting.is_empty():
+		return false
+	var gesture: String = waiting
+	waiting = ""
+	wait_joy = 1.0
+	wait_finished.emit(gesture, true)
+	return true
+
+## Время метки «Ждёт» в клипе сценки, или -1 (сценка не ждёт).
+func wait_time(gesture: String) -> float:
+	var clip: Animation = SketchMotion.clip if gesture == "sketch" else (SeatedMotion.clip_for(gesture) if SeatedMotion.DURATIONS.has(gesture) else null)
+	if clip == null or SeatedMotion.loops(gesture) or not clip.has_marker(WAIT_MARKER):
+		return -1.0
+	return clip.get_marker_time(WAIT_MARKER)
+
+func _age(gesture: String) -> float:
+	match gesture:
+		"sketch": return _sketch_age
+		"fold": return _fold_age
+		"admire_star": return _admire_age
+	return float(_gesture_age.get(gesture, 0.0))
+
+## Сколько времени сценке пройти в этом кадре: 0, пока она ждёт клика.
+func _wait_step(goal: String, dt: float) -> float:
+	if not waiting.is_empty() and waiting != goal:
+		waiting = "" # сценку прервали (подняли, погладили, уснула) — ждать нечего
+	if waiting == goal and not waiting.is_empty():
+		wait_age += dt
+		if wait_age >= WAIT_LIMIT:
+			waiting = ""
+			wait_finished.emit(goal, false)
+		return 0.0
+	var at: float = wait_time(goal)
+	if at < 0.0 or _wait_done.has(goal):
+		return dt
+	var age: float = _age(goal)
+	if age + dt < at:
+		return dt
+	_wait_done[goal] = true
+	waiting = goal
+	wait_age = 0.0
+	wait_started.emit(goal)
+	return maxf(0.0, at - age)
+
 func label() -> String:
+	if not waiting.is_empty(): return "Ждёт, когда ты посмотришь"
 	if float(weights["fold"]) > 0.55: return "Складывает бумажную звезду"
 	if float(weights["admire_star"]) > 0.55: return "Показывает свою звёздочку"
 	if float(weights["sketch"]) > 0.55: return "Рисует звёздочку"
@@ -178,19 +272,32 @@ func label() -> String:
 	if float(weights["peek"]) > 0.55: return "С любопытством смотрит вниз"
 	return ""
 
+## Большую сценку можно снова (прошло BIG_COOLDOWN с с прошлой).
+func big_ready(value: String) -> bool:
+	return _clock - float(_big_at.get(value, -BIG_COOLDOWN)) >= BIG_COOLDOWN
+
+## Из чего выбирать сидя. Основное — спокойные мелочи; рисунок и звёздочка —
+## редко (big_ready); музыка — кивает и напевает; поздно — зевает и клюёт носом.
 func _choices(activity: String, cozy: bool = false) -> Array[String]:
+	var result: Array[String] = []
 	if cozy:
 		match activity:
-			"quiet": return ["sway", "sway", "sketch", "fold"]
-			"playful": return ["sway", "swing", "lean", "peek", "balance", "sketch", "fold"]
-		return ["sway", "swing", "lean", "peek", "balance", "sketch", "fold"]
-	match activity:
-		"quiet":
-			return ["sway"]
-		"playful":
-			# Accepted rhythmic sway is more likely; hum/nod remain manual drafts.
-			return ["sway", "sway", "swing", "lean", "peek", "balance"]
-	return ["sway", "swing", "lean", "peek", "balance"]
+			"quiet": result = ["sway", "sway", "hair", "stretch"]
+			"playful": result = ["sway", "swing", "swing", "lean", "peek", "balance", "hair", "stretch"]
+			_: result = ["sway", "swing", "lean", "peek", "balance", "hair", "stretch"]
+		for big in BIG:
+			if big_ready(big) or (kind == big and _left > 0.0):
+				result.append(big)
+	else:
+		match activity:
+			"quiet": result = ["sway", "hair"]
+			"playful": result = ["sway", "sway", "swing", "lean", "peek", "balance", "hair"]
+			_: result = ["sway", "swing", "lean", "peek", "balance", "hair"]
+	if music:
+		result.append_array(["nod", "hum", "nod"])
+	elif sleepy:
+		result.append_array(["doze", "stretch", "doze"])
+	return result
 
 func _duration(value: String) -> float:
 	if value == "sketch":

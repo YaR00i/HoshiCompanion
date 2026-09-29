@@ -13,7 +13,7 @@
   <like-button-view-model><button aria-pressed="false"
     onclick="this.setAttribute('aria-pressed', this.getAttribute('aria-pressed') === 'true' ? 'false' : 'true')">like</button></like-button-view-model>
 </ytd-watch-metadata>
-<div id="secondary"><div id="related">
+<div id="primary"><div id="related">
   <ytd-compact-video-renderer><a id="thumbnail" href="/watch?v=nextAAA1111"></a>
     <span id="video-title" title="Дождь за окном и джаз">Дождь за окном и джаз</span><ytd-channel-name>Cozy Sounds</ytd-channel-name></ytd-compact-video-renderer>
   <yt-lockup-view-model><a class="thumb" href="/watch?v=nextBBB2222&amp;pp=x"></a>
@@ -28,6 +28,13 @@
   <ytd-playlist-panel-video-renderer><a id="third" href="/watch?v=listCCC0003&amp;list=PLhoshi"></a><span id="video-title">Третье</span><span id="byline">Hoshi Radio</span></ytd-playlist-panel-video-renderer>
 </ytd-playlist-panel-renderer>
 <script>
+  // Рекомендации под видео продолжаются дальше первых 12 карточек.
+  const related = document.querySelector("#related");
+  for (let i = 1; i <= 18; i++) {
+    const card = document.createElement("ytd-compact-video-renderer");
+    card.innerHTML = `<a href="/watch?v=more${String(i).padStart(7, "0")}"></a><span id="video-title">Ещё видео ${i}</span>`;
+    related.append(card);
+  }
   // Переходы по ссылкам в тесте не выполняем, а запоминаем.
   window.__clicked = [];
   document.addEventListener("click", (e) => { const a = e.target.closest("a"); if (a) { e.preventDefault(); window.__clicked.push(a.getAttribute("href")); } });

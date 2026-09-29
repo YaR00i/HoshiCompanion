@@ -8,15 +8,19 @@ extends RefCounted
 ##                           (кисти, пальцы, ноги, таз — все кости из BONE_TARGET_NAMES);
 ##   Channels:touch_yaw      — поворот всего тела, градусы («отвернулась», «кружится»);
 ##   Channels:hips_offset    — сдвиг таза (доли роста: x — вбок, y — вверх, z — вперёд);
-##   Channels:face_happy, Channels:face_angry — выражение лица (0…1).
+##   Channels:face_happy, face_angry, face_aa (рот — зевок), face_blink (глазки
+##                           закрыты), face_surprised — выражение лица (0…1).
 ## Первые клипы запечены из кодовых реакций (tools/bake_touch_clips.gd); нет клипа —
 ## Хоши играет реакцию кодом (touch_reactions.gd). Сидя — всегда кодом.
 
 const SketchMotion = preload("res://scripts/sketch_motion.gd")
 
 ## Место касания -> длительность клипа, с.
-const ZONES := {"leg": 2.6, "arm": 2.9, "belly": 2.4, "chest": 3.4, "hips": 2.4}
-const CHANNELS := ["touch_yaw", "hips_offset", "face_happy", "face_angry"]
+## "hey" — не касание, а оклик «Хей!» (помощник закончил работу).
+## "stretch", "hair", "doze" — мелочи сидя на полочке (потянуться с зевком, поправить
+## волосы, клюнуть носом); играются и стоя, и сидя — только верх тела.
+const ZONES := {"leg": 2.6, "arm": 2.9, "belly": 2.4, "chest": 3.4, "hips": 2.4, "hey": 2.6, "stretch": 4.2, "hair": 2.6, "doze": 5.0}
+const CHANNELS := ["touch_yaw", "hips_offset", "face_happy", "face_angry", "face_aa", "face_blink", "face_surprised"]
 
 static var _cache: Dictionary = {}
 
@@ -76,7 +80,7 @@ static func validation_error(name: String, clip: Animation) -> String:
 	return ""
 
 ## Кадр клипа: {"bones": {кость: Quaternion}, "yaw": градусы, "hips_offset": Vector3,
-## "face": {"happy": f, "angry": f}}.
+## "face": {"happy": f, "angry": f, "aa": f, "blink": f, "surprised": f}}.
 static func sample(clip: Animation, time: float) -> Dictionary:
 	var result: Dictionary = {"bones": {}, "yaw": 0.0, "hips_offset": Vector3.ZERO, "face": {}}
 	if clip == null:
@@ -97,8 +101,7 @@ static func sample(clip: Animation, time: float) -> Dictionary:
 					result["yaw"] = float(value)
 				"hips_offset":
 					result["hips_offset"] = value if value is Vector3 else Vector3.ZERO
-				"face_happy":
-					result["face"]["happy"] = clampf(float(value), 0.0, 1.0)
-				"face_angry":
-					result["face"]["angry"] = clampf(float(value), 0.0, 1.0)
+				var channel:
+					if str(channel).begins_with("face_"):
+						result["face"][str(channel).trim_prefix("face_")] = clampf(float(value), 0.0, 1.0)
 	return result

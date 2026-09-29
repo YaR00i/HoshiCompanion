@@ -222,10 +222,15 @@ func _run() -> void:
 			var touch_clip: Animation = player.get_animation(TouchMotion.clip_name(zone))
 			touch_ok = touch_ok and touch_clip != null and TouchMotion.validation_error(TouchMotion.clip_name(zone), touch_clip).is_empty()
 		_check(touch_ok and player.selected_clip_name() != "" , "all touch clips are in the editor and pass the save check")
+		player.assigned_animation = "sketch"
+		player.seek(8.5, true)
+		scene._update_preview()
+		var book_was_shown: bool = scene.sketchbook.visible
 		player.assigned_animation = "touch_chest"
 		player.seek(1.6, true)
 		scene._update_preview()
-		_check(player.selected_clip_name() == "touch_chest" and absf(rad_to_deg(scene.get_node("PreviewRoot").rotation.y)) > 100.0, "touch_chest turns her back in the preview (body turn channel)")
+		_check(book_was_shown and not scene.sketchbook.visible and not scene.paper_star.visible, "switching to a touch clip hides the notebook and paper")
+		_check(player.selected_clip_name() == "touch_chest" and absf(rad_to_deg(scene.get_node("PreviewRoot").rotation.y)) > 20.0 and absf(rad_to_deg(scene.get_node("PreviewRoot").rotation.y)) < 45.0, "touch_chest turns her half away in the preview (body turn channel)")
 		var finger_anchor: Node3D = scene.get_node("Bones/rightMiddleProximal")
 		var finger_marker: Node3D = finger_anchor.get_node("Правый средний 1")
 		var finger_bone: int = int(scene.rig.bones["rightMiddleProximal"])
@@ -237,6 +242,38 @@ func _run() -> void:
 		scene._update_preview()
 		scene._update_preview()
 		_check(rad_to_deg(finger_before.angle_to(scene.rig.skeleton.get_bone_pose_rotation(finger_bone))) < 30.0, "the preview does not accumulate rotations frame after frame")
+		# Кольца: у каждой кости модели — размер, сторона и направление вдоль кости.
+		var ring_hips: Node3D = scene.get_node("Bones/hips/Таз")
+		var ring_left_arm: Node3D = scene.get_node("Bones/leftUpperArm/Левое плечо")
+		var ring_right_finger: Node3D = scene.get_node("Bones/rightIndexDistal/Правый указательный 3")
+		_check(ring_hips.ring_radius > ring_left_arm.ring_radius and ring_left_arm.ring_radius > ring_right_finger.ring_radius and ring_left_arm.ring_side == 1 and ring_right_finger.ring_side == -1 and ring_right_finger.ring_small, "bone rings are sized by body part and colored by side")
+		var arm_axis_world: Vector3 = ring_left_arm.global_basis * ring_left_arm.ring_axis
+		var arm_real: Vector3 = scene.rig.world_point("leftLowerArm") - scene.rig.world_point("leftUpperArm")
+		_check(arm_axis_world.normalized().dot(arm_real.normalized()) > 0.95, "the upper arm ring points along the arm")
+		# Кость без дорожки: кольцо видно (бледное), поворот виден сразу, запись создаёт дорожку.
+		var touch_chest: Animation = player.get_animation("touch_chest")
+		var free_semantic: String = ""
+		for semantic in SketchMotion.BONE_TARGET_NAMES:
+			if scene.rig.bones.has(semantic) and touch_chest.find_track(NodePath(SketchMotion.bone_path(semantic)), Animation.TYPE_ROTATION_3D) < 0 and not semantic.contains("Eye"):
+				free_semantic = semantic
+				break
+		var free_anchor: Node3D = scene.get_node("Bones/" + free_semantic) if not free_semantic.is_empty() else null
+		var free_marker: Node3D = free_anchor.get_node(SketchMotion.BONE_TARGET_NAMES[free_semantic]) if free_anchor != null else null
+		_check(free_anchor != null and free_anchor.visible and not free_marker.tracked, "a bone without a track still shows its (pale) ring: %s" % free_semantic)
+		if free_marker != null:
+			var free_bone: int = int(scene.rig.bones[free_semantic])
+			var free_before: Quaternion = scene.rig.skeleton.get_bone_pose_rotation(free_bone)
+			free_marker.quaternion = Quaternion(Vector3.RIGHT, deg_to_rad(25.0))
+			scene._update_preview()
+			_check(rad_to_deg(free_before.angle_to(scene.rig.skeleton.get_bone_pose_rotation(free_bone))) > 15.0, "turning a trackless ring shows in the preview before keying")
+			var tracks_before: int = touch_chest.get_track_count()
+			_check(free_marker.needs_key(), "auto-key notices a turned ring that the clip does not have yet")
+			var recorded_new: bool = free_marker.record_rotation_key(true)
+			_check(not free_marker.needs_key(), "after auto-key the ring matches the clip")
+			var new_track: int = touch_chest.find_track(NodePath(SketchMotion.bone_path(free_semantic)), Animation.TYPE_ROTATION_3D)
+			_check(recorded_new and touch_chest.get_track_count() == tracks_before + 1 and new_track >= 0 and touch_chest.track_get_key_count(new_track) == 3 and TouchMotion.validation_error("touch_chest", touch_chest).is_empty(), "recording a trackless bone creates its track (rest, pose, rest) and the clip stays valid")
+			touch_chest.remove_track(new_track)
+			free_marker.quaternion = Quaternion.IDENTITY
 		player.seek(1.6, true)
 		player.assigned_animation = "sway"
 		player.seek(3.0, true)

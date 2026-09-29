@@ -152,8 +152,54 @@ func _run() -> void:
 	check(app.stage.edge_life.request_gesture("sketch"), "selected sway lets a notebook scene start")
 	for i in range(120): app.stage.edge_life.tick(1.0 / 30.0, app.state, false, true)
 	check(float(app.stage.edge_life.weights["sketch"]) > 0.9, "notebook temporarily takes priority over selected sway")
-	for i in range(240): app.stage.edge_life.tick(1.0 / 30.0, app.state, false, true)
+	# Метка «Ждёт»: показала рисунок и ждёт клика — время сценки стоит, пока не ответишь.
+	var life = app.stage.edge_life
+	var wait_events: Array = []
+	life.wait_started.connect(func(g): wait_events.append(["start", g]))
+	life.wait_finished.connect(func(g, answered): wait_events.append(["finish", g, answered]))
+	var sketch_wait: float = life.wait_time("sketch")
+	check(sketch_wait > 6.0 and sketch_wait < 9.5 and life.wait_time("sway") < 0.0, "the notebook clip has a «Ждёт» marker; loops never wait")
+	for i in range(300):
+		if life.waiting == "sketch": break
+		life.tick(1.0 / 30.0, app.state, false, true)
+	var held_progress: float = life.sketch_progress
+	check(life.prop_scene_active(), "the notebook scene tells clicks not to start touch reactions")
+	for i in range(90): life.tick(1.0 / 30.0, app.state, false, true)
+	check(life.waiting == "sketch" and absf(held_progress - sketch_wait / 10.0) < 0.01 and absf(life.sketch_progress - held_progress) < 0.0001 and life.forced_active(), "she holds the drawing up and waits instead of finishing")
+	check(life.label() != "" and wait_events.size() == 1 and wait_events[0] == ["start", "sketch"], "waiting is announced once")
+	check(life.answer_wait() and life.waiting.is_empty() and life.wait_joy > 0.9 and wait_events.back() == ["finish", "sketch", true], "a click answers: she continues and is happy")
+	check(not life.answer_wait(), "a second click is not another answer")
+	for i in range(240): life.tick(1.0 / 30.0, app.state, false, true)
 	check(float(app.stage.edge_life.weights["sway"]) > 0.9 and not app.stage.edge_life.forced_active(), "sway resumes after notebook finishes")
+	# Не дождалась: через WAIT_LIMIT сама убирает рисунок.
+	check(life.request_gesture("sketch"), "notebook starts again")
+	for i in range(300):
+		if life.waiting == "sketch": break
+		life.tick(1.0 / 30.0, app.state, false, true)
+	for i in range(int((life.WAIT_LIMIT + 1.0) * 10.0)): life.tick(0.1, app.state, false, true)
+	check(life.waiting.is_empty() and wait_events.back() == ["finish", "sketch", false] and life.sketch_progress > 0.9, "without a click she stops waiting and puts the drawing away")
+	for i in range(240): life.tick(1.0 / 30.0, app.state, false, true)
+	# Ритм полочки: рисунок/звёздочка — редко, основное — мелочи; музыка и ночь.
+	var fresh = load("res://scripts/edge_life.gd").new()
+	check(not fresh.big_ready("sketch") and not fresh._choices("quiet", true).has("sketch"), "right after start there is no notebook scene yet")
+	fresh._clock = fresh.BIG_COOLDOWN
+	check(fresh.big_ready("sketch") and fresh._choices("quiet", true).has("fold"), "after the pause a big scene may come again")
+	var calm_list: Array[String] = fresh._choices("quiet", true)
+	check(calm_list.has("hair") and calm_list.has("stretch") and not calm_list.has("doze") and not calm_list.has("nod"), "small things (hair, stretch) are the everyday choices")
+	fresh.music = true
+	check(fresh._choices("", true).count("nod") >= 2 and fresh._choices("", false).has("hum"), "music makes her nod and hum")
+	fresh.music = false
+	fresh.sleepy = true
+	check(fresh._choices("quiet", false).has("doze"), "late at night she may doze off")
+	var micros: Array = []
+	fresh.micro_requested.connect(func(k): micros.append(k))
+	fresh.seed_random(3)
+	app.state.edge_activity = "auto"
+	var autonomy_before: bool = app.state.autonomy_enabled
+	app.state.autonomy_enabled = true
+	for i in range(3000): fresh.tick(0.1, app.state, false, true)
+	app.state.autonomy_enabled = autonomy_before
+	check(micros.size() >= 3, "small overlays are requested while she sits (%d)" % micros.size())
 	app.state.edge_activity = "lean"
 	frames(100)
 	app.stage.edge_suspended = true

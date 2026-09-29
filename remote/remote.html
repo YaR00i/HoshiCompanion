@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#5f4d74">
+<meta name="theme-color" content="#33304f">
 <link rel="manifest" href="/manifest.webmanifest">
 <title>Хоши</title>
 <style>
@@ -68,6 +68,13 @@
   /* карточка приложения */
   .app { margin-top: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 12px;
     box-shadow: 0 3px 12px rgba(80, 60, 100, .07); }
+  .phone-settings .version { font-size: 18px; font-weight: 700; color: var(--plum); margin: 3px 2px 5px; }
+  .phone-settings .help { color: var(--muted); font-size: 12px; line-height: 1.4; margin: 8px 2px; }
+  .phone-settings .chips { margin-top: 10px; }
+  .app-help { margin-top: 10px; padding: 10px 12px; border-radius: 14px; background: var(--soft);
+    color: var(--plum); font-size: 12px; line-height: 1.4; }
+  .app.tabs-list-only > .now, .app.tabs-list-only > .empty, .app.tabs-list-only > .progress,
+  .app.tabs-list-only > .controls, .app.tabs-list-only > .extra { display: none; }
   .app-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700;
     color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin: 0 2px 10px; }
   .now { display: flex; gap: 10px; align-items: center; }
@@ -88,6 +95,10 @@
   .ctl.on { background: #f7dfe7; color: #b04a6a; border-color: #f0c9d6; }
   .ctl:active { transform: scale(.92); }
   .extra { display: flex; justify-content: center; gap: 10px; margin-top: 10px; }
+  .youtube-controls { align-items: flex-start; gap: 7px; }
+  .youtube-controls .control-unit { width: 70px; flex: 0 0 70px; display: flex; flex-direction: column;
+    align-items: center; gap: 5px; text-align: center; }
+  .youtube-controls .control-label { color: var(--muted); font-size: 10px; line-height: 1.15; min-height: 23px; }
   details.list { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 8px; }
   details.list summary { list-style: none; display: flex; justify-content: space-between; align-items: center; cursor: pointer;
     font-size: 13px; font-weight: 650; color: var(--plum); padding: 6px 2px; }
@@ -104,6 +115,11 @@
     display: flex; align-items: center; justify-content: center; font-size: 20px; }
   .item .acts { display: flex; gap: 4px; flex: none; }
   .item .acts button { width: 36px; height: 36px; border-radius: 50%; background: var(--soft); font-size: 15px; }
+  .item.youtube-video { flex-wrap: wrap; }
+  .item.youtube-video .acts { width: 100%; justify-content: flex-end; padding-left: 90px; margin-top: 3px; }
+  .item .acts button.open-new { width: auto; height: 32px; padding: 0 10px; border-radius: 999px;
+    display: inline-flex; align-items: center; gap: 5px; color: var(--plum); font-size: 12px; font-weight: 600; }
+  .item .acts button.open-new .glyph { width: 15px; height: 15px; }
   .list .more { width: 100%; margin-top: 6px; padding: 9px; border-radius: 12px; background: var(--soft); color: var(--plum); font-weight: 600; }
   .item .title { font-size: 13px; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .item .sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -164,13 +180,20 @@
   .appicon.closed .face { opacity: .5; filter: grayscale(.6); }
   .appicon .name { max-width: 58px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .reply { display: flex; gap: 8px; align-items: flex-end; margin-top: 10px; }
+  .session-picker { display: flex; gap: 7px; overflow-x: auto; padding: 2px 1px 8px; scrollbar-width: thin; }
+  .session-choice { flex: 0 0 auto; max-width: 175px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 13px;
+    background: var(--soft); text-align: left; color: var(--ink); }
+  .session-choice.on { border-color: var(--plum); box-shadow: inset 0 0 0 1px var(--plum); background: #f1eaf5; }
+  .session-choice b, .session-choice small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .session-choice b { font-size: 12px; } .session-choice small { color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .reply-target { color: var(--muted); font-size: 12px; margin-top: 10px; }
   .reply textarea { flex: 1; min-height: 44px; max-height: 30vh; resize: vertical; padding: 10px 12px; border-radius: 14px;
     border: 1px solid var(--line); background: #fff; color: var(--ink); font: inherit; font-size: 14px; }
   .reply button { padding: 11px 16px; border-radius: 999px; background: var(--plum); color: #fff; font-weight: 600; }
   .empty { text-align: center; color: var(--muted); font-size: 13px; padding: 18px 10px 4px; }
 
   /* вкладки */
-  nav { position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-around;
+  nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 4; display: flex; justify-content: space-around;
     padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); background: rgba(255, 253, 251, .96);
     border-top: 1px solid var(--line); backdrop-filter: blur(8px); }
   .pending { display: flex; align-items: center; gap: 10px; background: #fbe9ec; border: 1px solid #f0cdd5; color: #8c3c52;
@@ -229,22 +252,88 @@
     background: var(--ink); color: #fff; padding: 9px 16px; border-radius: 999px; font-size: 13px; opacity: 0; transition: opacity .25s; pointer-events: none; }
   .toast.show { opacity: .92; }
   .hidden { display: none !important; }
+
+  /* Небесная тема: декоративный верх и спокойная бумажная поверхность. */
+  :root {
+    --ink: #403850; --muted: #766e81; --plum: #62547f; --plum-2: #796b98;
+    --soft: #f0ebf4; --gold: #c49b68; --paper: #faf6f0; --card: #fffdf9; --line: #e7d9d5;
+  }
+  html { background: #32304c; }
+  body { background: linear-gradient(180deg, #e9e3ed 0, var(--paper) 260px); min-height: 100vh; }
+  header { min-height: 145px; overflow: hidden; padding: calc(20px + env(safe-area-inset-top)) 24px 43px;
+    border-radius: 0 0 32px 32px; background: radial-gradient(circle at 75% 3%, #655e81, transparent 44%),
+    linear-gradient(145deg, #383452, #555070 72%, #6e6385); box-shadow: 0 8px 24px #41385629; }
+  header::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .9;
+    background: radial-gradient(circle at 9% 27%, #f9e3b9 1px, transparent 2px),
+    radial-gradient(circle at 38% 15%, #fff1d0 1px, transparent 2px),
+    radial-gradient(circle at 58% 43%, #fff1d0 1px, transparent 2px),
+    radial-gradient(circle at 91% 25%, #f9e3b9 1px, transparent 2px),
+    radial-gradient(circle at 28% 72%, #f9e3b9 1px, transparent 2px); }
+  header::after { content: ""; pointer-events: none; position: absolute; width: 150px; height: 63px; right: -15px; bottom: -38px;
+    border-radius: 50% 50% 0 0; background: #e8deec; box-shadow: -42px -4px 0 -4px #e8deec, -86px 18px 0 -2px #e8deec,
+    -260px 28px 0 8px #e8deec, -320px 30px 0 1px #e8deec; }
+  header h1 { position: relative; z-index: 1; font-size: 26px; font-weight: 680; letter-spacing: .5px; }
+  header .status { position: relative; z-index: 1; color: #f5eff8; opacity: 1; margin-top: 5px; }
+  header .moon { z-index: 1; right: 22px; top: calc(19px + env(safe-area-inset-top));
+    width: 58px; height: 58px; display: grid; place-items: center; color: #f9e2b5; letter-spacing: 0; }
+  header .moon svg { width: 50px; height: 50px; filter: drop-shadow(0 1px 7px #f4dfad88); }
+  main { position: relative; z-index: 1; margin-top: -19px; padding: 0 16px 16px; }
+  #remote, #pair { background: #fffaf5ed; border: 1px solid #eadbd4; border-radius: 28px; padding: 17px 15px 22px;
+    box-shadow: 0 9px 26px #58466820; }
+  #pair { padding: 34px 20px; }
+  h2 { color: #756b82; margin-top: 23px; letter-spacing: .75px; }
+  .quick { gap: 14px 6px; padding: 5px 0 9px; }
+  .round { color: var(--ink); font-size: 12px; font-weight: 590; }
+  .round .face { width: 64px; height: 64px; border: 1px solid #ddcbd7; background: linear-gradient(145deg, #fffaf7, #eee5f2);
+    box-shadow: inset 0 1px #ffffff, 0 4px 11px #6b597121; color: var(--plum); }
+  .round:nth-child(3n+2) .face { background: linear-gradient(145deg, #fffaf7, #f5e5eb); }
+  .round:nth-child(3n+3) .face { background: linear-gradient(145deg, #fffaf7, #e7e9f3); }
+  .tile, .app, .chip, .scene, .appicon .face, .winicon .face { box-shadow: 0 3px 11px #67536b12; }
+  .tile { min-height: 82px; padding: 12px 4px 9px; border-radius: 18px; gap: 7px; }
+  .tile.on, .chip.on { background: #66577f; color: #fff; }
+  .scene { background: linear-gradient(140deg, #f8e8ec, #f1e9f6); border-color: #e8d8df; }
+  .scenes { margin-left: -14px; margin-right: -14px; }
+  .app { border-radius: 22px; padding: 15px; }
+  .app-head { color: var(--plum); }
+  .app-head::before { content: ""; width: 5px; height: 5px; flex: none; margin-right: 6px; background: var(--gold); transform: rotate(45deg); }
+  .chip { min-height: 42px; display: inline-flex; align-items: center; gap: 6px; padding: 9px 13px; }
+  .ctl, .miniplayer .btn { display: grid; place-items: center; }
+  .ctl.big { background: #66577f; }
+  .appicon .face { border-radius: 17px; background: linear-gradient(145deg, #fffdf9, #eee9f3); }
+  .timerbar { background: linear-gradient(135deg, #383451, #605779); }
+  .glyph { width: 24px; height: 24px; display: inline-block; vertical-align: middle; flex: none; }
+  .round .glyph { width: 27px; height: 27px; }
+  .tile .glyph, .scene .glyph, .appicon .glyph, .winicon .glyph { width: 25px; height: 25px; }
+  .ctl .glyph { width: 23px; height: 23px; }
+  .ctl.big .glyph { width: 28px; height: 28px; }
+  .chip .glyph { width: 17px; height: 17px; }
+  .sheet-icon .glyph { width: 38px; height: 38px; color: var(--plum); }
+  nav { max-width: 520px; margin: 0 auto; border: 1px solid #e8d9d1; border-bottom: 0;
+    border-radius: 22px 22px 0 0; padding-top: 10px; background: #fffaf7f5; box-shadow: 0 -5px 24px #4a395b18; }
+  nav button { min-height: 51px; min-width: 68px; gap: 4px; padding: 5px 6px; }
+  nav button .glyph { width: 21px; height: 21px; }
+  nav button.active { color: #5e4f7b; background: #eee7f4; }
+  .history header { min-height: 0; padding: calc(15px + env(safe-area-inset-top)) 16px 15px; border-radius: 0; box-shadow: none; }
+  .history header::after { display: none; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid #a785b0; outline-offset: 2px; }
+  @media (max-width: 360px) { #remote { padding-left: 10px; padding-right: 10px; } .tiles { gap: 5px; } .appbar { gap: 7px; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; } }
 </style>
 </head>
 <body>
 <header>
-  <div class="moon">✦☾</div>
+  <div class="moon" aria-hidden="true"><svg viewBox="0 0 64 64" fill="none"><path d="M39 7a25 25 0 1 0 18 39A24 24 0 0 1 39 7Z" fill="currentColor"/><path d="m43 18 1.5 4.5L49 24l-4.5 1.5L43 30l-1.5-4.5L37 24l4.5-1.5L43 18Z" fill="#fffaf1"/></svg></div>
   <h1>Хоши</h1>
   <div class="status"><span class="dot off" id="dot"></span><span id="status">Подключаюсь…</span></div>
 </header>
 
 <main>
   <div id="pair" class="hidden">
-    <div class="hello">Привет!</div>
+    <div class="hello">Привет, это Хоши!</div>
     <p>Введи код, который Хоши показывает на компьютере<br>(меню → Пульт с телефона → Адрес и код)</p>
     <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••">
     <br><button id="pairButton">Подружиться</button>
-    <br><button id="scanButton" class="hidden" style="margin-top:12px;padding:11px 26px;border-radius:999px;background:var(--soft);color:var(--plum)">📷 Сканировать QR</button>
+    <br><button id="scanButton" class="hidden" style="margin-top:12px;padding:11px 26px;border-radius:999px;background:var(--soft);color:var(--plum)">Сканировать QR</button>
     <div class="error" id="pairError"></div>
   </div>
 
@@ -266,10 +355,10 @@
 
 <div id="miniPlayer" class="miniplayer hidden"></div>
 <nav id="nav" class="hidden">
-  <button data-tab="main" class="active"><span class="icon">✦</span>Главное</button>
-  <button data-tab="play"><span class="icon">☁️</span>Хоши</button>
-  <button data-tab="pc"><span class="icon">💻</span>Компьютер</button>
-  <button data-tab="modes"><span class="icon">⚙️</span>Режимы</button>
+  <button data-tab="main" class="active"><span class="icon" data-glyph="star"></span>Главное</button>
+  <button data-tab="play"><span class="icon" data-glyph="cloud"></span>Хоши</button>
+  <button data-tab="pc"><span class="icon" data-glyph="monitor"></span>Компьютер</button>
+  <button data-tab="modes"><span class="icon" data-glyph="settings"></span>Режимы</button>
 </nav>
 <div class="toast" id="toast"></div>
 <div class="sheet hidden" id="sheet"><div class="sheet-box">
@@ -297,12 +386,108 @@ window.addEventListener("unhandledrejection", (e) => reportError("promise: " + (
 </script>
 <script>
 "use strict";
+// Единый набор линейных пиктограмм. Имена команд остаются прежними; рисунки — только представление.
+const GLYPHS = {
+  star: '<path d="m12 2 2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2L12 2Z"/>',
+  moon: '<path d="M20.5 15.2A9 9 0 0 1 8.8 3.5 9 9 0 1 0 20.5 15.2Z"/><path d="m17 3 .6 1.4L19 5l-1.4.6L17 7l-.6-1.4L15 5l1.4-.6L17 3Z"/>',
+  cloud: '<path d="M7 18h11a4 4 0 0 0 .2-8A6 6 0 0 0 6.5 9 4.5 4.5 0 0 0 7 18Z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/>',
+  wave: '<path d="M4 13V8a1.5 1.5 0 0 1 3 0v3-6a1.5 1.5 0 0 1 3 0v6-7a1.5 1.5 0 0 1 3 0v7-5a1.5 1.5 0 0 1 3 0v7l1.2-2a1.6 1.6 0 0 1 2.8 1.5L17 18a6 6 0 0 1-5.2 3H10a6 6 0 0 1-5.6-4L4 13Z"/>',
+  heart: '<path d="M20.8 8.3c0 4-8.8 10.7-8.8 10.7S3.2 12.3 3.2 8.3a4.4 4.4 0 0 1 8.8-.2 4.4 4.4 0 0 1 8.8.2Z"/>',
+  home: '<path d="m3 11 9-8 9 8v9H3v-9Z"/><path d="M9 20v-6h6v6"/>',
+  walk: '<circle cx="13" cy="4" r="2"/><path d="m10 21 1.5-6-3-3-2 3H3m18 6-4-4-1-5-4-3-2 3m2-3 3-2"/>',
+  stop: '<rect x="5" y="5" width="14" height="14" rx="3"/>',
+  sit: '<path d="M6 4v8a3 3 0 0 0 3 3h7v5M6 20v-5h12M4 20h15"/>',
+  stand: '<circle cx="12" cy="4" r="2"/><path d="M12 7v8m-5 6 5-6 5 6M8 10l4-3 4 3"/>',
+  smile: '<circle cx="12" cy="12" r="9"/><path d="M8 14c2.3 3 5.7 3 8 0M8 9h.01M16 9h.01"/>',
+  sleep: '<path d="M20.5 15.2A9 9 0 0 1 8.8 3.5 9 9 0 1 0 20.5 15.2Z"/><path d="M16 4h5l-5 5h5"/>',
+  sparkle: '<path d="m12 2 2 8 8 2-8 2-2 8-2-8-8-2 8-2 2-8Z"/><path d="m19 2 .5 1.5L21 4l-1.5.5L19 6l-.5-1.5L17 4l1.5-.5L19 2Z"/>',
+  sound: '<path d="M4 9h4l5-4v14l-5-4H4V9Z"/><path d="M17 9a4 4 0 0 1 0 6m2-9a8 8 0 0 1 0 12"/>',
+  monitor: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9 7 7m10 10 2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/>',
+  chat: '<path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 9h8m-8 3h5"/>',
+  code: '<path d="m8 7-5 5 5 5m8-10 5 5-5 5m-3-13-2 16"/>',
+  play: '<path d="m7 4 13 8-13 8V4Z"/>',
+  pause: '<path d="M7 5v14m10-14v14"/>',
+  back: '<path d="m18 5-8 7 8 7M6 5v14"/>',
+  forward: '<path d="m6 5 8 7-8 7M18 5v14"/>',
+  seek_back: '<path d="m11 6-6 6 6 6m8-12-6 6 6 6"/>',
+  seek_forward: '<path d="M5 6l6 6-6 6M13 6l6 6-6 6"/>',
+  next: '<path d="m5 5 10 7-10 7V5Zm13 0v14"/>',
+  volume_down: '<path d="M3 9h4l5-4v14l-5-4H3V9Z"/><path d="M17 12h5"/>',
+  volume_up: '<path d="M3 9h4l5-4v14l-5-4H3V9Z"/><path d="M17 12h5m-2.5-2.5v5"/>',
+  mute: '<path d="M3 9h4l5-4v14l-5-4H3V9Z"/><path d="m17 9 5 6m0-6-5 6"/>',
+  switch: '<path d="M3 7h16m-4-4 4 4-4 4M21 17H5m4-4-4 4 4 4"/>',
+  list: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8m-8 4h8m-8 4h6"/>',
+  film: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16m10-16v16M3 9h4m-4 6h4m10-6h4m-4 6h4"/>',
+  window: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v5"/>',
+  browser: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 6.5h.01M10 6.5h.01"/><path d="m10 12 5 2.5-5 2.5v-5Z"/>',
+  flower: '<circle cx="12" cy="12" r="2"/><path d="M12 10c-3-7 3-9 3-3m-1 4c7-3 9 3 3 3m-4 0c3 7-3 9-3 3m0-4c-7 3-9-3-3-3"/>',
+  leaf: '<path d="M20 4C9 4 4 9 4 16a4 4 0 0 0 4 4c7 0 12-5 12-16Z"/><path d="M5 19c3-4 6-7 11-10"/>',
+  sad: '<circle cx="12" cy="12" r="9"/><path d="M8 17c2-3 6-3 8 0M8 9h.01M16 9h.01"/>',
+  surprise: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="16" r="1.5"/><path d="M8 9h.01M16 9h.01"/>',
+  pencil: '<path d="m4 20 4-1 11-11-3-3L5 16l-1 4ZM14 7l3 3"/>',
+  left: '<path d="m14 5-7 7 7 7M7 12h14"/>',
+  right: '<path d="m10 5 7 7-7 7M3 12h14"/>',
+  down: '<path d="M12 3v17m-7-7 7 7 7-7"/>',
+  shuffle: '<path d="M3 7h4c4 0 5 10 10 10h4m-4-4 4 4-4 4M3 17h4c2 0 3-2 4-4m3-4c1-1 2-2 3-2h4m-4-4 4 4-4 4"/>',
+  coffee: '<path d="M4 9h14v6a6 6 0 0 1-6 6h-2a6 6 0 0 1-6-6V9Zm14 1h2a2 2 0 0 1 0 4h-2M4 21h15M8 3v3m5-3v3"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7 .4l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7-.4l-3 3a5 5 0 0 0 7 7l2-2"/>',
+  power: '<path d="M12 2v10m-5-7a9 9 0 1 0 10 0"/>',
+  timer: '<circle cx="12" cy="13" r="8"/><path d="M12 13V8m0 5 4 2M9 2h6"/>',
+  folder: '<path d="M3 6h7l2 2h9v12H3V6Z"/>',
+  add: '<path d="M12 4v16M4 12h16"/>',
+  close: '<path d="M5 5 19 19M19 5 5 19"/>'
+};
+const COMMAND_GLYPHS = {
+  wave:"wave", pet:"heart", cozy_corner:"home", walk:"walk", stop:"stop", sit:"sit", stand:"stand", doze:"sleep",
+  mood_neutral:"smile", mood_happy:"smile", mood_relaxed:"leaf", mood_surprised:"surprise", mood_sad:"sad",
+  mood_calm:"moon", mood_playful:"flower", pick_window:"window", surface_walk:"walk", surface_scoot:"shuffle",
+  return_floor:"down", side_left:"left", side_right:"right", side_return:"sit",
+  edge_sketch:"pencil", edge_fold:"star", edge_admire_star:"sparkle",
+  activity_quiet:"moon", activity_normal:"sun", activity_playful:"flower",
+  place_manual:"stop", place_cozy:"home", place_smart:"window", place_focus:"window",
+  toggle_autonomy:"sparkle", toggle_auto_walk:"walk", toggle_auto_rest:"moon",
+  restart:"power", quit:"power",
+  back:"seek_back", forward:"seek_forward", next:"next",
+  vol_down:"volume_down", vol_up:"volume_up", mute:"mute", like:"heart",
+  open_new:"browser"
+};
+const APP_GLYPHS = {sound:"sound", windows:"window", browser:"browser", youtube:"play", mpc:"film", claude:"chat", codex:"code", tabs:"list"};
+function glyphName(command, title = "") {
+  const name = String(command || "").split(":").pop();
+  if (COMMAND_GLYPHS[name]) return COMMAND_GLYPHS[name];
+  if (APP_GLYPHS[name]) return APP_GLYPHS[name];
+  if (/sound|volume|mute/.test(command)) return "sound";
+  if (/timer/.test(command)) return "timer";
+  if (/scene|spark|magic/.test(command)) return "sparkle";
+  if (/sleep|rest|night/.test(command)) return "moon";
+  if (/window|monitor|screen/.test(command)) return "window";
+  if (/pause/.test(command)) return "pause";
+  if (/play|toggle/.test(command)) return "play";
+  if (/back|previous/.test(command)) return "back";
+  if (/forward|next/.test(command)) return "forward";
+  if (/папк|folder/i.test(title)) return "folder";
+  if (/браузер|browser/i.test(title)) return "window";
+  if (/ссылк|link/i.test(title)) return "link";
+  return "star";
+}
+function glyph(name) {
+  const span = document.createElement("span"); span.className = "glyph"; span.setAttribute("aria-hidden", "true");
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("width", "100%"); svg.setAttribute("height", "100%");
+  svg.setAttribute("fill", "none"); svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "1.65");
+  svg.setAttribute("stroke-linecap", "round"); svg.setAttribute("stroke-linejoin", "round");
+  svg.innerHTML = GLYPHS[name] || GLYPHS.star; span.append(svg); return span;
+}
+function iconSlot(className, name) { const slot = el("span", className); slot.append(glyph(name)); return slot; }
+for (const slot of document.querySelectorAll("[data-glyph]")) slot.append(glyph(slot.dataset.glyph));
 const WS_URL = `ws://${location.hostname}:18771/hoshi-remote-v1`;
 let socket = null, token = null, catalog = {quick: [], groups: []}, state = {}, retry = 300;
 // Связь переживает блокировку телефона: уходя в фон, страница сама закрывает её
 // (Хоши сразу освобождает место), при возвращении мгновенно подключается снова,
 // а нажатие во время переподключения не теряется.
-let welcomed = false, lastHeard = 0, retryTimer = 0, offlineTimer = 0, queued = null;
+let welcomed = false, lastHeard = 0, retryTimer = 0, offlineTimer = 0, appRecoveryTimer = 0, queued = null;
 try { token = localStorage.getItem("hoshi-token"); } catch (e) {}
 // Ссылка из QR-кода: #pair=123456 — привязаться без ввода кода.
 let linkCode = (location.hash.match(/pair=(\d{6})/) || [])[1] || "";
@@ -325,7 +510,16 @@ function run(command, args) {
 }
 function online(yes, text) {
   clearTimeout(offlineTimer);
+  if (yes) { clearTimeout(appRecoveryTimer); appRecoveryTimer = 0; }
   $("dot").classList.toggle("off", !yes); if (text !== undefined) $("status").textContent = text;
+}
+function scheduleAppRecovery() {
+  if (!appRecoveryTimer && window.HoshiApp && window.HoshiApp.connectionLost) {
+    appRecoveryTimer = setTimeout(() => {
+      appRecoveryTimer = 0;
+      if (!welcomed && !document.hidden) window.HoshiApp.connectionLost();
+    }, 8000);
+  }
 }
 // Короткое переподключение не мигает надписью: точка тускнеет сразу, «не на связи» —
 // только если связи нет дольше 4 секунд.
@@ -333,6 +527,7 @@ function softOffline() {
   $("dot").classList.add("off");
   clearTimeout(offlineTimer);
   offlineTimer = setTimeout(() => { $("status").textContent = "Хоши не на связи — жду…"; }, 4000);
+  scheduleAppRecovery();
 }
 function showPair(error) {
   $("remote").classList.add("hidden"); $("nav").classList.add("hidden"); $("miniPlayer").classList.add("hidden");
@@ -353,10 +548,12 @@ function connect() {
   if (document.hidden) return; // подключимся, когда страницу снова откроют
   clearTimeout(retryTimer);
   welcomed = false;
+  scheduleAppRecovery();
   const ws = new WebSocket(WS_URL);
   socket = ws;
   ws.onopen = () => {
     if (ws !== socket) return;
+    clearTimeout(appRecoveryTimer); appRecoveryTimer = 0;
     retry = 300; lastHeard = Date.now();
     if (token) send({op: "hello", token});
     else if (linkCode) { send({op: "pair", code: linkCode}); linkCode = ""; }
@@ -375,15 +572,23 @@ function connect() {
       catalog = m.catalog || catalog; showRemote(); renderHoshi(); renderPc(); renderSound(); renderBar();
       if (m.op === "welcome") {
         welcomed = true;
+        clearTimeout(appRecoveryTimer); appRecoveryTimer = 0;
         // Нажатие, сделанное пока связь восстанавливалась, уходит сразу (если ему < 5 с).
         if (queued && Date.now() - queued.at < 5000) send(queued.message);
         queued = null;
         if (openApp === "windows") send({op: "run", command: "pc:windows", args: {}}); // «Окна» открыты — свежий список
       }
     }
-    else if (m.op === "state") { state = m; online(true, (m.hoshi && m.hoshi.status) || "На связи"); renderHoshi(); renderSound(); renderApps(); renderPending(); renderWindows(); renderMini(); renderTimer();
+    else if (m.op === "state") { state = m; online(true, (m.hoshi && m.hoshi.status) || "На связи"); renderHoshi(); renderSound(); renderApps(); applyNotificationTarget(); renderPending(); renderWindows(); renderMini(); renderTimer();
       // Приложению — что сейчас включено (звук, режимы), чтобы плитки и кнопки горели правильно.
       if (window.HoshiApp && window.HoshiApp.onState) { try { window.HoshiApp.onState(JSON.stringify({sound: (m.sound || {}).current || "", selected: (m.hoshi || {}).selected || []})); } catch (e) {} } }
+    else if (m.op === "assistant_session") {
+      const key = m.app + ":" + m.session;
+      delete assistantPending[key];
+      if (m.ok && m.state && m.state.session === m.session) assistantDetails[key] = m.state;
+      else if (selectedSessions[m.app] === m.session) { selectedSessions[m.app] = null; toast("Этот чат уже закрыт"); }
+      renderApps();
+    }
     else if (m.op === "history") showHistory(m);
     else if (m.op === "ran" && !m.ok) toast({not_allowed: "С телефона так нельзя", missing: "Не нашла этот файл на компьютере",
       nothing_to_cancel: "Нечего отменять", need_confirm: "Нужно подтвердить",
@@ -403,7 +608,7 @@ function connect() {
   };
   ws.onclose = () => {
     if (ws !== socket) return;
-    socket = null; welcomed = false; softOffline();
+    socket = null; welcomed = false; for (const key in assistantPending) delete assistantPending[key]; softOffline();
     if (!document.hidden) { retryTimer = setTimeout(connect, retry); retry = Math.min(retry * 1.6, 5000); }
   };
 }
@@ -449,14 +654,14 @@ function renderHoshi() {
   renderHoshi.key = key;
   const quick = $("quick"); quick.textContent = "";
   for (const item of catalog.quick || []) {
-    const b = el("button", "round"); const face = el("span", "face", item.icon || "✦");
+    const b = el("button", "round"); const face = iconSlot("face", glyphName(item.command, item.title));
     b.append(face, el("span", "", item.title)); b.onclick = () => run(item.command); quick.append(b);
   }
   // Сценарии (собираются на ПК): одна кнопка — несколько шагов по очереди.
   const scenes = $("scenes"); scenes.textContent = "";
   scenes.classList.toggle("hidden", !(catalog.scenes || []).length);
   for (const item of catalog.scenes || []) {
-    const b = el("button", "scene"); b.append(el("span", "icon", item.icon || "✨"), el("span", "", item.title));
+    const b = el("button", "scene"); b.append(iconSlot("icon", GLYPHS[item.icon] ? item.icon : "sparkle"), el("span", "", item.title));
     b.onclick = () => {
       run(item.command); toast("Сценарий «" + item.title + "»…");
       b.classList.add("going"); setTimeout(() => b.classList.remove("going"), 1500 + 900 * (item.steps || 1));
@@ -470,14 +675,45 @@ function renderHoshi() {
       const box = el("div", tab === "play" ? "tiles" : "chips");
       for (const item of group.commands) {
         let b;
-        if (tab === "play") { b = el("button", "tile"); b.append(el("span", "icon", item.icon || "✦"), el("span", "", item.title)); }
-        else b = el("button", "chip", (item.confirm && item.icon ? item.icon + " " : "") + item.title);
+        if (tab === "play") { b = el("button", "tile"); b.append(iconSlot("icon", glyphName(item.command, item.title)), el("span", "", item.title)); }
+        else { b = el("button", "chip"); b.append(glyph(glyphName(item.command, item.title)), el("span", "", item.title)); }
         if (on.has(item.command)) b.classList.add("on");
         b.onclick = () => item.confirm ? confirmThen(item) : run(item.command); box.append(b);
       }
       root.append(box);
     }
+    if (tab === "modes" && window.HoshiApp) renderAndroidSettings(root);
   }
+}
+
+function renderAndroidSettings(root) {
+  const app = window.HoshiApp;
+  const box = el("section", "app phone-settings");
+  box.append(el("div", "app-head", "Приложение на телефоне"));
+  let installed = "неизвестна";
+  try { if (app.version) installed = app.version(); } catch (e) {}
+  box.append(el("div", "version", "Версия " + installed));
+  const available = el("div", "help", "Проверяю доступную версию на ПК…");
+  box.append(available);
+  fetch("/app/version.json", {cache: "no-store"}).then((response) => {
+    if (!response.ok) throw new Error("update unavailable");
+    return response.json();
+  }).then((info) => {
+    if (available.isConnected) available.textContent = "На ПК: версия " + String(info.versionName || info.versionCode || "неизвестна");
+  }).catch(() => { if (available.isConnected) available.textContent = "Не удалось узнать версию обновления"; });
+  const buttons = el("div", "chips");
+  const add = (title, action) => {
+    const button = el("button", "chip", title);
+    button.onclick = action;
+    buttons.append(button);
+  };
+  if (app.checkUpdate) add("Проверить обновление", () => app.checkUpdate());
+  if (app.openSettings) add("Открыть настройки", () => app.openSettings());
+  else if (app.changeAddress) add("Сменить компьютер", () => app.changeAddress());
+  add("Обновить пульт", () => location.reload());
+  box.append(buttons);
+  box.append(el("p", "help", "После обновления расширения обнови открытые вкладки YouTube на компьютере (F5), чтобы появились рекомендации."));
+  root.append(box);
 }
 
 // Вкладка «Компьютер»: мои действия (задаются на ПК) и системные кнопки.
@@ -515,13 +751,13 @@ function quickCandidates() {
 function renderQuickSetup(root) {
   let saved = {notify: [], tiles: []};
   try { saved = JSON.parse(window.HoshiApp.getQuickActions()); } catch (e) {}
-  const box = el("div", "app"); box.append(el("div", "app-head", "📱 Быстрые кнопки телефона"));
+  const box = el("div", "app"); box.append(el("div", "app-head", "Быстрые кнопки телефона"));
   const save = () => { try { window.HoshiApp.setQuickActions(JSON.stringify(saved)); } catch (e) {} };
   const section = (key, title, max, hint) => {
     box.append(el("h2", "", title + " · " + saved[key].length + "/" + max));
     const chosen = el("div", "chips");
     for (const item of saved[key]) {
-      const c = el("button", "chip on", item.icon + " " + item.title + "  ✕");
+      const c = el("button", "chip on"); c.append(glyph(glyphName(item.command, item.title)), el("span", "", item.title), glyph("close"));
       c.onclick = () => { saved[key] = saved[key].filter((x) => x.command !== item.command); save(); renderPc(); };
       chosen.append(c);
     }
@@ -532,7 +768,7 @@ function renderQuickSetup(root) {
     const options = el("div", "chips");
     for (const item of quickCandidates()) {
       if (saved[key].some((x) => x.command === item.command)) continue;
-      const c = el("button", "chip", item.icon + " " + item.title);
+      const c = el("button", "chip"); c.append(glyph(glyphName(item.command, item.title)), el("span", "", item.title));
       c.onclick = () => { if (saved[key].length >= max) { toast("Уже " + max + " — убери одну"); return; } saved[key].push(item); save(); renderPc(); };
       options.append(c);
     }
@@ -543,10 +779,10 @@ function renderQuickSetup(root) {
   root.append(box);
 }
 
-// Значок кнопки: настоящий значок программы (с ПК), иначе смайлик.
+// Значок программы с ПК имеет приоритет; остальные команды используют рисунки Хоши.
 function iconOf(item, fallback) {
   if (item.icon_url) { const img = el("img", "icon"); img.src = item.icon_url; img.alt = ""; return img; }
-  return el("span", "icon", item.icon || fallback);
+  return iconSlot("icon", glyphName(item.command, item.title) || fallback);
 }
 
 function tiles(items) {
@@ -591,7 +827,7 @@ function placeSheet(icon, question, monitors, modesList, monitor, mode, allowAsI
   extra = extra || {};
   let front = true; try { front = localStorage.getItem("hoshi-front") !== "0"; } catch (e) {}
   const sheet = el("div", "sheet"); const box = el("div", "sheet-box");
-  box.append(el("div", "sheet-icon", icon), el("div", "sheet-text", question));
+  box.append(iconSlot("sheet-icon", icon), el("div", "sheet-text", question));
   const asIs = el("div", "chips"); asIs.style.justifyContent = "center";
   const map = screenMap(monitors, monitor, (index) => { monitor = index; redraw(); });
   const modes = el("div", "chips"); modes.style.justifyContent = "center"; modes.style.margin = "10px 0 16px";
@@ -626,11 +862,11 @@ function placeSheet(icon, question, monitors, modesList, monitor, mode, allowAsI
 // «Где открыть?»: экран и положение — только из списка, который прислал ПК.
 function placeThen(item) {
   const ask = item.ask_place;
-  placeSheet(item.icon || "🚀", item.title + " — где открыть?", ask.monitors || [], ask.modes, ask.monitor || 0, ask.mode || "center",
+  placeSheet(glyphName(item.command, item.title), item.title + " — где открыть?", ask.monitors || [], ask.modes, ask.monitor || 0, ask.mode || "center",
     true, "Открыть", (monitor, mode) => run(item.command, {monitor, mode}));
 }
 // Раздел «Окна»: открытые окна ПК (имя программы, экран) — переставить на другой экран.
-const WIN_ICONS = {chrome: "🌐", msedge: "🌐", firefox: "🦊", "mpc-be64": "🎬", claude: "✳️", chatgpt: "💬", explorer: "📁", notepad: "📝", steamwebhelper: "🎮", telegram: "✈️", discord: "🎧"};
+const WIN_ICONS = {chrome: "window", msedge: "window", firefox: "window", "mpc-be64": "film", claude: "chat", chatgpt: "chat", explorer: "folder", notepad: "list", steamwebhelper: "play", telegram: "chat", discord: "sound"};
 // Цвет «буквы» для программ без своей иконки — всегда один и тот же для имени.
 function letterColor(name) {
   const colors = ["#7a6590", "#c07a5a", "#5a8fa8", "#6aa27a", "#b56a8f", "#8a7ac0", "#c29a4a"];
@@ -653,13 +889,13 @@ function renderWindows() {
   const states = {maximized: "развёрнуто", minimized: "свёрнуто"};
   for (const win of w.list) {
     const b = el("button", "winicon");
-    const emoji = WIN_ICONS[win.app.replace(/\.exe$/, "")];
-    const face = el("span", "face" + (emoji ? "" : " letter"), emoji || win.name.slice(0, 1).toUpperCase());
-    if (!emoji) face.style.background = letterColor(win.name);
+    const symbol = WIN_ICONS[win.app.replace(/\.exe$/, "")];
+    const face = symbol ? iconSlot("face", symbol) : el("span", "face letter", win.name.slice(0, 1).toUpperCase());
+    if (!symbol) face.style.background = letterColor(win.name);
     face.append(el("span", "screen", String(win.monitor)));
     b.append(face, el("span", "name", win.name));
     if (states[win.state]) b.append(el("span", "sub", states[win.state]));
-    b.onclick = () => placeSheet(emoji || "🖥️", win.name + " — куда переставить?", w.monitors || [], w.modes, win.monitor, "center", false, "Переставить",
+    b.onclick = () => placeSheet(symbol || "window", win.name + " — куда переставить?", w.monitors || [], w.modes, win.monitor, "center", false, "Переставить",
       (monitor, mode, front) => run("pc:move", {hwnd: win.hwnd, monitor, mode, front}),
       {front: true, onFront: () => { run("pc:front", {hwnd: win.hwnd}); toast("Показываю " + win.name); }});
     grid.append(b);
@@ -667,7 +903,7 @@ function renderWindows() {
   box.append(grid);
 }
 function confirmThen(item) {
-  $("sheetIcon").textContent = item.icon || "⚠️";
+  $("sheetIcon").replaceChildren(glyph(glyphName(item.command, item.title)));
   $("sheetText").textContent = item.title + "?";
   $("sheet").classList.remove("hidden");
   $("sheetYes").onclick = () => { $("sheet").classList.add("hidden"); run(item.command, item.args || {confirm: true}); };
@@ -702,7 +938,7 @@ function renderSound() {
   for (const item of items) {
     const off = s.known && !available.has(item.command);
     const b = el("button", "tile" + (s.current === item.command ? " on" : "") + (off ? " off" : ""));
-    b.append(el("span", "icon", item.icon || "🔊"), el("span", "", item.title));
+    b.append(iconSlot("icon", "sound"), el("span", "", item.title));
     if (off) b.append(el("span", "note", "нет на связи"));
     b.onclick = () => run(item.command);
     box.append(b);
@@ -714,15 +950,22 @@ function renderSound() {
 
 // Ряд иконок: Звук и приложения (YouTube, MPC-BE, Claude…). Нажал — раскрылась
 // только его карточка; ещё раз — свернулась. Выбор помнит телефон.
-const APP_ICONS = {sound: "🔊", windows: "🖥️", youtube: "▶️", mpc: "🎬", claude: "✳️", codex: "⌨️", tabs: "📑"};
-const APP_TITLES = {tabs: "Вкладки", youtube: "YouTube", mpc: "MPC-BE", claude: "Claude", codex: "Codex"};
+const APP_TITLES = {browser: "Браузер", tabs: "Вкладки", youtube: "YouTube", mpc: "MPC-BE", claude: "Claude", codex: "Codex"};
 let openApp = null;
 try { openApp = localStorage.getItem("hoshi-open-app"); } catch (e) {}
+if (openApp === "tabs" || openApp === "youtube") openApp = "browser";
+function browserPart(id) { return (state.apps || []).find((a) => a.id === id); }
+function sameBrowserVideo(tabsState, youtubeState) {
+  return Number.isInteger(tabsState?.tab_id) && tabsState.tab_id > 0 && tabsState.tab_id === youtubeState?.tab_id;
+}
 function barItems() {
   const items = [];
   if ((catalog.sound || []).length) items.push({id: "sound", title: "Звук"});
   items.push({id: "windows", title: "Окна"});
+  const browser = [browserPart("youtube"), browserPart("tabs")].filter(Boolean);
+  items.push({id: "browser", title: "Браузер", mark: browser.some((a) => (a.state || {}).playing) ? "▶" : ""});
   for (const app of state.apps || []) {
+    if (app.id === "tabs" || app.id === "youtube") continue;
     const s = app.state || {}; let mark = "", kind = "";
     if (app.id === "claude" || app.id === "codex") {
       if (s.ask) { mark = "?"; kind = "waiting"; }
@@ -737,6 +980,7 @@ function barItems() {
   // Закрытые приложения, у которых есть запуск в «Моих действиях», — серые иконки.
   const running = new Set(items.map((i) => i.id));
   for (const action of catalog.pc || []) {
+    if (action.app === "tabs" || action.app === "youtube") continue;
     if (!action.app || running.has(action.app)) continue;
     running.add(action.app);
     items.push({id: action.app, title: APP_TITLES[action.app] || action.title, launch: action, closed: true, icon_url: action.icon_url});
@@ -756,7 +1000,7 @@ function renderBar() {
     renderBar.key = key; bar.textContent = "";
     for (const item of items) {
       const b = el("button", "appicon" + (item.id === openApp && !item.closed ? " open" : "") + (item.closed ? " closed" : ""));
-      const face = el("span", "face", item.icon_url ? "" : (APP_ICONS[item.id] || "▣"));
+      const face = item.icon_url ? el("span", "face") : iconSlot("face", APP_GLYPHS[item.id] || "star");
       if (item.icon_url) { const img = el("img"); img.src = item.icon_url; img.alt = ""; face.append(img); }
       if (item.mark) face.append(el("span", "mark " + item.kind, item.mark));
       b.append(face, el("span", "name", item.title));
@@ -770,6 +1014,13 @@ function renderBar() {
         if (openApp === "windows") run("pc:windows"); // открыли «Окна» — свежий список
         try { localStorage.setItem("hoshi-open-app", openApp); } catch (e) {}
         renderBar(); renderMini();
+        if (openApp === "browser") {
+          const tabs = $("apps").querySelector('details[data-list="tabs:tabs"]');
+          if (tabs) {
+            if (tabs.open) run("app:tabs:list"); // повторное открытие освежает список
+            else tabs.querySelector("summary").click(); // явное нажатие открывает и запрашивает список
+          }
+        }
       };
       bar.append(b);
     }
@@ -786,14 +1037,15 @@ const MINI_KEEP_MS = 10 * 60 * 1000;
 const miniSeen = {};      // id -> {since: когда заиграло, last: когда последний раз играло}
 let miniChoice = null;    // выбранный кнопкой ⇄
 function miniCandidates() {
-  const apps = (state.apps || []).filter((a) => !["claude", "codex"].includes(a.id) && (a.commands || []).some((c) => c.command.endsWith(":toggle")) && (a.state || {}).title);
-  const youtube = apps.find((a) => a.id === "youtube" && a.state.playing);
+  const apps = (state.apps || []).filter((a) => !["claude", "codex"].includes(a.id) && (a.state || {}).page !== "home" &&
+    (a.commands || []).some((c) => c.command.endsWith(":toggle")) && (a.state || {}).title);
+  const youtube = apps.find((a) => a.id === "youtube");
   const now = Date.now();
   const list = [];
   for (const app of apps) {
     const s = app.state;
     // YouTube уже есть своей карточкой — та же вкладка в «Вкладках Chrome» не дублируется.
-    if (app.id === "tabs" && youtube && String(s.subtitle || "").startsWith("youtube.com")) continue;
+    if (app.id === "tabs" && youtube && sameBrowserVideo(s, youtube.state)) continue;
     const seen = miniSeen[app.id] = miniSeen[app.id] || {since: 0, last: 0};
     if (s.playing) { if (!seen.playing) seen.since = now; seen.last = now; }
     seen.playing = !!s.playing;
@@ -806,7 +1058,7 @@ function renderMini() {
   const box = $("miniPlayer");
   const mainTab = document.querySelector("nav button.active");
   const onMain = mainTab && mainTab.dataset.tab === "main";
-  const list = miniCandidates().filter((a) => !(onMain && openApp === a.id)); // открытая карточка и так на виду
+  const list = miniCandidates().filter((a) => !(onMain && openApp === (a.id === "tabs" || a.id === "youtube" ? "browser" : a.id))); // открытая карточка и так на виду
   const app = list.find((a) => a.id === miniChoice) || list[0];
   const show = !!app && !$("remote").classList.contains("hidden");
   box.classList.toggle("hidden", !show);
@@ -817,32 +1069,33 @@ function renderMini() {
   const key = JSON.stringify([app.id, s.title, s.subtitle, s.thumbnail, list.length, app.commands.map((c) => c.command)]);
   if (box.dataset.key !== key) {
     box.dataset.key = key; box.textContent = "";
-    const cover = el("span", "cover", s.thumbnail ? "" : (APP_ICONS[app.id] || "▶️"));
+    const cover = s.thumbnail ? el("span", "cover") : iconSlot("cover", APP_GLYPHS[app.id] || "play");
     if (s.thumbnail) cover.style.backgroundImage = `url("${String(s.thumbnail).replace(/"/g, "")}")`;
     const text = el("button", "text");
     text.append(el("span", "title", s.title), el("span", "sub", (APP_TITLES[app.id] || app.title) + (s.subtitle ? " · " + s.subtitle : "")));
     text.onclick = () => {
       document.querySelector('nav button[data-tab="main"]').click();
-      openApp = app.id; try { localStorage.setItem("hoshi-open-app", openApp); } catch (e) {}
+      openApp = app.id === "tabs" || app.id === "youtube" ? "browser" : app.id;
+      try { localStorage.setItem("hoshi-open-app", openApp); } catch (e) {}
       renderBar(); renderMini();
     };
     box.append(cover, text);
     for (const name of ["back", "toggle", "forward"]) {
       const c = miniCommand(app, name); if (!c) continue;
-      const b = el("button", "btn" + (name === "toggle" ? " main" : ""), c.icon || "•");
-      b.dataset.name = name; b.dataset.icon = c.icon || "•"; b.setAttribute("aria-label", c.title);
+      const b = el("button", "btn" + (name === "toggle" ? " main" : "")); b.append(glyph(name === "toggle" ? "play" : name));
+      b.dataset.name = name; b.setAttribute("aria-label", c.title);
       b.onclick = () => run(c.command, c.args);
       box.append(b);
     }
     if (list.length > 1) {
-      const swap = el("button", "btn", "⇄"); swap.setAttribute("aria-label", "Другой плеер");
+      const swap = el("button", "btn"); swap.append(glyph("switch")); swap.setAttribute("aria-label", "Другой плеер");
       swap.onclick = () => { const at = list.findIndex((a) => a.id === app.id); miniChoice = list[(at + 1) % list.length].id; renderMini(); };
       box.append(swap);
     }
     box.append(el("span", "line"));
   }
   const toggle = box.querySelector('[data-name="toggle"]');
-  if (toggle) toggle.textContent = (s.icons || {}).toggle || (s.playing ? "⏸" : "▶");
+  if (toggle) toggle.replaceChildren(glyph(s.playing ? "pause" : "play"));
   box.querySelector(".line").style.width = s.duration > 0 ? Math.min(100, 100 * (s.time || 0) / s.duration) + "%" : "0";
 }
 
@@ -858,7 +1111,7 @@ function renderTimer() {
       box.textContent = ""; bar = el("div", "timerbar");
       const text = el("span", ""); const cancel = el("button", "", "Отменить");
       cancel.onclick = () => run(t.cancel || "timer:cancel");
-      bar.append(el("span", "", "🌙"), text, cancel); box.append(bar);
+      bar.append(glyph("moon"), text, cancel); box.append(bar);
     }
     const text = bar.children[1]; text.textContent = "";
     text.append(document.createTextNode((t.title || "Пауза") + " через "), el("b", "", clock(t.seconds)));
@@ -869,7 +1122,7 @@ function renderTimerSetup(root) {
   let then = info.last || "pause";
   try { then = localStorage.getItem("hoshi-timer-then") || then; } catch (e) {}
   if (then === "sleep" && !info.sleep) then = "pause";
-  root.append(el("h2", "", "🌙 Таймер сна"));
+  root.append(el("h2", "", "Таймер сна"));
   const whats = el("div", "chips");
   for (const key in info.then || {}) {
     if (key === "sleep" && !info.sleep) continue; // сон ПК — только если «Сон» включён на ПК
@@ -908,18 +1161,64 @@ function clock(s) {
 // чтобы раскрытые списки не сворачивались и не мигали.
 const appViews = {};      // id -> {signature, card, fill, times, buttons}
 const openLists = {};     // "app:list" -> раскрыт ли список
-const drafts = {};        // app id -> недописанный ответ (Claude), переживает перестройку карточки
+const drafts = {};        // "app:session" -> черновик; другой чат его не получает
 const askDrafts = {};     // id вопроса -> {вопрос: ответ}
+const selectedSessions = {}; // выбор чата отдельно на каждом телефоне
+const assistantDetails = {}; // полный последний ответ только уже показанных/запрошенных чатов
+const assistantPending = {};
+let notificationTarget = null;
+
+window.showAssistantFromAndroid = (app, session) => {
+  if (!["claude", "codex"].includes(app) || typeof session !== "string" || !session || session.length > 64) return;
+  notificationTarget = {app, session};
+  applyNotificationTarget();
+};
+
+function applyNotificationTarget() {
+  if (!notificationTarget || !(state.apps || []).some((item) => item.id === notificationTarget.app)) return;
+  const {app, session} = notificationTarget;
+  notificationTarget = null;
+  selectedSessions[app] = session;
+  openApp = app;
+  try { localStorage.setItem("hoshi-open-app", app); } catch (e) {}
+  document.querySelector('nav button[data-tab="main"]').click();
+  renderApps();
+  document.querySelector('#apps .app[data-app="' + app + '"]')?.scrollIntoView({block: "start"});
+}
+
+function shownAssistant(app) {
+  if (app.id !== "claude" && app.id !== "codex") return app;
+  const live = app.state || {};
+  if (!live.session) return app;
+  assistantDetails[app.id + ":" + live.session] = live;
+  const sessions = (Array.isArray(live.sessions) && live.sessions.length) ? live.sessions :
+    [{id: live.session, title: live.title, subtitle: live.subtitle, can_reply: live.can_reply, revision: live.revision}];
+  let chosen = selectedSessions[app.id];
+  if (!sessions.some((item) => item.id === chosen)) chosen = live.session;
+  selectedSessions[app.id] = chosen;
+  const summary = sessions.find((item) => item.id === chosen);
+  const key = app.id + ":" + chosen;
+  const detail = chosen === live.session ? live : assistantDetails[key];
+  if (chosen !== live.session && (!detail || detail.revision !== summary.revision) && assistantPending[key] !== summary.revision) {
+    if (welcomed && send({op: "assistant_session", app: app.id, session: chosen})) assistantPending[key] = summary.revision;
+  }
+  const visible = {...(detail || {session: chosen, text: "Загружаю ответ…"}),
+    title: summary.title, subtitle: summary.subtitle, badge: summary.subtitle,
+    can_reply: !!summary.can_reply, sessions, lists: []};
+  if (chosen !== live.session) {
+    if (summary.ask_seconds >= 0 && visible.ask) visible.ask = {...visible.ask, seconds: summary.ask_seconds};
+    else delete visible.ask;
+  }
+  return {...app, state: visible};
+}
 
 function renderApps() {
   const root = $("apps");
-  const apps = state.apps || [];
-  if (!apps.length) {
-    root.textContent = ""; for (const k in appViews) delete appViews[k];
-    if (!(catalog.sound || []).length)
-      root.append(el("div", "empty", "Когда откроешь YouTube в Chrome с расширением Хоши, плеер MPC-BE или начнёт работать Claude, здесь появятся их пульты"));
-    renderBar();
-    return;
+  const apps = [...(state.apps || [])].map(shownAssistant);
+  if (!apps.some((a) => a.id === "tabs")) {
+    apps.unshift({id: "tabs", title: "Вкладки Chrome", commands: [], state: {
+      hint: "Список вкладок пока не подключён. На ПК открой chrome://extensions и обнови Hoshi Apps до 0.2.4. После подключения здесь появятся открытые вкладки."
+    }});
   }
   const alive = new Set(apps.map((a) => a.id));
   for (const id in appViews) if (!alive.has(id)) { appViews[id].card.remove(); delete appViews[id]; }
@@ -929,8 +1228,9 @@ function renderApps() {
   let previous = null;
   for (const app of apps) {
     const s = app.state || {};
+    const browserLaunch = app.id === "tabs" ? (catalog.pc || []).find((item) => item.app === "youtube") : null;
     const signature = JSON.stringify([app.commands, s.title, s.subtitle, s.thumbnail, s.hint, s.lists, s.text, s.can_reply, s.session, s.media,
-      s.ask ? s.ask.id : ""]); // таймер вопроса не перестраивает карточку — выбор не сбрасывается
+      s.ask ? s.ask.id : "", browserLaunch]); // таймер вопроса не перестраивает карточку — выбор не сбрасывается
     let view = appViews[app.id];
     if (!view || view.signature !== signature) {
       const fresh = buildApp(app, signature);
@@ -942,31 +1242,41 @@ function renderApps() {
       if (again && kept) again.scrollTop = kept;
     }
     updateApp(view, app);
+    const duplicateYoutube = app.id === "tabs" && sameBrowserVideo(s, browserPart("youtube")?.state);
+    view.card.classList.toggle("tabs-list-only", duplicateYoutube);
+    if (duplicateYoutube) view.playing.textContent = "";
     const place = previous ? previous.nextSibling : root.firstChild;
     if (view.card !== place) root.insertBefore(view.card, place);
     previous = view.card;
-    view.card.dataset.app = app.id;
+    view.card.dataset.app = app.id === "tabs" || app.id === "youtube" ? "browser" : app.id;
   }
   renderBar();
 }
 
 function buildApp(app, signature) {
   const s = app.state || {};
-  const view = {signature, buttons: {}};
+  const view = {signature, buttons: {}, labels: {}};
   const card = el("div", "app"); view.card = card;
   const head = el("div", "app-head"); view.playing = el("span", "");
   head.append(el("span", "", app.title), view.playing); card.append(head);
+  if (app.id === "youtube" && !(s.lists || []).length) {
+    card.append(el("div", "app-help", "Рекомендации не пришли из вкладки. После обновления Hoshi Apps обнови открытую вкладку YouTube на ПК (F5); затем дождись загрузки видео."));
+  }
+  if (app.id === "claude" || app.id === "codex") {
+    view.sessionPicker = el("div", "session-picker"); card.append(view.sessionPicker);
+  }
   if (s.title) {
     const now = el("div", "now");
     if (s.thumbnail) { const thumb = el("div", "thumb"); thumb.style.backgroundImage = `url("${String(s.thumbnail).replace(/"/g, "")}")`; now.append(thumb); }
     const text = el("div", "text"); text.append(el("div", "title", s.title)); if (s.subtitle) text.append(el("div", "sub", s.subtitle));
     now.append(text); card.append(now);
   } else card.append(el("div", "empty", s.hint || "Ничего не играет"));
+  if (s.page === "home" && !(s.lists || []).length) card.append(el("div", "empty", s.hint || "Рекомендации пока не загрузились"));
   const byName = {}; for (const c of app.commands) byName[c.command.split(":")[2]] = c;
   if (app.id === "claude" || app.id === "codex") { // общая карточка помощника
     const hist = el("div", "chips"); hist.style.margin = "2px 0 8px";
-    const talk = el("button", "chip", "💬 Беседа"); talk.onclick = () => openHistory("read", s.session || "", app.id);
-    const all = el("button", "chip", "🗂 Все сессии"); all.onclick = () => openHistory("sessions", "", app.id);
+    const talk = el("button", "chip"); talk.append(glyph("chat"), el("span", "", "Беседа")); talk.onclick = () => openHistory("read", s.session || "", app.id);
+    const all = el("button", "chip"); all.append(glyph("list"), el("span", "", "Все сессии")); all.onclick = () => openHistory("sessions", "", app.id);
     hist.append(talk, all); card.insertBefore(hist, card.children[1] || null);
   }
   if (s.ask && byName.permit) { card.insertBefore(buildAsk(s.ask, byName, view, app.title), card.children[1] || null); }
@@ -986,8 +1296,8 @@ function buildApp(app, signature) {
   // Быстрые кнопки Claude видны всегда; живые — только пока Claude ждёт ответа.
   if (byName.reply && !s.can_reply) {
     const quick = el("div", "chips quick-replies");
-    for (const label of ["👋 Ты тут?", "▶ Продолжай", "✓ Ок", "💾 Коммить"]) {
-      const chip = el("button", "chip", label); chip.disabled = true; chip.style.opacity = ".45"; quick.append(chip);
+    for (const [label, picture] of [["Ты тут?", "wave"], ["Продолжай", "play"], ["Ок", "star"], ["Коммить", "folder"]]) {
+      const chip = el("button", "chip"); chip.append(glyph(picture), el("span", "", label)); chip.disabled = true; chip.style.opacity = ".45"; quick.append(chip);
     }
     card.append(quick);
     if (!s.hint && !s.ask) card.append(el("div", "empty", s.subtitle === "работает…" ? app.title + " работает — кнопки оживут, когда закончит"
@@ -995,19 +1305,21 @@ function buildApp(app, signature) {
   }
   // Ответ Claude с телефона: поле есть, только пока Claude ждёт (его хук на связи).
   if (s.can_reply && byName.reply) {
+    const draftKey = app.id + ":" + s.session;
+    card.append(el("div", "reply-target", "Ответ для «" + s.title + "» · " + String(s.session).slice(0, 8)));
     const box = el("div", "reply"); const input = el("textarea"); const send = el("button", "", "Отправить");
-    input.placeholder = "Ответить " + app.title + "…"; input.maxLength = 2000; input.value = drafts[app.id] || "";
-    input.addEventListener("input", () => { drafts[app.id] = input.value; });
+    input.placeholder = "Ответить в этот чат…"; input.maxLength = 2000; input.value = drafts[draftKey] || "";
+    input.addEventListener("input", () => { drafts[draftKey] = input.value; });
     send.onclick = () => {
       const text = input.value.trim(); if (!text) return;
       run(byName.reply.command, {text, session: s.session});
-      drafts[app.id] = ""; input.value = ""; toast("Отправила " + app.title);
+      drafts[draftKey] = ""; input.value = ""; toast("Отправила в «" + s.title + "»");
     };
     // Быстрые ответы: «!» — пинг (Claude отвечает одной строкой, ничего не начиная; см. CLAUDE.md).
     const quick = el("div", "chips quick-replies");
     // «💾 Коммить» — единственная кнопка, которая разрешает локальный коммит (правило в CLAUDE.md).
-    for (const [label, text] of [["👋 Ты тут?", "!"], ["▶ Продолжай", "Продолжай"], ["✓ Ок", "Ок"], ["💾 Коммить", "💾 Коммить (кнопка пульта)"]]) {
-      const chip = el("button", "chip", label);
+    for (const [label, text, picture] of [["Ты тут?", "!", "wave"], ["Продолжай", "Продолжай", "play"], ["Ок", "Ок", "star"], ["Коммить", "💾 Коммить (кнопка пульта)", "folder"]]) {
+      const chip = el("button", "chip"); chip.append(glyph(picture), el("span", "", label));
       chip.onclick = () => { run(byName.reply.command, {text, session: s.session}); toast("Отправила " + app.title); };
       quick.append(chip);
     }
@@ -1024,21 +1336,48 @@ function buildApp(app, signature) {
     view.times = el("div", "times"); view.times.append(el("span"), el("span"));
     prog.append(bar, view.times); card.append(prog); view.progress = prog;
   }
-  const main = el("div", "controls"), extra = el("div", "extra");
+  const youtubeControls = app.id === "youtube";
+  const main = el("div", "controls" + (youtubeControls ? " youtube-controls" : ""));
+  const extra = el("div", "extra" + (youtubeControls ? " youtube-controls" : ""));
+  const shortLabel = {back:"−10 с", toggle:s.playing ? "Пауза" : "Играть", forward:"+10 с", next:"Следующее",
+    vol_down:"Тише", vol_up:"Громче", mute:"Убрать звук", like:"Нравится"};
   for (const c of app.commands) {
+    if (app.id === "youtube" && s.page === "home") continue;
     const name = c.command.split(":")[2];
     if (c.row === "hidden") continue;
     const isMain = c.row === "main";
-    const b = el("button", "ctl " + (name === "toggle" ? "big" : (isMain ? "" : "small")), c.icon || "•");
-    b.title = c.title; b.setAttribute("aria-label", c.title); b.dataset.icon = c.icon || "•";
+    const b = el("button", "ctl " + (name === "toggle" ? "big" : (isMain ? "" : "small")));
+    b.append(glyph(name === "toggle" ? "play" : glyphName(c.command, c.title)));
+    b.title = c.title; b.setAttribute("aria-label", c.title);
     b.onclick = () => run(c.command, c.args);
     view.buttons[name] = b;
-    (isMain || name === "toggle" ? main : extra).append(b);
+    if (youtubeControls) {
+      const unit = el("div", "control-unit");
+      const label = el("span", "control-label", shortLabel[name] || c.title);
+      unit.append(b, label); view.labels[name] = label;
+      (isMain || name === "toggle" ? main : extra).append(unit);
+    } else (isMain || name === "toggle" ? main : extra).append(b);
   }
-  card.append(main); if (extra.children.length) card.append(extra);
+  if (main.children.length) card.append(main);
+  if (extra.children.length) card.append(extra);
+  if (app.id === "tabs") {
+    if (byName.open_youtube) {
+      const button = el("button", "chip");
+      button.append(glyph("add"), el("span", "", "Новая вкладка YouTube"));
+      button.onclick = () => run(byName.open_youtube.command);
+      card.append(button);
+    }
+    const launch = (catalog.pc || []).find((item) => item.app === "youtube");
+    if (launch && !byName.open_youtube) {
+      const button = el("button", "chip");
+      button.append(glyph("browser"), el("span", "", "Открыть YouTube на ПК"));
+      button.onclick = () => launchAction(launch);
+      card.append(button);
+    }
+  }
   for (const list of s.lists || []) {
     const key = app.id + ":" + list.id;
-    const box = el("details", "list"); box.open = !!openLists[key];
+    const box = el("details", "list"); box.dataset.list = key; box.open = !!openLists[key];
     // list.request — список приходит только по нажатию (вкладки браузера): открыл — попросили.
     const ask = list.request && byName[list.request];
     box.addEventListener("toggle", () => {
@@ -1051,8 +1390,9 @@ function buildApp(app, signature) {
     for (const item of list.items) {
       // С кнопками в строке (item.actions) строка — не <button>: кнопка в кнопке не работает.
       const acts = (Array.isArray(item.actions) ? item.actions : Array.isArray(list.actions) ? list.actions : []).filter((a) => a && byName[a.name]);
-      const row = el(acts.length ? "div" : "button", "item" + (item.current ? " current" : ""));
-      const t = el("span", "mini" + (list.small_icons ? " fav" : ""), list.small_icons && !item.thumbnail ? "🌐" : ""); if (item.thumbnail) t.style.backgroundImage = `url("${String(item.thumbnail).replace(/"/g, "")}")`;
+      const row = el(acts.length ? "div" : "button", "item" + (item.current ? " current" : "") +
+        (app.id === "youtube" && acts.some((a) => a.name === "open_new") ? " youtube-video" : ""));
+      const t = el("span", "mini" + (list.small_icons ? " fav" : "")); if (list.small_icons && !item.thumbnail) t.append(glyph("link")); if (item.thumbnail) t.style.backgroundImage = `url("${String(item.thumbnail).replace(/"/g, "")}")`;
       const text = el("span", "text"); text.append(el("span", "title", item.title));
       if (item.subtitle) text.append(el("span", "sub", item.subtitle));
       row.append(t, text);
@@ -1063,11 +1403,14 @@ function buildApp(app, signature) {
       if (acts.length) {
         const bar = el("span", "acts");
         for (const a of acts) {
-          const b = el("button", "", a.icon || "•"); b.title = a.title || a.name; b.setAttribute("aria-label", b.title);
+          const b = el("button", a.name === "open_new" ? "open-new" : "");
+          b.append(glyph(glyphName(a.name, a.title)));
+          if (a.name === "open_new") b.append(el("span", "", "Открыть в новой вкладке"));
+          b.title = a.title || a.name; b.setAttribute("aria-label", b.title);
           b.onclick = (event) => {
             event.stopPropagation();
             if (a.confirm && !confirm(a.confirm)) return;
-            run(byName[a.name].command, {id: item.id});
+            run(byName[a.name].command, {id: item.id, list: item.list || ""});
           };
           bar.append(b);
         }
@@ -1165,7 +1508,7 @@ function showHistory(m) {
   historyView.titleEl.textContent = m.title || "Беседа";
   if (!m.messages.length) body.append(el("div", "empty", "Сообщений пока нет"));
   for (const msg of m.messages) {
-    const bubble = el("div", "bubble " + msg.role); linkify(bubble, (msg.role === "phone" ? "📱 " : "") + msg.text);
+    const bubble = el("div", "bubble " + msg.role); linkify(bubble, msg.text);
     const when = msg.time ? new Date(msg.time + "Z") : null;
     if (when && !isNaN(when)) bubble.append(el("span", "when", when.toLocaleString("ru-RU", {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"})));
     body.append(bubble);
@@ -1174,7 +1517,23 @@ function showHistory(m) {
 }
 
 function updateApp(view, app) {
-  const s = app.state || {}, icons = s.icons || {}, active = new Set(s.active || []);
+  const s = app.state || {}, active = new Set(s.active || []);
+  if (view.sessionPicker) {
+    const choices = s.sessions || [];
+    const key = JSON.stringify([s.session, choices.map((item) => [item.id, item.title, item.subtitle, item.can_reply, item.revision])]);
+    if (view.sessionPicker.dataset.key !== key) {
+      view.sessionPicker.dataset.key = key;
+      view.sessionPicker.textContent = "";
+      view.sessionPicker.classList.toggle("hidden", choices.length < 2);
+      for (const item of choices) {
+        const button = el("button", "session-choice" + (item.id === s.session ? " on" : ""));
+        button.append(el("b", "", item.title + " · " + String(item.id).slice(0, 6)),
+          el("small", "", item.subtitle + (item.can_reply ? " · можно ответить" : "")));
+        button.onclick = () => { selectedSessions[app.id] = item.id; renderApps(); };
+        view.sessionPicker.append(button);
+      }
+    }
+  }
   if (view.askTimer && s.ask) view.askTimer.textContent = s.ask.seconds + " с";
   view.playing.textContent = s.badge !== undefined ? s.badge : (s.playing ? "▶ играет" : (s.title ? "⏸ пауза" : ""));
   view.duration = s.duration || 0;
@@ -1185,9 +1544,11 @@ function updateApp(view, app) {
   }
   for (const name in view.buttons) {
     const b = view.buttons[name];
-    b.textContent = icons[name] || b.dataset.icon;
+    b.replaceChildren(glyph(name === "toggle" ? (s.playing ? "pause" : "play") : glyphName(name, b.title)));
     b.classList.toggle("on", active.has(name));
   }
+  if (view.labels.toggle) view.labels.toggle.textContent = s.playing ? "Пауза" : "Играть";
+  if (view.labels.mute) view.labels.mute.textContent = active.has("mute") ? "Вернуть звук" : "Убрать звук";
 }
 
 // В приложении «Хоши» для Android — сканер QR (адрес и код из окна «Пульт с телефона»).

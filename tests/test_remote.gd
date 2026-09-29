@@ -108,17 +108,14 @@ func _run() -> void:
 	_check(link == "http://192.168.1.23:18770/#pair=" + bus.pairing_code, "QR link carries the address and the one-time code")
 	var with_alts: String = bus.pairing_url("http://192.168.1.23:18770/", PackedStringArray(["10.8.1.2", "26.1.2.3"]))
 	_check(with_alts == "http://192.168.1.23:18770/#pair=" + bus.pairing_code + "&alt=10.8.1.2,26.1.2.3" and not QR.encode(with_alts).is_empty(), "QR link can carry spare addresses for the app (home and VPN)")
-	# Адреса пульта подписаны сетью; VPN помечены; выбранный адрес для QR запоминается.
+	var all_networks: String = bus.pairing_url("http://192.168.1.23:18770/", PackedStringArray(["10.8.1.2", "172.22.1.5", "192.168.0.94", "10.9.2.3", "172.30.4.5"]))
+	_check(not QR.encode(all_networks).is_empty(), "one QR can hold the complete six-address phone list")
+	# Один QR использует обычную сеть как основной адрес; VPN доступен через alt.
 	_check(RemoteBus.is_virtual_network("AmneziaVPN") and RemoteBus.is_virtual_network("Radmin VPN") and RemoteBus.is_virtual_network("vEthernet (WSL)") and not RemoteBus.is_virtual_network("Ethernet") and not RemoteBus.is_virtual_network("Беспроводная сеть"), "VPN and virtual networks are recognised by name")
 	var choices: Array = [{"url": "http://192.168.0.94:18870/", "ip": "192.168.0.94", "network": "Ethernet", "virtual": false},
 		{"url": "http://10.8.1.2:18870/", "ip": "10.8.1.2", "network": "AmneziaVPN", "virtual": true}]
-	bus.qr_address = ""
 	_check(bus.qr_choice(choices)["ip"] == "192.168.0.94", "QR uses the first ordinary network by default")
-	bus.qr_address = "10.8.1.2"
-	_check(bus.qr_choice(choices)["network"] == "AmneziaVPN", "QR uses the address chosen in the window")
-	bus.qr_address = "10.9.9.9"
-	_check(bus.qr_choice(choices)["ip"] == "192.168.0.94" and bus.qr_choice([]).is_empty(), "a chosen address that is gone falls back to the first one")
-	bus.qr_address = ""
+	_check(bus.qr_choice([]).is_empty(), "no network means no QR address")
 	var real_ok: bool = true
 	for choice in bus.address_choices():
 		real_ok = real_ok and RemoteBus.is_home_address(choice["ip"]) and not choice["ip"].begins_with("169.254.") and choice["url"] == "http://%s:18870/" % choice["ip"] and not str(choice["network"]).is_empty()
@@ -221,13 +218,60 @@ func _run() -> void:
 	_pump([again, addon])
 	_check(app.events.size() == 1 and app.events[0] == "youtube:liked", "add-on events reach Hoshi")
 	_inbox(again) # ответы на предыдущие нажатия
+	var browser: WebSocketPeer = _open("/hoshi-adapter-v1")
+	browser.send_text(JSON.stringify({"op": "adapter", "id": "tabs", "title": "Вкладки Chrome",
+		"commands": [{"name": "list", "title": "Показать вкладки"}, {"name": "play_item", "title": "Переключить вкладку"}],
+		"state": {"lists": [{"id": "tabs", "title": "Вкладки", "items": [
+			{"id": "17", "title": "Первый ролик", "subtitle": "youtube.com"},
+			{"id": "28", "title": "Другое видео", "subtitle": "example.org"}]}]}}))
+	_pump([again, addon, browser])
+	apps_text = JSON.stringify(_find(_inbox(again), "state").get("apps", []))
+	_check(apps_text.contains("app:youtube:pause") and apps_text.contains("app:tabs:play_item") and apps_text.contains("Другое видео"), "YouTube and open browser tabs reach the phone together")
+	_check(_find(_inbox(browser), "welcome").get("id", "") == "tabs", "the browser add-on is welcomed")
+	# The Android foreground service needs alerts and media controls, not the full
+	# recommendation lists or a new packet for every playback second.
+	bus.tokens.append("background-test-token")
+	var background: WebSocketPeer = _open("/hoshi-remote-v1")
+	background.send_text(JSON.stringify({"op": "hello", "token": "background-test-token", "background": true}))
+	_pump([again, background, addon, browser])
+	var background_messages: Array = _inbox(background)
+	var background_state: Dictionary = _find(background_messages, "state")
+	var background_text: String = JSON.stringify(background_state)
+	_check(not background_state.is_empty() and not background_text.contains("Другое видео") and not background_text.contains("pc_pending") and background_text.contains("Lo-fi для рисования"), "background phone receives compact media state without browser lists")
+	_inbox(background)
+	addon.send_text(JSON.stringify({"op": "adapter_state", "state": {"title": "Lo-fi для рисования", "subtitle": "Hoshi Radio", "time": 43, "duration": 3600, "playing": true, "lists": [{"id": "next", "items": [{"title": "Новая рекомендация"}]}]}}))
+	_pump([again, background, addon, browser])
+	_check(_find(_inbox(background), "state").is_empty(), "recommendations and playback seconds do not wake background phone")
+	addon.send_text(JSON.stringify({"op": "adapter_state", "state": {"title": "Lo-fi для рисования", "subtitle": "Hoshi Radio", "time": 43, "duration": 3600, "playing": false}}))
+	_pump([again, background, addon, browser])
+	_check(not _find(_inbox(background), "state").is_empty(), "play or pause changes still reach background phone")
+	background.close()
+	_pump([again, background, addon, browser])
+	again.send_text(JSON.stringify({"op": "run", "command": "app:tabs:play_item", "args": {"id": "28"}}))
+	_pump([again, addon, browser])
+	routed = _find(_inbox(browser), "run")
+	_check(routed.get("command", "") == "play_item" and routed.get("args", {}).get("id", "") == "28", "choosing a listed tab reaches the browser add-on")
+	_inbox(again) # результат выбора вкладки до проверки неизвестной команды
 	again.send_text(JSON.stringify({"op": "run", "command": "app:blender:render"}))
 	_pump([again, addon])
 	_check(_find(_inbox(again), "ran").get("reason", "") == "unknown_app_command", "commands of apps that are not connected are refused")
 	addon.close()
-	_pump([again, addon], 40)
-	var after: Dictionary = _find(_inbox(again), "state")
-	_check(not after.is_empty() and after.get("apps", []).is_empty(), "closing the add-on removes its section from the phone")
+	browser.close()
+	_pump([again, addon, browser], 40)
+	var after: Dictionary = {}
+	for message in _inbox(again):
+		if message.get("op", "") == "state":
+			after = message # оба соединения закрываются по очереди — нужен последний снимок
+	_check(not after.is_empty() and after.get("apps", []).is_empty(), "closing the add-ons removes both sections from the phone")
+	bus.assistants.handle_event({"app": "claude", "event": "Stop", "session": "chat-a", "folder": "A", "text": "Ответ первого чата"})
+	bus.assistants.handle_event({"app": "claude", "event": "Stop", "session": "chat-b", "folder": "B", "text": "Ответ второго чата"})
+	again.send_text(JSON.stringify({"op": "assistant_session", "app": "claude", "session": "chat-a"}))
+	_pump([again], 10)
+	var detail: Dictionary = _find(_inbox(again), "assistant_session")
+	_check(detail.get("ok", false) and detail.get("state", {}).get("text", "") == "Ответ первого чата" and detail.get("state", {}).get("session", "") == "chat-a", "paired phone can fetch the chosen chat without switching to the newest")
+	again.send_text(JSON.stringify({"op": "assistant_session", "app": "claude", "session": "missing"}))
+	_pump([again], 10)
+	_check(not _find(_inbox(again), "assistant_session").get("ok", true), "unknown chat details are refused")
 
 	bus.forget_phones()
 	_pump([again], 20)

@@ -7,7 +7,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Связь с Хоши, пока телефон заблокирован (постоянное уведомление «Хоши на связи»). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
     <!-- Автообновление: установить новую версию, скачанную с ПК (каждый раз — с подтверждением). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
@@ -31,10 +31,12 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".SettingsActivity" android:exported="false" />
+
         <service
             android:name=".HoshiService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="remoteMessaging" />
 
         <!-- Плитки «Хоши 1…6» в быстрых настройках (что делают — выбирается в приложении). -->
         <service

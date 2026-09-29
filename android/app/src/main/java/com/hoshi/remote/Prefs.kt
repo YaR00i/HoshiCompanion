@@ -1,6 +1,14 @@
 package com.hoshi.remote
 
 import android.content.Context
+import java.net.ConnectException
+import java.net.HttpURLConnection
+import java.net.NoRouteToHostException
+import java.net.Proxy
+import java.net.SocketTimeoutException
+import java.net.URL
+import java.net.UnknownHostException
+import java.io.IOException
 
 /** Что приложение помнит: адрес ПК с Хоши и ключ привязки телефона. */
 class Prefs(context: Context) {
@@ -37,18 +45,37 @@ class Prefs(context: Context) {
         const val HTTP_PORT = 18770
         const val WS_PORT = 18771
 
-        /** Отвечает ли Хоши по этому адресу (быстрая проверка, не на главном потоке). */
-        fun reachable(host: String): Boolean = runCatching {
-            val connection = java.net.URL("http://$host:$HTTP_PORT/manifest.webmanifest").openConnection() as java.net.HttpURLConnection
-            connection.connectTimeout = 1500
-            connection.readTimeout = 1500
-            try { connection.responseCode == 200 } finally { connection.disconnect() }
-        }.getOrDefault(false)
+        /** null — Хоши ответила; иначе безопасная причина для экрана восстановления. */
+        fun probeHost(host: String): String? = try {
+            val connection = URL("http://$host:$HTTP_PORT/manifest.webmanifest").openConnection(Proxy.NO_PROXY) as HttpURLConnection
+            connection.connectTimeout = 4000
+            connection.readTimeout = 4000
+            try {
+                val status = connection.responseCode
+                if (status == 200) null else "HTTP $status"
+            } finally {
+                connection.disconnect()
+            }
+        } catch (_: SocketTimeoutException) {
+            "истекло время ожидания"
+        } catch (_: NoRouteToHostException) {
+            "нет маршрута к адресу"
+        } catch (_: ConnectException) {
+            "соединение отклонено"
+        } catch (_: UnknownHostException) {
+            "адрес не найден"
+        } catch (_: SecurityException) {
+            "Android запретил соединение"
+        } catch (_: IOException) {
+            "ошибка сети"
+        }
+
+        /** Проверка для фоновой службы и экрана настроек. */
+        fun reachable(host: String): Boolean = probeHost(host) == null
 
         /** Первый отвечающий адрес из списка (текущий — первым); null — никто. */
         fun pickReachable(prefs: Prefs): String? {
-            val candidates = (listOf(prefs.host) + prefs.hosts).filter { it.isNotBlank() }.distinct()
-            return candidates.firstOrNull { reachable(it) }
+            return ConnectionFlow.resolve(ConnectionFlow.candidates(prefs.host, prefs.hosts), ::reachable)
         }
 
         /** Адрес из того, что ввёл человек: "http://10.8.1.2:18770/#pair=1" -> "10.8.1.2". */

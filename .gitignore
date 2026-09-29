@@ -23,3 +23,10 @@ android/.idea/
 android/.kotlin/
 android/local.properties
 *.apk
+
+# Private conversation attachments and local assistant instructions
+.codex-remote-attachments/
+CLAUDE.md
+
+# Disposable diagnostic UID
+tests/inspect_remote_ips_tmp.gd.uid

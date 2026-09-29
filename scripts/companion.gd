@@ -141,6 +141,9 @@ func _ready() -> void:
 		ui.show_error(str(result["error"]))
 		return
 	stage.edge_life.paper_star_completed.connect(_on_paper_star_completed)
+	stage.edge_life.wait_started.connect(_on_scene_wait_started)
+	stage.edge_life.wait_finished.connect(_on_scene_wait_finished)
+	remote.assistants.finished.connect(_on_assistant_finished)
 	print("HOSHI_MODEL_READY status=", result.get("status", "ready"), " bones=", result.get("rig", {}).get("bones", 0), " meshes=", result.get("mesh_count", 0))
 	_ready_to_run = true
 	if settings.remote_wanted and not _test_mode and not host.headless:
@@ -269,6 +272,9 @@ func _process(delta: float) -> void:
 	_tick_restart(dt)
 	remote.assistants.tick(dt)
 	ui.cloud_items = remote.assistants.clouds()
+	stage.edge_life.music = remote.music_playing()
+	var hour: int = int(Time.get_datetime_dict_from_system()["hour"])
+	stage.edge_life.sleepy = hour >= 23 or hour < 6 or personality.energy < 0.25
 	# Код одноразовый: после привязки телефона окно сразу показывает новый QR.
 	if ui.remote_window != null and ui.remote_window.visible and ui.remote_code_version != remote.code_version:
 		_show_remote_info()
@@ -290,6 +296,8 @@ func _process(delta: float) -> void:
 		"cursor_near": distance < stage.body_pixels * 1.8,
 		"location": "surface" if playground.active() else "floor",
 		"cozy": playground.active() and playground.cozy_mode,
+		"sketch_ready": stage.edge_life.big_ready("sketch"),
+		"fold_ready": stage.edge_life.big_ready("fold"),
 		"quiet": state.activity == "quiet",
 		"can_observe": state.look_enabled and not state.dozing,
 		"can_social": not state.dozing,
@@ -596,6 +604,31 @@ func _finish_menu_close() -> void:
 func _on_paper_star_completed() -> void:
 	playground.add_cozy_star()
 
+## Сценка с меткой «Ждёт» показывает рисунок/звёздочку и ждёт клика по Хоши.
+func _on_scene_wait_started(gesture: String) -> void:
+	if interaction.allow_bubble():
+		ui.say("Смотри, что у меня! ✨" if gesture == "sketch" else "Смотри, какая! ✨")
+
+## Claude или Codex закончил — «Хей!»: машет ручкой и говорит, кто закончил.
+## Спит, в руках, в полёте — не дёргаем: облачко с ✓ и так видно.
+var _hey_at: float = -100.0
+func _on_assistant_finished(app: String) -> void:
+	var now: float = Time.get_ticks_msec() / 1000.0
+	if now - _hey_at < 8.0 or state.dozing or desk_input.press_active or air.active():
+		return
+	_hey_at = now
+	var name: String = "Codex" if app == "codex" else "Claude"
+	if stage.touch.start("hey", "left") or interaction.allow_bubble():
+		ui.say("Хей! %s закончил ✓" % name)
+
+func _on_scene_wait_finished(gesture: String, answered: bool) -> void:
+	if answered:
+		stage.celebrate(gesture)
+		personality.on_event("attention")
+		ui.say("Ура! Тебе нравится? ☺")
+	elif interaction.allow_bubble():
+		ui.say("Ну ладно, уберу…")
+
 ## Единая точка входа для команд по имени (см. hoshi_commands.gd).
 ## Старые числовые номера пока принимаются для совместимости.
 func run_command(command: Variant) -> void:
@@ -680,16 +713,10 @@ func _show_remote_info() -> void:
 	var chosen: Dictionary = remote.qr_choice(choices)
 	var alts := PackedStringArray()
 	for choice in choices:
-		if choice["ip"] != chosen.get("ip", "") and alts.size() < 3:
+		if choice["ip"] != chosen.get("ip", "") and alts.size() < 5:
 			alts.append(choice["ip"]) # запасные адреса: приложение переключится само (дом ↔ VPN)
 	var qr_text: String = remote.pairing_url(chosen["url"], alts) if remote.enabled and not chosen.is_empty() else ""
-	ui.show_remote_info(remote.enabled, choices, str(chosen.get("ip", "")), remote.pairing_code, remote.phone_count(), remote.last_error, qr_text, remote.code_version, remote.skipped_networks(), _choose_remote_address)
-
-## В окне «Пульт с телефона» выбрали адрес для QR — запомнить и перерисовать QR.
-func _choose_remote_address(ip: String) -> void:
-	remote.qr_address = ip
-	_save_settings()
-	_show_remote_info()
+	ui.show_remote_info(remote.enabled, choices, remote.pairing_code, remote.phone_count(), remote.last_error, qr_text, remote.code_version, remote.skipped_networks())
 
 ## Реплика Хоши на действие с пульта («Открываю: Blender»).
 func remote_say(text: String) -> void:
@@ -757,7 +784,7 @@ func _on_action(command: Variant) -> void:
 		elif remote.start():
 			_show_remote_info()
 		else:
-			ui.show_remote_info(false, [], "", "", 0, remote.last_error)
+			ui.show_remote_info(false, [], "", 0, remote.last_error)
 		ui.remote_enabled = remote.enabled
 		ui.refresh(state, walker.label(), walker.active())
 		_save_settings()

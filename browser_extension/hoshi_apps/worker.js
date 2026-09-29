@@ -22,6 +22,7 @@ const ADAPTER = {
     { name: "like", title: "Нравится", icon: "♥" },
     { name: "seek_to", title: "Перейти к моменту", icon: "", row: "hidden", args: { time: 0 } },
     { name: "play_item", title: "Включить видео из списка", icon: "", row: "hidden", args: { id: "" } },
+    { name: "open_new", title: "Открыть видео в новой вкладке", icon: "", row: "hidden", args: { id: "" } },
   ],
 };
 
@@ -34,16 +35,16 @@ let heartbeat = null;
 
 function now() { return Date.now(); }
 
-// Какой вкладкой управляет пульт: где играет видео (последнее запущенное),
-// иначе последняя активная вкладка YouTube, иначе последняя обновлённая.
+// Явно открытая вкладка YouTube получает управление, даже если в фоне ещё
+// играет другое видео. Пока выбор не сделан, берём последнее играющее.
 function currentTab() {
+  if (tabs.has(focusedTab)) return focusedTab;
   let best = -1;
   let bestScore = -Infinity;
   for (const [id, info] of tabs) {
     const s = info.state || {};
     let score = info.touched / 1e13;
     if (s.playing) score += 3 + info.playingSince / 1e13;
-    else if (id === focusedTab) score += 2;
     else if (s.title) score += 1;
     if (score > bestScore) { bestScore = score; best = id; }
   }
@@ -52,7 +53,7 @@ function currentTab() {
 
 function currentState() {
   const id = currentTab();
-  return id >= 0 ? tabs.get(id).state || {} : { hint: "Открой YouTube в Chrome" };
+  return id >= 0 ? { ...(tabs.get(id).state || {}), tab_id: id } : { hint: "Открой YouTube в Chrome" };
 }
 
 function send(message) {
@@ -60,6 +61,26 @@ function send(message) {
 }
 
 function pushState() { send({ op: "adapter_state", state: currentState() }); }
+
+async function openNewVideo(args) {
+  const id = String(args && args.id || "");
+  if (!/^[A-Za-z0-9_-]{6,20}$/.test(id)) return false;
+  const source = currentTab();
+  if (source < 0) return false;
+  const sourceInfo = tabs.get(source);
+  const lists = Array.isArray(sourceInfo.state?.lists) ? sourceInfo.state.lists : [];
+  const item = lists.flatMap((list) => Array.isArray(list.items) ? list.items : []).find((entry) => entry.id === id);
+  if (!item) return false; // только видео, уже показанное открытым YouTube
+  const list = /^[A-Za-z0-9_-]{2,64}$/.test(String(item.list || "")) ? String(item.list) : "";
+  const windowId = sourceInfo.windowId;
+  if (!Number.isInteger(windowId)) return false;
+  const url = "https://www.youtube.com/watch?v=" + encodeURIComponent(id) + (list ? "&list=" + encodeURIComponent(list) : "");
+  try {
+    await chrome.tabs.create({ url, active: true, windowId });
+    await chrome.windows.update(windowId, { focused: true });
+    return true;
+  } catch (e) { return false; }
+}
 
 function connectHoshi() {
   if (socket || tabs.size === 0) return;
@@ -81,6 +102,7 @@ function connectHoshi() {
     let message;
     try { message = JSON.parse(event.data); } catch (e) { return; }
     if (message.op === "run") {
+      if (message.command === "open_new") { openNewVideo(message.args || {}); return; }
       const id = currentTab();
       if (id >= 0) tabs.get(id).port.postMessage({ op: "run", command: message.command, args: message.args || {} });
     }
@@ -109,7 +131,7 @@ function disconnectHoshi() {
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== "hoshi-youtube" || !port.sender || !port.sender.tab) return;
   const tabId = port.sender.tab.id;
-  tabs.set(tabId, { port, state: {}, playingSince: 0, touched: now() });
+  tabs.set(tabId, { port, windowId: port.sender.tab.windowId, state: {}, playingSince: 0, touched: now() });
   port.onMessage.addListener((message) => {
     const info = tabs.get(tabId);
     if (!info || !message) return;

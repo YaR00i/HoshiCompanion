@@ -30,6 +30,8 @@ const ID: String = "claude"
 const CODEX_PEER: int = -3
 const APPS := ["claude", "codex"]
 const PORT: int = 18772
+## Помощник закончил ход (был «работает»/«ждёт» → ответил) — Хоши зовёт «Хей!».
+signal finished(app: String)
 const PATH: String = "/assistant"
 const MAX_BODY: int = 32768
 const MAX_SESSIONS: int = 8
@@ -233,6 +235,8 @@ func handle_event(message: Dictionary) -> void:
 			session["note"] = "Ход остановлен до завершения. Если нужно, напиши новое сообщение в Codex."
 			session["seen"] = false
 		"Stop":
+			if str(session["status"]) in ["working", "waiting"]:
+				finished.emit(app)
 			session["status"] = "done"
 			session["text"] = str(message.get("text", "")).left(MAX_TEXT)
 			session["media"] = _clean_media(message.get("media", []))
@@ -603,26 +607,50 @@ func announcement(app: String = "claude") -> Dictionary:
 		{"name": "permit", "title": "Разрешить/запретить", "row": "hidden", "args": {"id": "", "behavior": ""}},
 		{"name": "answer", "title": "Ответить на вопрос", "row": "hidden", "args": {"id": "", "answers": {}}}], "state": card_state(app)}
 
-## Карточка «Claude»: свежая сессия крупно, остальные — списком.
+## Полная карточка одной известной сессии — только по её точному id.
+func session_state(app: String, raw_id: String) -> Dictionary:
+	if not app in APPS or raw_id.is_empty() or raw_id.length() > 64:
+		return {}
+	var id: String = _key(app, raw_id)
+	if not sessions.has(id) or str(sessions[id].get("app", "")) != app:
+		return {}
+	var session: Dictionary = sessions[id]
+	var state: Dictionary = {"title": session["folder"] if not str(session["folder"]).is_empty() else ("Codex" if app == "codex" else "Claude"),
+		"subtitle": STATUS_TEXT.get(session["status"], ""), "badge": STATUS_TEXT.get(session["status"], ""),
+		"text": session["note"] if session["status"] in ["waiting", "failed"] else session["text"],
+		"session": raw_id, "can_reply": can_reply(raw_id, app), "media": _public_media(session),
+		"revision": _session_revision(session, id)}
+	if not ask.is_empty() and ask["session"] == id:
+		state["ask"] = {"id": ask["id"], "kind": ask["kind"], "tool": ask["tool"], "detail": ask["detail"], "questions": ask["questions"],
+			"seconds": maxi(0, int(ASK_TIMEOUT - (_clock - float(ask["at"]))))}
+		state["badge"] = "? ждёт ответа"
+	return state
+
+func _session_revision(session: Dictionary, id: String) -> String:
+	var ask_id: String = str(ask.get("id", "")) if not ask.is_empty() and ask.get("session", "") == id else ""
+	return str(hash([session.get("at", 0.0), session.get("status", ""), session.get("text", ""),
+		session.get("note", ""), session.get("media", []), _waiters.has(id), ask_id]))
+
+## Карточка «Claude»/«Codex»: свежая сессия крупно, остальные — с полными id.
 func card_state(app: String = "claude") -> Dictionary:
 	var raw_id: String = latest(app)
 	if raw_id.is_empty():
 		return {"hint": ("Codex" if app == "codex" else "Claude") + " пока молчит — напиши ему в сессии на ПК, и здесь появится его ответ"}
 	var id: String = _key(app, raw_id)
-	var session: Dictionary = sessions[id]
-	var state: Dictionary = {"title": session["folder"] if not str(session["folder"]).is_empty() else ("Codex" if app == "codex" else "Claude"),
-		"subtitle": STATUS_TEXT.get(session["status"], ""), "badge": STATUS_TEXT.get(session["status"], ""),
-		"text": session["note"] if session["status"] in ["waiting", "failed"] else session["text"],
-		"session": raw_id, "can_reply": can_reply(raw_id, app), "media": _public_media(session)}
-	if not ask.is_empty() and ask["session"] == id:
-		# Открытый вопрос/разрешение — наверху карточки (без самого соединения).
-		state["ask"] = {"id": ask["id"], "kind": ask["kind"], "tool": ask["tool"], "detail": ask["detail"], "questions": ask["questions"],
-			"seconds": maxi(0, int(ASK_TIMEOUT - (_clock - float(ask["at"]))))}
-		state["badge"] = "? ждёт ответа"
+	var state: Dictionary = session_state(app, raw_id)
+	var summaries: Array = []
+	for other in _by_time(app):
+		var item: Dictionary = sessions[other]
+		var other_id: String = str(item.get("id", other))
+		summaries.append({"id": other_id, "title": str(item["folder"]) if not str(item["folder"]).is_empty() else ("Codex" if app == "codex" else "Claude"),
+			"subtitle": STATUS_TEXT.get(item["status"], ""), "can_reply": can_reply(other_id, app),
+			"revision": _session_revision(item, other),
+			"ask_seconds": maxi(0, int(ASK_TIMEOUT - (_clock - float(ask["at"])))) if not ask.is_empty() and ask.get("session", "") == other else -1})
+	state["sessions"] = summaries
 	if _by_time(app).size() > 1:
 		var items: Array = []
 		for other in _by_time(app):
-			items.append({"id": str(sessions[other].get("id", other)).left(12), "title": sessions[other]["folder"], "subtitle": STATUS_TEXT.get(sessions[other]["status"], ""), "current": other == id})
+			items.append({"id": str(sessions[other].get("id", other)), "title": sessions[other]["folder"], "subtitle": STATUS_TEXT.get(sessions[other]["status"], ""), "current": other == id})
 		state["lists"] = [{"id": "sessions", "title": "Сессии", "items": items}]
 	return state
 

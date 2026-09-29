@@ -48,7 +48,7 @@
     return !!button && button.getAttribute("aria-pressed") === "true";
   }
 
-  // --- списки: «Дальше» (колонка справа) и плейлист --------------------------
+  // --- списки: главная лента, рекомендации у видео и плейлист --------------
   const idFromHref = (href) => {
     try {
       const url = new URL(href, location.origin);
@@ -66,25 +66,66 @@
     return "";
   };
 
-  // Рекомендации: любые ссылки на видео в правой колонке, по одной на видео.
-  function nextVideos(currentId) {
-    const column = pick(["#secondary #related", "#related", "#secondary"]);
-    if (!column) return [];
+  // Читаем только уже загруженные YouTube-ссылки внутри блока рекомендаций.
+  // Бесконечную ленту не прокручиваем сами: новые карточки приходят, когда
+  // человек прокручивает открытую вкладку на ПК.
+  function suggestedVideos(root, currentId) {
+    if (!root) return { items: [], total: 0, start: 0, anchor: 0 };
     const found = new Map();
-    for (const link of column.querySelectorAll('a[href*="/watch?v="]')) {
+    for (const link of root.querySelectorAll('a[href*="/watch?v="]')) {
+      if (link.closest("ytd-playlist-panel-renderer")) continue;
       const id = idFromHref(link.getAttribute("href"));
       if (!id || id === currentId) continue;
-      const card = link.closest("ytd-compact-video-renderer, yt-lockup-view-model, ytd-rich-item-renderer") || link.parentElement;
+      const card = link.closest("ytd-compact-video-renderer, ytd-rich-grid-media, ytd-rich-item-renderer, yt-lockup-view-model, ytd-video-renderer, ytd-grid-video-renderer") || link.parentElement;
       const title = (link.getAttribute("title") || "").trim() ||
         firstText(card, ["#video-title", "h3", ".yt-lockup-metadata-view-model-wiz__title", "[title]"]) || text(link);
       const channel = firstText(card, ["ytd-channel-name", "#channel-name", ".yt-content-metadata-view-model-wiz__metadata-text"]);
       const known = found.get(id);
       if (!known || (title.length > known.title.length)) {
-        found.set(id, { id, title: title.slice(0, 160), subtitle: channel.slice(0, 80), thumbnail: thumb(id) });
+        found.set(id, { id, title: title.slice(0, 160), subtitle: channel.slice(0, 80), thumbnail: thumb(id), card });
       }
-      if (found.size >= 12 && !known) break;
     }
-    return [...found.values()].filter((item) => item.title).slice(0, 12);
+    const loaded = [...found.values()].filter((item) => item.title);
+    let visible = 0;
+    for (let i = 0; i < loaded.length; i++) {
+      const rect = loaded[i].card.getBoundingClientRect();
+      if (rect.bottom > 0 && rect.top < innerHeight) { visible = i; break; }
+      if (rect.top < 0) visible = i;
+    }
+    const count = Math.min(180, loaded.length);
+    const start = Math.max(0, Math.min(visible - 12, loaded.length - count));
+    return { items: loaded.slice(start, start + count).map(({card, ...item}) => item), total: loaded.length, start, anchor: visible };
+  }
+
+  function suggestedList(id, title, source) {
+    if (!source.total) return null;
+    return { id, title, actions: [{ name: "open_new", title: "Открыть в новой вкладке" }],
+      items: source.items, total: source.total, start: source.start, anchor: source.anchor };
+  }
+
+  function fitLists(result) {
+    const bytes = () => new TextEncoder().encode(JSON.stringify(result)).length;
+    const positions = () => {
+      for (const list of result) {
+        if (!list.total) continue;
+        const end = list.start + list.items.length;
+        list.position = end < list.total || list.start ? `${list.start + 1}–${end} из ${list.total}` : String(list.total);
+      }
+    };
+    positions();
+    while (bytes() > 30000) {
+      const expandable = result.filter((list) => list.items.length);
+      if (!expandable.length) break;
+      expandable.sort((a, b) => b.items.length - a.items.length);
+      const list = expandable[0];
+      if (list.total && list.anchor - list.start > list.start + list.items.length - 1 - list.anchor) {
+        list.items.shift();
+        list.start++;
+      } else list.items.pop();
+      positions();
+    }
+    for (const list of result) delete list.anchor;
+    return result;
   }
 
   // Плейлист справа от видео: все видео, текущее отмечено. До 60 вокруг текущего.
@@ -110,27 +151,43 @@
     const start = Math.max(0, Math.min(at - 20, items.length - 60));
     const title = firstText(panel, ["#header-description h3", ".title", "h3"]) || "Плейлист";
     return { id: "playlist", title: "Плейлист · " + title.slice(0, 60), position: `${at + 1} / ${items.length}`,
-      items: items.slice(start, start + 60) };
+      actions: [{ name: "open_new", title: "Открыть в новой вкладке" }], items: items.slice(start, start + 60) };
   }
 
   let listsCache = [];
   let listsAt = 0;
+  let listsContext = "";
   function lists(currentId) {
+    const context = location.pathname + "|" + currentId + "|" + (new URL(location.href).searchParams.get("list") || "");
+    if (context !== listsContext) { listsAt = 0; listsContext = context; }
     if (Date.now() - listsAt < 3000) return listsCache;
     listsAt = Date.now();
     const result = [];
-    const pl = playlist(currentId);
-    if (pl) result.push(pl);
-    const next = nextVideos(currentId);
-    if (next.length) result.push({ id: "next", title: "Дальше", items: next });
-    listsCache = result;
+    if (location.pathname === "/") {
+      const home = pick(["ytd-browse[page-subtype='home'] ytd-rich-grid-renderer", "ytd-rich-grid-renderer"]);
+      const feed = suggestedList("home", "Рекомендации на главной", suggestedVideos(home, ""));
+      if (feed) result.push(feed);
+    } else if (currentId) {
+      const pl = playlist(currentId);
+      if (pl) result.push(pl);
+      const related = pick(["ytd-watch-flexy #related", "#related", "#secondary"]);
+      const next = suggestedList("next", "Рекомендации к видео", suggestedVideos(related, currentId));
+      if (next) result.push(next);
+    }
+    listsCache = fitLists(result);
     return result;
   }
 
   api.collect = function collect() {
     const id = videoId();
     const v = video();
-    if (!id || !v) return { hint: "Открой видео на YouTube" };
+    if (location.pathname === "/") {
+      const offered = lists("");
+      return { page: "home", title: "Главная YouTube", subtitle: "Лента открытой вкладки",
+        badge: "рекомендации", hint: offered.length ? "" : "Лента загружается — прокрути YouTube на ПК",
+        lists: offered };
+    }
+    if (!id || !v) { listsAt = 0; listsContext = ""; return { hint: "Открой видео на YouTube" }; }
     const title =
       text(pick(["ytd-watch-metadata h1 yt-formatted-string", "h1.ytd-watch-metadata", "ytd-reel-video-renderer[is-active] h2"])) ||
       document.title.replace(/ - YouTube$/, "");
@@ -259,6 +316,7 @@
   for (const name of ["play", "pause", "volumechange", "seeked", "loadedmetadata"]) {
     document.addEventListener(name, () => push(false), true);
   }
+  window.addEventListener("scroll", () => { listsAt = 0; push(false); }, { passive: true });
   setInterval(() => push(false), 1000);
   connect();
 })();

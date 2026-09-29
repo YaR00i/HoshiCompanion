@@ -25,7 +25,10 @@ var model_height: float = 1.5
 var ready_to_preview: bool = false
 var preview_error: String = ""
 var _previewed_keys: Array = []
+var _previewed_clip: String = ""
 @export var show_bone_controls: bool = true
+## Автоключ: повернул кольцо кости — ключ на текущем времени записан сам (Ctrl+Z отменяет).
+@export var auto_key: bool = true
 
 func _ready() -> void:
 	if Engine.is_editor_hint():
@@ -66,6 +69,7 @@ func _load_preview() -> void:
 		return
 	rig.hair_enabled = false
 	rig.tick(0.0, 0.0, Vector2.ZERO, 0.0, 0.0, 0.0, false)
+	_setup_rings()
 	gait = Gait.new()
 	gait.setup(rig, model_height)
 	posture = Posture.new()
@@ -127,6 +131,7 @@ func _update_preview() -> void:
 	# The editor timeline can be paused while still assigning the selected clip.
 	var time: float = player.current_animation_position
 	var progress: float = clampf(time / clip.length, 0.0, 1.0)
+	_mark_tracked(clip, selected)
 	if TouchMotion.is_touch(selected):
 		_update_touch_preview(clip, time)
 		return
@@ -149,13 +154,14 @@ func _update_preview() -> void:
 		"left_hand_rotation": left_target.rotation_degrees.clamp(Vector3.ONE * -SketchMotion.HAND_ROTATION_LIMIT_DEGREES, Vector3.ONE * SketchMotion.HAND_ROTATION_LIMIT_DEGREES),
 		"right_hand_rotation": right_target.rotation_degrees.clamp(Vector3.ONE * -SketchMotion.HAND_ROTATION_LIMIT_DEGREES, Vector3.ONE * SketchMotion.HAND_ROTATION_LIMIT_DEGREES),
 	}
+	# Все кости с кольцами: и с дорожкой, и без (повёрнутое кольцо без дорожки видно
+	# сразу, а ключ и дорожку создаёт кнопка «Записать поворот»).
 	var has_bone_tracks: bool = false
 	for bone_anchor in $Bones.get_children():
 		var semantic: String = str(bone_anchor.name)
-		var bone_path: NodePath = NodePath(SketchMotion.bone_path(semantic))
-		var has_track: bool = selected != "sketch" and clip.find_track(bone_path, Animation.TYPE_ROTATION_3D) >= 0
-		bone_anchor.visible = show_bone_controls and has_track
-		if has_track:
+		var editable: bool = selected != "sketch" and rig.bones.has(semantic)
+		bone_anchor.visible = show_bone_controls and editable
+		if editable:
 			has_bone_tracks = true
 			channels["bones"] = channels.get("bones", {})
 			channels["bones"][semantic] = bone_anchor.get_node(SketchMotion.BONE_TARGET_NAMES[semantic]).quaternion
@@ -171,7 +177,7 @@ func _update_preview() -> void:
 		# the same semantic bone delta that the runtime applies from the clip.
 		edge_pose.apply(1.0, time, 0.0, true)
 		for bone_anchor in $Bones.get_children():
-			if not rig.bones.has(str(bone_anchor.name)) or clip.find_track(NodePath(SketchMotion.bone_path(str(bone_anchor.name))), Animation.TYPE_ROTATION_3D) < 0:
+			if not rig.bones.has(str(bone_anchor.name)):
 				continue
 			var bone_id: int = int(rig.bones[str(bone_anchor.name)])
 			var base_pose: Transform3D = rig.skeleton.get_bone_global_pose(bone_id)
@@ -238,6 +244,9 @@ func _update_touch_preview(clip: Animation, time: float) -> void:
 	$Bones.visible = show_bone_controls
 	for anchor_node in $Props.get_children():
 		(anchor_node as Node3D).visible = false
+	# Касания — без предметов: спрятать блокнот, мелок и бумагу прошлых сценок.
+	sketchbook.update_pose($PreviewRoot, rig, 0.0, 0.0)
+	paper_star.update_pose($PreviewRoot, rig, 0.0, 0.0, 0.0, 0.0, {})
 	$PreviewRoot.rotation = Vector3(0.0, deg_to_rad($Channels.touch_yaw), 0.0)
 	var skeleton: Skeleton3D = rig.skeleton
 	skeleton.reset_bone_poses() # иначе кости, которые поза не сбрасывает (большой палец), копили бы поворот
@@ -249,9 +258,9 @@ func _update_touch_preview(clip: Animation, time: float) -> void:
 	var ordered: Array = []
 	for bone_anchor in $Bones.get_children():
 		var semantic: String = str(bone_anchor.name)
-		var has_track: bool = rig.bones.has(semantic) and clip.find_track(NodePath(SketchMotion.bone_path(semantic)), Animation.TYPE_ROTATION_3D) >= 0
-		(bone_anchor as Node3D).visible = show_bone_controls and has_track
-		if has_track:
+		var editable: bool = rig.bones.has(semantic)
+		(bone_anchor as Node3D).visible = show_bone_controls and editable
+		if editable:
 			ordered.append([int(rig.bones[semantic]), bone_anchor])
 	ordered.sort_custom(func(a, b): return a[0] < b[0]) # родители раньше детей
 	for item in ordered:
@@ -261,6 +270,75 @@ func _update_touch_preview(clip: Animation, time: float) -> void:
 		var marker: Node3D = bone_anchor.get_node_or_null(NodePath(SketchMotion.BONE_TARGET_NAMES[str(bone_anchor.name)])) as Node3D
 		if marker != null:
 			skeleton.set_bone_pose_rotation(bone_id, (skeleton.get_bone_pose_rotation(bone_id) * marker.quaternion).normalized())
+
+## Кольца: бледные у костей без дорожки. При смене клипа кольца без дорожки
+## возвращаются в покой — иначе в них остался бы поворот из прошлого клипа.
+func _mark_tracked(clip: Animation, selected: String) -> void:
+	var switched: bool = selected != _previewed_clip
+	_previewed_clip = selected
+	for bone_anchor in $Bones.get_children():
+		var marker: Node3D = bone_anchor.get_node_or_null(NodePath(SketchMotion.BONE_TARGET_NAMES.get(str(bone_anchor.name), ""))) as Node3D
+		if marker == null:
+			continue
+		var has_track: bool = clip.find_track(NodePath(SketchMotion.bone_path(str(bone_anchor.name))), Animation.TYPE_ROTATION_3D) >= 0
+		marker.set("tracked", has_track)
+		if switched and not has_track:
+			marker.quaternion = Quaternion.IDENTITY
+
+# Кость → следующая по цепочке (куда она «смотрит»). У концевых — продолжение родителя.
+const RING_NEXT := {
+	"hips": "spine", "spine": "chest", "chest": "upperChest", "upperChest": "neck", "neck": "head",
+	"Shoulder": "UpperArm", "UpperArm": "LowerArm", "LowerArm": "Hand", "Hand": "MiddleProximal",
+	"UpperLeg": "LowerLeg", "LowerLeg": "Foot", "Foot": "Toes",
+	"ThumbMetacarpal": "ThumbProximal", "ThumbProximal": "ThumbDistal",
+	"IndexProximal": "IndexIntermediate", "IndexIntermediate": "IndexDistal",
+	"MiddleProximal": "MiddleIntermediate", "MiddleIntermediate": "MiddleDistal",
+	"RingProximal": "RingIntermediate", "RingIntermediate": "RingDistal",
+	"LittleProximal": "LittleIntermediate", "LittleIntermediate": "LittleDistal",
+}
+# Радиус кольца, м (для роста 1.5 м): туловище охватывает тело, суставы — конечность.
+const RING_RADIUS := {
+	"hips": 0.15, "spine": 0.12, "chest": 0.13, "upperChest": 0.12, "neck": 0.045, "head": 0.11, "jaw": 0.03,
+	"Shoulder": 0.035, "UpperArm": 0.045, "LowerArm": 0.035, "Hand": 0.03,
+	"UpperLeg": 0.075, "LowerLeg": 0.055, "Foot": 0.045, "Toes": 0.03, "Eye": 0.016,
+}
+
+func _setup_rings() -> void:
+	var skeleton: Skeleton3D = rig.skeleton
+	var world_scale: float = skeleton.global_basis.get_scale().x
+	var size: float = model_height / 1.5
+	for bone_anchor in $Bones.get_children():
+		var semantic: String = str(bone_anchor.name)
+		var marker: Node3D = bone_anchor.get_node_or_null(NodePath(SketchMotion.BONE_TARGET_NAMES.get(semantic, ""))) as Node3D
+		if marker == null or not marker.has_method("set_ring") or not rig.bones.has(semantic):
+			continue
+		var side: int = 1 if semantic.begins_with("left") else (-1 if semantic.begins_with("right") else 0)
+		var part: String = semantic.trim_prefix("left").trim_prefix("right")
+		var bone: int = int(rig.bones[semantic])
+		var own: Transform3D = skeleton.get_bone_global_rest(bone)
+		var to_local: Basis = own.basis.orthonormalized().inverse()
+		var direction: Vector3 = Vector3.ZERO
+		var next_part: String = str(RING_NEXT.get(part, ""))
+		var next_semantic: String = next_part if side == 0 else ("left" if side > 0 else "right") + next_part
+		if next_semantic == "upperChest" and not rig.bones.has("upperChest"):
+			next_semantic = "neck"
+		if part == "Eye":
+			direction = Vector3.BACK * 0.02 / world_scale # взгляд вперёд (лицом к +Z)
+		elif rig.bones.has(next_semantic):
+			direction = skeleton.get_bone_global_rest(int(rig.bones[next_semantic])).origin - own.origin
+		else:
+			var parent: int = skeleton.get_bone_parent(bone)
+			direction = own.origin - skeleton.get_bone_global_rest(parent).origin if parent >= 0 else Vector3.UP
+			if part == "head":
+				direction = direction.normalized() * 0.2 * size / world_scale
+			else:
+				direction *= 0.8
+		var length: float = direction.length() * world_scale
+		var small: bool = part in ["Eye", "jaw"] or part.contains("Thumb") or part.contains("Index") or part.contains("Middle") or part.contains("Ring") or part.contains("Little")
+		var radius: float = float(RING_RADIUS.get(part, 0.0)) * size
+		if radius <= 0.0:
+			radius = clampf(length * 0.45, 0.006 * size, 0.012 * size)
+		marker.call("set_ring", to_local * direction, length, radius, side, small)
 
 func _clip_key_snapshot(clip: Animation) -> Array:
 	var keys: Array = [clip.get_instance_id(), clip.length, clip.get_track_count()]

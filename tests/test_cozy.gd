@@ -205,6 +205,12 @@ func _run() -> void:
 	_advance(38)
 	_check(float(app.stage.edge_life.weights["admire_star"]) > 0.5 and cozy.decor.presenting_star, "pressing a finished star makes Hoshi show it")
 	await _capture("01_paper_admire")
+	_advance(40)
+	_check(app.stage.edge_life.waiting == "admire_star" and cozy.decor.presenting_star, "Hoshi holds her star up and waits for a click")
+	app.stage.edge_life.answer_wait()
+	_advance(6)
+	_check(app.stage.star_burst.active() and app.stage.edge_life.wait_joy > 0.5, "answering sends little stars out of her star")
+	await _capture("01_paper_admire_stars")
 	_advance(130)
 	_check(not cozy.decor.presenting_star and cozy.star_count == 1, "shown star returns to the card")
 	for i in range(3):

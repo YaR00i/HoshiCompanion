@@ -1,0 +1,23 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>YouTube</title>
+<style>ytd-browse,ytd-rich-grid-renderer{display:block}ytd-rich-grid-media,yt-lockup-view-model{display:block;height:140px}</style></head><body>
+<ytd-browse page-subtype="home"><ytd-rich-grid-renderer id="feed">
+  <ytd-rich-grid-media><a id="thumbnail" href="/watch?v=homeAAA1111"></a>
+    <h3 id="video-title">Первое предложение</h3><ytd-channel-name>Канал А</ytd-channel-name></ytd-rich-grid-media>
+  <yt-lockup-view-model><a href="/watch?v=homeBBB2222" title="Второе предложение"></a>
+    <span class="yt-content-metadata-view-model-wiz__metadata-text">Канал Б</span></yt-lockup-view-model>
+</ytd-rich-grid-renderer></ytd-browse>
+<script>
+  window.__clicked = [];
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest("a");
+    if (link) { event.preventDefault(); window.__clicked.push(link.getAttribute("href")); }
+  });
+  window.addEventListener("scroll", () => {
+    if (document.querySelector('[href="/watch?v=homeCCC3333"]')) return;
+    const card = document.createElement("ytd-rich-grid-media");
+    card.innerHTML = '<a href="/watch?v=homeCCC3333"></a><h3 id="video-title">Загрузилось при прокрутке</h3>';
+    document.querySelector("#feed").append(card);
+  });
+</script>
+</body></html>

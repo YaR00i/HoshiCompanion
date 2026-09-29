@@ -57,6 +57,13 @@ func _run() -> void:
 	_note(watch, "UserPromptSubmit", "s2", {"folder": "D:/projects/Other/Game"})
 	card = watch.card_state()
 	_check(card["title"] == "Game" and card["lists"][0]["items"].size() == 2, "the newest session is on top; others are listed")
+	var summaries: Array = card.get("sessions", [])
+	_check(summaries.size() == 2 and summaries.any(func(item): return item.get("id", "") == "s1") and summaries.any(func(item): return item.get("id", "") == "s2"), "both live chats keep their full identifiers on the phone")
+	if watch.has_method("session_state"):
+		var earlier: Dictionary = watch.session_state("claude", "s1")
+		_check(earlier.get("session", "") == "s1" and earlier.get("text", "") == "Готово: звук переключается.", "the phone can read the selected older chat after another finishes")
+	else:
+		_check(false, "the phone can read the selected older chat after another finishes")
 	_check(not JSON.stringify(watch.sessions).contains("D:/projects"), "only the folder name is kept, never the path")
 	_note(watch, "Stop", "s3", {"app": "other"})
 	watch.handle_event({"app": "claude", "event": "Stop"})
@@ -74,6 +81,17 @@ func _run() -> void:
 	watch.handle_event({"app": "codex", "event": "SessionEnd", "session": "0123abcd-4567-89ef-0123-456789abcdef"})
 	_check(not watch.active("codex") and watch.active("claude"), "closing Codex does not close Claude")
 	# Облачко над Хоши: одно на помощника; «ждёт» важнее «работает»; ✓ тает.
+	# «Хей!»: сигнал только когда помощник действительно работал и закончил.
+	var hey = AssistantWatch.new()
+	var heard: Array = []
+	hey.finished.connect(func(app): heard.append(app))
+	hey.handle_event({"app": "codex", "event": "Stop", "session": "hey1", "text": "уже было"})
+	hey.handle_event({"app": "codex", "event": "UserPromptSubmit", "session": "hey1"})
+	hey.handle_event({"app": "codex", "event": "Stop", "session": "hey1", "text": "готово"})
+	hey.handle_event({"app": "codex", "event": "Stop", "session": "hey1", "text": "повтор"})
+	hey.handle_event({"app": "claude", "event": "UserPromptSubmit", "session": "hey2"})
+	hey.handle_event({"app": "claude", "event": "Notification", "kind": "idle_prompt", "session": "hey2"})
+	_check(heard == ["codex"], "«Хей!» only after real work ends (not on a repeated Stop or an idle notice)")
 	var clouds = AssistantWatch.new()
 	_check(clouds.clouds().is_empty(), "no sessions — no cloud")
 	_note(clouds, "UserPromptSubmit", "a")

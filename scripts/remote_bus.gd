@@ -49,6 +49,7 @@ const MAX_RUNS_PER_SECOND: float = 8.0
 ## A visible remote page pings every 5 s. A phone that says nothing for this long (its
 ## screen locked and the connection died silently) is dropped to free its place.
 const PHONE_SILENCE: float = 20.0
+const BACKGROUND_PHONE_SILENCE: float = 90.0
 
 var enabled: bool = false
 var pairing_code: String = ""
@@ -73,8 +74,6 @@ var mpc = MpcAdapter.new()
 ## ИИ-помощники на ПК (Claude Code): записки от хуков, карточка «Claude».
 var assistants = AssistantWatch.new()
 var last_error: String = ""
-## Адрес (IP) для QR, выбранный в окне «Пульт с телефона»; пусто — первый обычный.
-var qr_address: String = ""
 ## Для тестов: слушать только 127.0.0.1 и на других портах.
 var loopback_only: bool = false
 var http_port: int = HTTP_PORT
@@ -169,11 +168,8 @@ func address_choices() -> Array:
 				(virtual if item["virtual"] else real).append(item)
 	return real + virtual
 
-## Адрес для QR: выбранный в окне (qr_address), иначе первый. Пусто — адресов нет.
+## Один QR для приложения: обычная сеть первая, остальные адреса лежат в alt.
 func qr_choice(choices: Array) -> Dictionary:
-	for choice in choices:
-		if choice["ip"] == qr_address:
-			return choice
 	return choices[0] if not choices.is_empty() else {}
 
 ## Сети с адресом IPv4 вне домашней сети (например, Radmin VPN 26.x): пульт через них
@@ -380,7 +376,7 @@ func _accept_ws() -> void:
 		if ws.accept_stream(stream) != OK:
 			stream.disconnect_from_host()
 			continue
-		_peers[_next_key] = {"ws": ws, "role": "", "authed": false, "host": host, "runs": 0.0, "age": 0.0, "seen": 0.0, "token": ""}
+		_peers[_next_key] = {"ws": ws, "role": "", "authed": false, "host": host, "runs": 0.0, "age": 0.0, "seen": 0.0, "token": "", "background": false, "last_state": ""}
 		_next_key += 1
 
 func _poll_peer(key: int, dt: float) -> void:
@@ -407,7 +403,7 @@ func _poll_peer(key: int, dt: float) -> void:
 					_handle(key, message)
 				if not _peers.has(key):
 					return
-			if peer["role"] == "phone" and float(peer["seen"]) > PHONE_SILENCE:
+			if peer["role"] == "phone" and float(peer["seen"]) > (BACKGROUND_PHONE_SILENCE if peer["background"] else PHONE_SILENCE):
 				_drop_peer(key, 4000, "Silent")
 				return
 		WebSocketPeer.STATE_CLOSED:
@@ -487,6 +483,7 @@ func _handle(key: int, message: Dictionary) -> void:
 				if str(message.get("token", "")) in tokens:
 					peer["authed"] = true
 					peer["token"] = str(message.get("token", ""))
+					peer["background"] = message.get("background", false) == true
 					_drop_same_phone(key)
 					_welcome(key)
 				else:
@@ -506,6 +503,17 @@ func _handle(key: int, message: Dictionary) -> void:
 			_broadcast_state(true)
 		"state":
 			_send(key, _state_message())
+		"assistant_session":
+			# Полный ответ выбранной беседы — только телефону, который его запросил.
+			peer["runs"] = float(peer["runs"]) + 1.0
+			if float(peer["runs"]) > MAX_RUNS_PER_SECOND:
+				_send(key, {"op": "error", "reason": "too_fast"})
+				return
+			var assistant_app: String = str(message.get("app", ""))
+			var assistant_id: String = str(message.get("session", ""))
+			var detail: Dictionary = assistants.session_state(assistant_app, assistant_id)
+			_send(key, {"op": "assistant_session", "app": assistant_app, "session": assistant_id,
+				"ok": not detail.is_empty(), "state": detail})
 		"history":
 			# История бесед Claude (решение 2026-09-27): только этому телефону.
 			peer["runs"] = float(peer["runs"]) + 1.0
@@ -638,6 +646,15 @@ func _sleep_now() -> void:
 		_:
 			_say("Спокойной ночи — всё на паузе")
 
+## Играет ли что-нибудь (плеер, YouTube, вкладка) — Хоши кивает в такт. Только да/нет.
+func music_playing() -> bool:
+	for id in adapters.adapters.keys():
+		if id in AssistantWatch.APPS:
+			continue
+		if bool((adapters.adapters[id] as Dictionary).get("state", {}).get("playing", false)):
+			return true
+	return false
+
 ## Поставить на паузу всё, что играет (кроме карточки Claude). Одно и то же видео
 ## YouTube в «Вкладках Chrome» второй раз не нажимаем — иначе оно снова заиграет.
 func pause_players() -> void:
@@ -675,9 +692,13 @@ func _clean_args(args: Variant) -> Dictionary:
 	return result
 
 func _welcome(key: int) -> void:
-	_send(key, {"op": "welcome", "catalog": remote_catalog()})
+	_send(key, {"op": "welcome"} if _peers[key]["background"] else {"op": "welcome", "catalog": remote_catalog()})
 	sound.request_refresh()
-	_send(key, _state_message())
+	var state: Dictionary = _state_message()
+	if _peers[key]["background"]:
+		state = _background_state_message(state)
+		_peers[key]["last_state"] = JSON.stringify(state)
+	_send(key, state)
 
 ## Команды Хоши для пульта: быстрые кнопки и разделы по вкладкам.
 func remote_catalog() -> Dictionary:
@@ -699,7 +720,7 @@ func remote_catalog() -> Dictionary:
 ## Список «Моих действий» или «Звука на пульте» изменили на ПК — обновить пульты.
 func refresh_catalog() -> void:
 	for key in _peers:
-		if _peers[key]["role"] == "phone" and _peers[key]["authed"]:
+		if _peers[key]["role"] == "phone" and _peers[key]["authed"] and not _peers[key]["background"]:
 			_send(key, {"op": "catalog", "catalog": remote_catalog()})
 
 func _item(command: String) -> Dictionary:
@@ -713,15 +734,53 @@ func _state_message() -> Dictionary:
 	var hoshi: Dictionary = app.remote_snapshot() if app != null and app.has_method("remote_snapshot") else {}
 	return {"op": "state", "hoshi": hoshi, "apps": adapters.catalog(), "pc_pending": pc.pending_state(), "sound": sound.state(), "windows": pc.windows_state(), "timer": timer.state()}
 
+## The hidden Android service only uses assistant alerts, media controls and quick-tile state.
+## Keep recommendations, open tabs and playback-second updates on the visible page only.
+func _background_state_message(full: Dictionary) -> Dictionary:
+	var apps: Array = []
+	for item in full.get("apps", []):
+		var id: String = str(item.get("id", ""))
+		if id in ["claude", "codex"]:
+			var source: Dictionary = item.get("state", {})
+			var assistant: Dictionary = {}
+			for field in ["session", "title", "subtitle", "text", "ask"]:
+				if source.has(field):
+					assistant[field] = source[field]
+			apps.append({"id": id, "state": assistant})
+		elif id in ["mpc", "youtube", "tabs"]:
+			var source: Dictionary = item.get("state", {})
+			var player: Dictionary = {}
+			for field in ["title", "subtitle", "playing", "duration", "hint"]:
+				if source.has(field):
+					player[field] = source[field]
+			if source.has("time"):
+				player["time"] = int(source["time"]) / 60 * 60
+			var buttons: Array = []
+			for button in item.get("commands", []):
+				if str(button.get("command", "")).get_slice(":", 2) in ["back", "toggle", "forward", "next"]:
+					buttons.append({"command": button["command"], "args": button.get("args", {})})
+			apps.append({"id": id, "title": item.get("title", id), "state": player, "commands": buttons})
+	return {"op": "state", "apps": apps,
+		"hoshi": {"selected": (full.get("hoshi", {}) as Dictionary).get("selected", [])},
+		"sound": {"current": (full.get("sound", {}) as Dictionary).get("current", "")}}
+
 func _broadcast_state(force: bool) -> void:
 	var message: Dictionary = _state_message()
 	var text: String = JSON.stringify(message)
 	if not force and text == _last_state_text:
 		return
 	_last_state_text = text
+	var background_text: String = ""
 	for key in _peers:
 		if _peers[key]["role"] == "phone" and _peers[key]["authed"]:
-			_peers[key]["ws"].send_text(text)
+			if _peers[key]["background"]:
+				if background_text.is_empty():
+					background_text = JSON.stringify(_background_state_message(message))
+				if background_text != _peers[key]["last_state"]:
+					_peers[key]["ws"].send_text(background_text)
+					_peers[key]["last_state"] = background_text
+			else:
+				_peers[key]["ws"].send_text(text)
 
 ## The same phone came back (after its screen was locked): close its old connection
 ## right away instead of keeping a dead one around.

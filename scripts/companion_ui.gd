@@ -6,6 +6,8 @@ const Commands = preload("res://scripts/hoshi_commands.gd")
 const AssistantClouds = preload("res://scripts/assistant_clouds.gd")
 const PcActions = preload("res://scripts/pc_actions.gd")
 const MonitorMap = preload("res://scripts/monitor_map.gd")
+const UiIcons = preload("res://scripts/hoshi_ui_icons.gd")
+const MenuHeader = preload("res://assets/ui/hoshi_menu_header.svg")
 
 signal action_requested(command: String)
 signal light_position_changed(position: Vector3)
@@ -71,7 +73,7 @@ var _scenes_bus
 var _scenes_changed: Callable
 var _scenes_pick: OptionButton
 var _scenes_name: LineEdit
-var _scenes_icon: LineEdit
+var _scenes_icon: OptionButton
 var _scenes_steps: ItemList
 var _scenes_add: OptionButton
 var _scenes_current: String = ""
@@ -140,9 +142,9 @@ var _preview: bool = true
 var shelf_active: bool = false
 var clickthrough_enabled: bool = true
 
-const INK: Color = Color("3b3449")
-const MUTED: Color = Color("82798f")
-const PLUM: Color = Color("8a688f")
+const INK: Color = Color("403850")
+const MUTED: Color = Color("766e81")
+const PLUM: Color = Color("62547f")
 const EDGE_ACTIVITIES: Array[String] = ["auto", "calm", "swing", "lean", "peek", "sway", "hum", "nod"]
 
 func _ready() -> void:
@@ -156,11 +158,10 @@ func _ready() -> void:
 	ui_theme.set_color("font_pressed_color", "Button", INK)
 	for kind in ["normal", "hover", "pressed", "focus"]:
 		var style: StyleBoxFlat = StyleBoxFlat.new()
-		style.bg_color = Color("f6f0f7") if kind == "normal" else Color("ecdfef")
-		style.corner_radius_top_left = 10
-		style.corner_radius_top_right = 10
-		style.corner_radius_bottom_left = 10
-		style.corner_radius_bottom_right = 10
+		style.bg_color = Color("fffaf6") if kind == "normal" else Color("f1e8f2")
+		style.border_color = Color("e4d4d6")
+		style.set_border_width_all(0 if kind == "focus" else 1)
+		style.set_corner_radius_all(13)
 		style.content_margin_left = 12
 		style.content_margin_right = 12
 		style.content_margin_top = 6
@@ -189,7 +190,11 @@ func _label(text: String, font_size: int = 14, color: Color = INK) -> Label:
 func _button(text: String, action: String) -> Button:
 	var item: Button = Button.new()
 	item.text = text
-	item.custom_minimum_size.y = 32
+	var icons: Dictionary = {"walk": "walk", "stop": "stop", "pet": "sparkle", "cozy_corner": "home", "pick_window": "window", "surface_walk": "walk", "restart": "restart"}
+	if icons.has(action):
+		item.icon = UiIcons.texture(str(icons[action]))
+		item.add_theme_constant_override("icon_spacing", 7)
+	item.custom_minimum_size.y = 38
 	item.pressed.connect(_emit_action.bind(action))
 	return item
 
@@ -218,7 +223,11 @@ func _build_panel() -> void:
 	panel.position = Vector2(580.0, 20.0)
 	panel.size = Vector2(300.0, 580.0)
 	var style: StyleBoxFlat = StyleBoxFlat.new()
-	style.bg_color = Color("fffdfb")
+	style.bg_color = Color("fffaf5")
+	style.border_color = Color("e1cfc6")
+	style.set_border_width_all(1)
+	style.shadow_color = Color(0.20, 0.14, 0.29, 0.16)
+	style.shadow_size = 10
 	style.corner_radius_top_left = 20
 	style.corner_radius_top_right = 20
 	style.corner_radius_bottom_left = 20
@@ -232,8 +241,22 @@ func _build_panel() -> void:
 	var outer: VBoxContainer = VBoxContainer.new()
 	outer.add_theme_constant_override("separation", 6)
 	panel.add_child(outer)
-	outer.add_child(_label("HOSHI", 28, PLUM))
-	outer.add_child(_label("МИНИ-КОМПАНЬОН · 3D / 0.7", 11, MUTED))
+	var header := Control.new()
+	header.custom_minimum_size.y = 76
+	outer.add_child(header)
+	var art := TextureRect.new()
+	art.texture = MenuHeader
+	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	art.stretch_mode = TextureRect.STRETCH_SCALE
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	header.add_child(art)
+	var title := _label("Хоши", 26, Color("fffaf5"))
+	title.position = Vector2(18, 12)
+	header.add_child(title)
+	var tagline := _label("Рядом, пока ты работаешь", 11, Color("f5ebf6"))
+	tagline.position = Vector2(19, 47)
+	header.add_child(tagline)
 	subtitle = _label("VRoid → VRM 1.0 → Godot", 12)
 	outer.add_child(subtitle)
 	status = _label("Загрузка…", 13, PLUM)
@@ -321,7 +344,9 @@ func _build_bubble() -> void:
 	bubble = PanelContainer.new()
 	bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var style: StyleBoxFlat = StyleBoxFlat.new()
-	style.bg_color = Color(1.0, 0.98, 0.95, 0.96)
+	style.bg_color = Color(1.0, 0.98, 0.95, 0.97)
+	style.border_color = Color("e6d1ca")
+	style.set_border_width_all(1)
 	style.corner_radius_top_left = 14
 	style.corner_radius_top_right = 14
 	style.corner_radius_bottom_left = 14
@@ -1165,9 +1190,9 @@ func _refresh_sound_outputs() -> void:
 		_sound_list.add_child(row)
 
 ## Окно «Пульт с телефона»: адрес страницы и код привязки крупно.
-## choices — [{url, ip, network, virtual}] из remote_bus.address_choices(); chosen_ip — адрес
-## в QR; skipped — сети вне домашней ([{ip, network}]); on_choose(ip) — выбрали адрес для QR.
-func show_remote_info(enabled: bool, choices: Array, chosen_ip: String, code: String, phones: int, error: String = "", qr_text: String = "", code_version: int = -1, skipped: Array = [], on_choose: Callable = Callable()) -> void:
+## choices — [{url, ip, network, virtual}] из remote_bus.address_choices().
+## Один QR содержит все пригодные адреса; ниже — отдельные адреса для браузера.
+func show_remote_info(enabled: bool, choices: Array, code: String, phones: int, error: String = "", qr_text: String = "", code_version: int = -1, skipped: Array = []) -> void:
 	remote_code_version = code_version
 	if remote_window == null:
 		remote_window = Window.new()
@@ -1185,9 +1210,13 @@ func show_remote_info(enabled: bool, choices: Array, chosen_ip: String, code: St
 		style.set_content_margin_all(18)
 		panel_bg.add_theme_stylebox_override("panel", style)
 		remote_window.add_child(panel_bg)
+		var scroll := ScrollContainer.new()
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		panel_bg.add_child(scroll)
 		var column := VBoxContainer.new()
+		column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		column.add_theme_constant_override("separation", 8)
-		panel_bg.add_child(column)
+		scroll.add_child(column)
 		_remote_qr = TextureRect.new()
 		_remote_qr.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
 		_remote_qr.custom_minimum_size = Vector2(0, 300)
@@ -1209,34 +1238,22 @@ func show_remote_info(enabled: bool, choices: Array, chosen_ip: String, code: St
 	var lines: PackedStringArray = []
 	var after: PackedStringArray = []
 	if qr != null:
-		lines.append("Наведи камеру телефона на QR-код и открой ссылку —")
-		lines.append("пульт привяжется сам. Или вручную:")
+		lines.append("В приложении «Хоши» нажми «Сканировать QR»:")
+		lines.append("оно само найдёт доступный адрес и привяжется.")
 		lines.append("")
 	if not enabled:
 		lines.append("Пульт выключен." if error.is_empty() else "Не получилось включить пульт: порт занят другой программой.")
 		lines.append("Меню → Пульт с телефона → Пульт включён.")
 	else:
-		lines.append("1. Телефон в той же домашней Wi-Fi сети.")
-		lines.append("2. Открой в браузере телефона" + (" (● — адрес в QR, нажми другой, чтобы сменить):" if choices.size() > 1 else ":"))
-		var group := ButtonGroup.new()
+		lines.append("Телефон и ПК должны быть в одной сети или общем VPN.")
+		lines.append("Для браузера открой подходящий адрес вручную:")
 		for choice in choices:
-			var pick := CheckBox.new()
-			pick.button_group = group
-			pick.button_pressed = choice["ip"] == chosen_ip
-			pick.text = "%s  —  %s%s" % [choice["url"], choice["network"], "  · VPN/виртуальная" if choice["virtual"] else ""]
-			pick.tooltip_text = "Использовать этот адрес в QR-коде"
-			if choice["virtual"]:
-				pick.add_theme_color_override("font_color", MUTED)
-			var ip: String = choice["ip"]
-			pick.pressed.connect(func():
-				if on_choose.is_valid() and ip != chosen_ip:
-					on_choose.call(ip))
-			_remote_addresses.add_child(pick)
+			_remote_addresses.add_child(_label("      %s  —  %s%s" % [choice["url"], choice["network"], "  · VPN" if choice["virtual"] else ""], 12, MUTED if choice["virtual"] else INK))
 		if choices.is_empty():
 			_remote_addresses.add_child(_label("      (не нашла адрес в домашней сети — проверь Wi-Fi)", 13, MUTED))
 		for item in skipped:
 			_remote_addresses.add_child(_label("      не подходит: %s (%s) — не домашняя сеть" % [item["network"], item["ip"]], 11, MUTED))
-		after.append("3. Введи код:  " + code.substr(0, 3) + " " + code.substr(3))
+		after.append("Код для браузера:  " + code.substr(0, 3) + " " + code.substr(3))
 		after.append("")
 		after.append("Привязано телефонов сейчас на связи: %d" % phones)
 		after.append("Если Windows спросит про доступ к сети — разреши для частной сети.")
@@ -1605,7 +1622,7 @@ func _build_scenes_window() -> void:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 8)
 	panel_bg.add_child(column)
-	var intro := _label("Одна кнопка на пульте — несколько шагов по очереди. Например, «🎬 Кино»: звук на телевизор, плеер на его экран, Хоши садится.", 13, MUTED)
+	var intro := _label("Одна кнопка на пульте — несколько шагов по очереди. Например, «Кино»: звук на телевизор, плеер на его экран, Хоши садится.", 13, MUTED)
 	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(intro)
 	var top := HBoxContainer.new()
@@ -1626,12 +1643,14 @@ func _build_scenes_window() -> void:
 	var name_row := HBoxContainer.new()
 	name_row.add_theme_constant_override("separation", 6)
 	column.add_child(name_row)
-	_scenes_icon = LineEdit.new()
-	_scenes_icon.custom_minimum_size = Vector2(54, 0)
-	_scenes_icon.max_length = 4
-	_scenes_icon.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_scenes_icon.tooltip_text = "Значок кнопки (смайлик: Win + точка)"
-	_style_line_edit(_scenes_icon)
+	_scenes_icon = OptionButton.new()
+	_scenes_icon.custom_minimum_size = Vector2(136, 0)
+	_scenes_icon.tooltip_text = "Рисунок кнопки на пульте"
+	for choice in [["star", "Звезда"], ["moon", "Луна"], ["sun", "Солнце"],
+			["home", "Дом"], ["chat", "Беседа"], ["play", "Плеер"]]:
+		_scenes_icon.add_icon_item(UiIcons.texture(str(choice[0])), str(choice[1]))
+		_scenes_icon.set_item_metadata(_scenes_icon.item_count - 1, str(choice[0]))
+	_scenes_icon.item_selected.connect(func(_index: int): _save_scene_name())
 	name_row.add_child(_scenes_icon)
 	_scenes_name = LineEdit.new()
 	_scenes_name.placeholder_text = "Название кнопки"
@@ -1639,9 +1658,8 @@ func _build_scenes_window() -> void:
 	_scenes_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_style_line_edit(_scenes_name)
 	name_row.add_child(_scenes_name)
-	for edit in [_scenes_icon, _scenes_name]:
-		edit.text_submitted.connect(func(_text: String): _save_scene_name())
-		edit.focus_exited.connect(_save_scene_name)
+	_scenes_name.text_submitted.connect(func(_text: String): _save_scene_name())
+	_scenes_name.focus_exited.connect(_save_scene_name)
 	column.add_child(_label("Шаги (по очереди, сверху вниз)", 12, MUTED))
 	_scenes_steps = ItemList.new()
 	_scenes_steps.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -1666,7 +1684,8 @@ func _build_scenes_window() -> void:
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	step_row.add_child(spacer)
 	var try_scene := Button.new()
-	try_scene.text = "▶ Проверить"
+	try_scene.text = "Проверить"
+	try_scene.icon = UiIcons.texture("sparkle")
 	try_scene.tooltip_text = "Запустить сценарий сейчас, как с пульта"
 	try_scene.pressed.connect(_try_scene)
 	step_row.add_child(try_scene)
@@ -1693,7 +1712,7 @@ func _on_scene_picked(index: int) -> void:
 	_refresh_scenes()
 
 func _add_scene() -> void:
-	var id: String = _scenes_bus.scenes.add("Новый сценарий", "✨")
+	var id: String = _scenes_bus.scenes.add("Новый сценарий", "star")
 	if not id.is_empty():
 		_scenes_current = id
 	_after_scenes_change()
@@ -1737,9 +1756,10 @@ func _save_scene_name() -> void:
 	if _scenes_current.is_empty() or _scenes_bus == null:
 		return
 	var item: Dictionary = _scenes_bus.scenes.find(_scenes_current)
-	if item.is_empty() or (item["title"] == _scenes_name.text.strip_edges() and item["icon"] == _scenes_icon.text.strip_edges()):
+	var icon_name: String = str(_scenes_icon.get_item_metadata(_scenes_icon.selected)) if _scenes_icon.selected >= 0 else "star"
+	if item.is_empty() or (item["title"] == _scenes_name.text.strip_edges() and item["icon"] == icon_name):
 		return
-	_scenes_bus.scenes.rename(_scenes_current, _scenes_name.text, _scenes_icon.text)
+	_scenes_bus.scenes.rename(_scenes_current, _scenes_name.text, icon_name)
 	_after_scenes_change()
 
 func _after_scenes_change() -> void:
@@ -1747,12 +1767,12 @@ func _after_scenes_change() -> void:
 	if _scenes_changed.is_valid():
 		_scenes_changed.call()
 
-## Что за шаг — по-человечески: «🔊 Звук: Телевизор», «🚀 MPC-BE», «✦ Хоши: Сесть».
+## Что за шаг — по-человечески: «Звук: Телевизор», «MPC-BE», «Хоши: Сесть».
 func scene_step_title(command: String) -> String:
 	for entry in _scene_step_choices():
 		if entry[0] == command:
 			return entry[1]
-	return "⚠ " + command + " (такой кнопки уже нет)"
+	return command + " (такой кнопки уже нет)"
 
 ## Из чего можно собрать шаг: [команда, подпись]. Опасные (с «Точно?») — нет.
 func _scene_step_choices() -> Array:
@@ -1760,16 +1780,15 @@ func _scene_step_choices() -> Array:
 	if _scenes_bus == null:
 		return out
 	for item in _scenes_bus.sound.catalog():
-		out.append([item["command"], "%s Звук: %s" % [item["icon"], item["title"]]])
+		out.append([item["command"], "Звук: %s" % item["title"]])
 	for item in _scenes_bus.pc.catalog():
 		if not bool(item.get("confirm", false)):
-			out.append([item["command"], "%s %s" % [item.get("icon", "🚀"), item["title"]]])
+			out.append([item["command"], str(item["title"])])
 	for minutes in [15, 30, 45, 60, 90]:
-		out.append(["timer:%d" % minutes, "🌙 Таймер сна: %d мин" % minutes])
+		out.append(["timer:%d" % minutes, "Таймер сна: %d мин" % minutes])
 	for command in Commands.names():
 		if Commands.allows(command, "remote") and not Commands.has_flag(command, "confirm"):
-			var icon: String = Commands.icon(command)
-			out.append([command, "%s Хоши: %s" % [icon if not icon.is_empty() else "✦", Commands.short_title(command)]])
+			out.append([command, "Хоши: %s" % Commands.short_title(command)])
 	return out
 
 func _refresh_scenes() -> void:
@@ -1778,7 +1797,7 @@ func _refresh_scenes() -> void:
 	var scenes: Array = _scenes_bus.scenes.scenes
 	_scenes_pick.clear()
 	for item in scenes:
-		_scenes_pick.add_item("%s %s" % [item["icon"], item["title"]])
+		_scenes_pick.add_icon_item(UiIcons.texture(str(item.get("icon", "star"))), str(item["title"]))
 		_scenes_pick.set_item_metadata(_scenes_pick.item_count - 1, item["id"])
 		if item["id"] == _scenes_current:
 			_scenes_pick.select(_scenes_pick.item_count - 1)
@@ -1787,9 +1806,14 @@ func _refresh_scenes() -> void:
 	_scenes_pick.disabled = scenes.is_empty()
 	var current: Dictionary = _scenes_bus.scenes.find(_scenes_current)
 	_scenes_name.editable = not current.is_empty()
-	_scenes_icon.editable = not current.is_empty()
+	_scenes_icon.disabled = current.is_empty()
 	_scenes_name.text = str(current.get("title", ""))
-	_scenes_icon.text = str(current.get("icon", ""))
+	var current_icon: String = str(current.get("icon", "star"))
+	_scenes_icon.select(0)
+	for index in range(_scenes_icon.item_count):
+		if _scenes_icon.get_item_metadata(index) == current_icon:
+			_scenes_icon.select(index)
+			break
 	_scenes_steps.clear()
 	var steps: Array = current.get("steps", [])
 	for index in range(steps.size()):

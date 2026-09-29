@@ -11,13 +11,17 @@ if exist "%ROOT%\godot_path.txt" set /p ENGINE=<"%ROOT%\godot_path.txt"
 if defined ENGINE goto validate
 for %%G in (godot.exe godot4.exe) do for /f "delims=" %%P in ('where %%G 2^>nul') do if not defined ENGINE set "ENGINE=%%P"
 if defined ENGINE goto validate
+if "%HOSHI_LAUNCH_QUIET%"=="1" goto missing
 :choose
 echo Select the standard Godot 4.5.1 or newer executable. Nothing is downloaded.
 set "ENGINE="
 for /f "usebackq delims=" %%P in (`powershell.exe -STA -NoProfile -Command "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false); Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Title='Select Godot 4.5.1+ executable'; $d.Filter='Godot executable (*.exe)|*.exe'; if($d.ShowDialog() -eq 'OK'){[Console]::WriteLine($d.FileName)}"`) do set "ENGINE=%%P"
 if not defined ENGINE goto missing
 :validate
-if not exist "%ENGINE%" goto choose
+if not exist "%ENGINE%" (
+    if "%HOSHI_LAUNCH_QUIET%"=="1" goto missing
+    goto choose
+)
 set "HOSHI_ROOT=%ROOT%"
 set "HOSHI_ENGINE=%ENGINE%"
 powershell.exe -NoProfile -Command "[IO.File]::WriteAllText([IO.Path]::Combine($env:HOSHI_ROOT,'godot_path.txt'),$env:HOSHI_ENGINE,(New-Object Text.UTF8Encoding($false)))" >nul 2>nul
@@ -70,11 +74,11 @@ pause
 exit /b %TEST_EXIT%
 :missing
 echo No Godot executable was selected. Open project.godot in Godot 4.5.1+ instead.
-pause
+if not "%HOSHI_LAUNCH_QUIET%"=="1" pause
 exit /b 1
 :import_failed
 echo.
 echo Project import or script parsing failed. Please send logs\import.log.
 if exist "%ROOT%\logs\import.log" type "%ROOT%\logs\import.log"
-pause
+if not "%HOSHI_LAUNCH_QUIET%"=="1" pause
 exit /b 1
